@@ -1,0 +1,9 @@
+directoryPath = D:\.minecraft\saves\新的世界2
+biomeMappingFile = config\mappings\biomes_mapping.json
+minX = -203
+minY = -64
+minZ = -64
+maxX = -24
+maxY = 103
+maxZ = 227
+status = 0

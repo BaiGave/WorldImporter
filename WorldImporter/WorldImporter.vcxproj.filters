@@ -1,0 +1,113 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="头文件\utils">
+      <UniqueIdentifier>{e1f35ce1-7b34-4e2a-bf95-8dcb06f84bb6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\utils">
+      <UniqueIdentifier>{5235a81a-2e2e-4a3c-9862-bf93047eac41}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\functions">
+      <UniqueIdentifier>{432df8dc-65cb-435d-b5cf-91ea8157bb32}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\functions">
+      <UniqueIdentifier>{506a3810-4d73-4348-910d-1b4ee71404c9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\functions\json">
+      <UniqueIdentifier>{6e6aa3e4-c184-484b-af17-35411184569f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\functions\json">
+      <UniqueIdentifier>{11074400-e298-4f50-b9f3-8bf55d7983e0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\functions\mapping">
+      <UniqueIdentifier>{6a1822b5-c8da-4d67-b4f8-897d6a08846c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\functions\mapping">
+      <UniqueIdentifier>{eb064eac-3e6f-4778-9acd-13a915b20045}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\functions\tools">
+      <UniqueIdentifier>{3d78696a-cd52-44a2-9f82-cb35daacefb5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\functions\tools">
+      <UniqueIdentifier>{5484b0f4-fd87-477c-9ecc-64b1980337ac}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\export">
+      <UniqueIdentifier>{33dc952d-9c10-4d19-9cca-c30e1d0b67a8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\export">
+      <UniqueIdentifier>{70afca97-b68c-4c3b-9ece-d88a5209eb54}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="fileutils.cpp">
+      <Filter>源文件\utils</Filter>
+    </ClCompile>
+    <ClCompile Include="nbtutils.cpp">
+      <Filter>源文件\utils</Filter>
+    </ClCompile>
+    <ClCompile Include="biome_mapping.cpp">
+      <Filter>源文件\functions\mapping</Filter>
+    </ClCompile>
+    <ClCompile Include="decompressor.cpp">
+      <Filter>源文件\functions\tools</Filter>
+    </ClCompile>
+    <ClCompile Include="coord_conversion.cpp">
+      <Filter>源文件\functions\tools</Filter>
+    </ClCompile>
+    <ClCompile Include="block.cpp">
+      <Filter>源文件\functions</Filter>
+    </ClCompile>
+    <ClCompile Include="config.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="PointCloudExporter.cpp">
+      <Filter>源文件\export</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="nbtutils.h">
+      <Filter>头文件\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="fileutils.h">
+      <Filter>头文件\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="biome_mapping.h">
+      <Filter>头文件\functions\mapping</Filter>
+    </ClInclude>
+    <ClInclude Include="decompressor.h">
+      <Filter>头文件\functions\tools</Filter>
+    </ClInclude>
+    <ClInclude Include="coord_conversion.h">
+      <Filter>头文件\functions\tools</Filter>
+    </ClInclude>
+    <ClInclude Include="block.h">
+      <Filter>头文件\functions</Filter>
+    </ClInclude>
+    <ClInclude Include="config.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="PointCloudExporter.h">
+      <Filter>头文件\export</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="config\mappings\biomes_mapping.json">
+      <Filter>资源文件</Filter>
+    </None>
+  </ItemGroup>
+</Project>
