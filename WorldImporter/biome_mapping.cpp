@@ -3,12 +3,13 @@
 #include <iostream>
 #include <stdexcept>
 
-// ÈºÏµÓ³Éä±í
+// ç¾¤ç³»æ˜ å°„è¡¨
 std::unordered_map<std::string, int> biomeMapping;
 
 void loadBiomeMapping(const std::string& filepath) {
     std::ifstream file(filepath);
     if (!file.is_open()) {
+        return;
         throw std::runtime_error("Failed to open biome mapping file: " + filepath);
     }
 
@@ -33,5 +34,5 @@ int getBiomeId(const std::string& biome) {
     if (it != biomeMapping.end()) {
         return it->second;
     }
-    return -1;  // Èç¹ûÃ»ÓÐÕÒµ½¶ÔÓ¦µÄÈºÏµID£¬·µ»Ø-1
+    return -1;  // å¦‚æžœæ²¡æœ‰æ‰¾åˆ°å¯¹åº”çš„ç¾¤ç³»IDï¼Œè¿”å›ž-1
 }

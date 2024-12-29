@@ -7,7 +7,7 @@
 #include <iostream>
 #include <fstream>
 #include "block.h"
-#include "include/nlohmann/json.hpp"  // 导入 nlohmann::json
+#include "nlohmann/json.hpp"  // 导入 nlohmann::json
 
 class PointCloudExporter {
 public:
@@ -17,8 +17,6 @@ public:
     // 导出点云到 .obj 文件
     void ExportPointCloud(int xStart, int xEnd, int yStart, int yEnd, int zStart, int zEnd);
 
-    // 假设这个方法将方块坐标和ID添加到点云数据中
-    void AddPoint(int x, int y, int z, int blockId);
 
 private:
     std::ofstream objFile;  // 输出 .obj 文件流

@@ -96,7 +96,7 @@ NbtTagPtr readTag(const std::vector<char>& data, size_t& index) {
     if (type == TagType::END) {
         return nullptr; // TAG_End has no name or payload
     }
-
+    
     // 读取名字
     std::string name = readUtf8String(data, index);
 
@@ -385,6 +385,13 @@ NbtTagPtr getListElementByIndex(const NbtTagPtr& tag, size_t index) {
     return nullptr; // 如果标签类型不是 LIST 或索引无效，返回空指针
 }
 
+// 获取并返回 String 类型标签的值
+std::string getStringTag(const NbtTagPtr& tag) {
+    if (tag->type == TagType::STRING) {
+        return std::string(tag->payload.begin(), tag->payload.end());
+    }
+    return "";  // 如果不是 STRING 类型，则返回空字符串
+}
 
 // 获取并输出 tag 存储的值
 void getTagValue(const NbtTagPtr& tag, int depth = 0) {

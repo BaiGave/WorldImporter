@@ -1,0 +1,30 @@
+worldPath = D:\.minecraft\saves\新的世界
+packagePath = D:\.minecraft\versions\机械殖民地1.1.3
+biomeMappingFile = config\mappings\biomes_mapping.json
+minX = -50
+minY = -64
+minZ = -50
+maxX = 0
+maxY = 0
+maxZ = 0
+status = 1
+importByChunk = 0
+importByBlockType = 0
+pointCloudType = 0
+lodLevel = 0
+importFilePath = 
+selectedGameVersion = 机械殖民地1.1.3
+[1.21.4]
+gameFolderPath = D:\.minecraft\versions\1.21.4
+minecraftVersion = 1.21.4
+modLoaderType = Vanilla
+modList = 
+resourcePackList = 
+saveGameList = 新的世界
+[机械殖民地1.1.3]
+gameFolderPath = D:\.minecraft\versions\机械殖民地1.1.3
+minecraftVersion = 1.20.1
+modLoaderType = Forge
+modList = acedium;additional_lights;adhooks;adorabuild_structures;advancementplaques;alexs_mobs_extra_music;alexscaves;alexsdelight;alexsmobs;alternate_current;ambientsounds;amendments;appleskin;architectury;artifacts;auto_third_person;badmobs;badpackets;balm;beefix;bellsandwhistles;betterdays;betterdeserttemples;betterdungeons;betterendisland;betterfortresses;betterjungletemples;bettermineshafts;betteroceanmonuments;betterwitchhuts;betterwithminecolonies;biomemusic;blockui;bookshelf;born_in_chaos_v1;borninconfiguration;buildinggadgets2;byzantine;caelus;callablehorses;carryon;cataclysm;citadel;citresewn;cloth_config;clumps;collective;configured;connectiblechains;connectorextras;constructionwand;controlling;copycats;cosmeticarmorreworked;crafttweaker;create;create_connected;create_enchantment_industry;create_jetpack;create_jetpack_curios;create_ltab_f;create_sa;create_structures_arise;create_things_and_misc;create_ultimate_factory;createaddition;createdeco;createendertransmission;createtweaker;creativecore;cristellib;cupboard;curios;curtain;customskinloader;diagonalfences;diagonalwalls;diagonalwindows;domum_ornamentum;drippyloadingscreen;dummmmmmy;dungeons_arise;dynamiclightsreforged;easymagic;elytraslot;embeddium;embeddiumplus;emi;emi_loot;emiffect;emitrades;enchdesc;entity_model_features;entity_texture_features;entityculling;euphoria_patcher;explorerscompass;extrasounds;fabric_api;fancymenu;fantasyfurniture;farmersdelight;fastleafdecay;fastsuite;ferritecore;forgeendertech;freecam;frostrideable;ftbbackups2;ftblibrary;ftbquests;ftbteams;ftbultimine;ftbxmodcompat;functionalstorage;geckoanimfix;geckolib;hole_filler_mod;iceberg;icterine;idas;illager_additions;immersive_aircraft;immersive_melodies;integrated_api;integrated_stronghold;integrated_villages;interiors;inventorytotem;irisflw;itemfilters;jade;jadeaddons;jadecolonies;jecharacters;jei;journeymap;konkrete;kubejs;lanserverproperties;lionfishapi;lootbeams;lootjs;lootr;man_of_many_planes;mcwfences;medievalmusic;melody;memoryleakfix;memorysweep;midnightlib;minecolonies;minecolonies_compatibility;minecolonies_tweaks;moa_decor_toys;modernfix;modernui;moonlight;moreoverlays;mousetweaks;multipiston;myserveriscompatible;naturescompass;netmusic;nochatreports;not_interested;notenoughanimations;oculus;opack2reload;openloader;oworld2create;packetfixer;parcool;patchouli;placebo;playeranimator;polylib;polymorph;presencefootsteps;puzzleslib;quark;quarkdelight;quarkoddities;questsadditions;radiantgear;railways;redirector;refinedstorage;refinedstorageaddons;reliquary;rhino;rsinfinitybooster;searchables;seriousplayeranimations;skinlayers3d;sliceanddice;sneaky_link;sophisticatedbackpacks;sophisticatedcore;sound_physics_remastered;spyglass_of_curios;starlight;structureessentials;structurize;stylecolonies;supplementaries;t_and_t;tact;tacz;terrablender;terralith;titanium;toms_storage;torchbowmod;torchmaster;towntalk;traderefresh;trashslot;trimeffects;twilightforest;universalgrid;visual_keybinder;waystones;witherite_armor;yeetusexperimentus;yungsapi;yungsbridges;yungsextras;zeta
+resourcePackList = Create Immersive Aircrafts Resource Pack 1.20.1 - 2.0.zip;Create Simple Storage 2.1.zip;Distant Horizons汉化材质包.zip;FreshAnimations_v1.9.2.zip;FreshCompats_v1.5.1.zip;Lopy-Create-Sophisticated-Backpacks.zip;Minecraft-Mod-Language-Modpack-Converted-1.20.1.zip;Moonsu Better Create GUI Tom's Simple Storage 1.3.zip;NewDefault+v1.76[MC1.20-1.21.1].zip;Quark Programmer Art.zip;RefinedStorage2.zip;Stay_True_1.20.zip;v2_REFRESH_Building_Gadgets_Create_Like.zip;waystones_1.20.zip;[材质-优化]额外树叶剔除.zip;暴击音效MC_Dungeons_Crit [1.19.3].zip;更多3DVanilla 3D.zip
+saveGameList = 新的世界;新的世界2

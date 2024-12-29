@@ -1,7 +1,7 @@
 #ifndef BIOME_MAPPING_H
 #define BIOME_MAPPING_H
 
-#include "include/nlohmann/json.hpp"
+#include "nlohmann/json.hpp"
 #include <unordered_map>
 #include <string>
 

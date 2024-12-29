@@ -12,6 +12,9 @@
 #include <fstream> 
 #include <locale> 
 #include <codecvt>
+
+
+
 using namespace std;
 
 // 自定义哈希函数，用于std::pair<int, int>
@@ -161,10 +164,7 @@ int GetBlockId(int blockX, int blockY, int blockZ) {
 
     // 读取 region 数据
     if (regionCache.find(regionKey) == regionCache.end()) {
-        // 加载配置
-        Config config = LoadConfig("config\\config.txt");
-        std::string directoryPath = config.directoryPath;  // 替换为实际的路径"D://.minecraft//saves//新的世界2"
-        fileData = ReadFileToMemory(directoryPath, regionX, regionZ);
+        fileData = ReadFileToMemory(config.worldPath, regionX, regionZ);
         regionCache[regionKey] = fileData;
     }
     else {

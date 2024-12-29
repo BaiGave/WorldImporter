@@ -1,56 +1,92 @@
 #include "decompressor.h"
+#include "fileutils.h"
 #include <zlib.h>
 #include <iostream>
 #include <fstream>
+#include <stdexcept>
+#include <windows.h>
 
 using namespace std;
 
-// ½âÑ¹Çø¿éÊı¾İ
-bool DecompressData(const vector<char>& chunkData, vector<char>& decompressedData) {
-    // Êä³öÑ¹ËõÊı¾İµÄ´óĞ¡
-    //cout << "Ñ¹ËõÊı¾İ´óĞ¡: " << chunkData.size() << " ×Ö½Ú" << endl;
 
-    uLongf decompressedSize = chunkData.size() * 10;  // ¼ÙÉè½âÑ¹ºóµÄÊı¾İ´óĞ¡ÎªÑ¹ËõÊı¾İµÄ 10 ±¶
+// è§£å‹åŒºå—æ•°æ®
+bool DecompressData(const vector<char>& chunkData, vector<char>& decompressedData) {
+    // è¾“å‡ºå‹ç¼©æ•°æ®çš„å¤§å°
+    //cout << "å‹ç¼©æ•°æ®å¤§å°: " << chunkData.size() << " å­—èŠ‚" << endl;
+
+    uLongf decompressedSize = chunkData.size() * 10;  // å‡è®¾è§£å‹åçš„æ•°æ®å¤§å°ä¸ºå‹ç¼©æ•°æ®çš„ 10 å€
     decompressedData.resize(decompressedSize);
 
-    // µ÷ÓÃ½âÑ¹º¯Êı
+    // è°ƒç”¨è§£å‹å‡½æ•°
     int result = uncompress(reinterpret_cast<Bytef*>(decompressedData.data()), &decompressedSize,
         reinterpret_cast<const Bytef*>(chunkData.data()), chunkData.size());
 
-    // Èç¹ûÊä³ö»º³åÇøÌ«Ğ¡£¬Ôò¶¯Ì¬À©Õ¹»º³åÇø
+    // å¦‚æœè¾“å‡ºç¼“å†²åŒºå¤ªå°ï¼Œåˆ™åŠ¨æ€æ‰©å±•ç¼“å†²åŒº
     while (result == Z_BUF_ERROR) {
-        decompressedSize *= 2;  // Ôö¼Ó»º³åÇø´óĞ¡
+        decompressedSize *= 2;  // å¢åŠ ç¼“å†²åŒºå¤§å°
         decompressedData.resize(decompressedSize);
         result = uncompress(reinterpret_cast<Bytef*>(decompressedData.data()), &decompressedSize,
             reinterpret_cast<const Bytef*>(chunkData.data()), chunkData.size());
 
-        //cout << "³¢ÊÔÔö¼Ó»º³åÇø´óĞ¡µ½: " << decompressedSize << " ×Ö½Ú" << endl;
+        //cout << "å°è¯•å¢åŠ ç¼“å†²åŒºå¤§å°åˆ°: " << decompressedSize << " å­—èŠ‚" << endl;
     }
 
-    // ¸ù¾İ½âÑ¹½á¹ûÌá¹©²»Í¬µÄÈÕÖ¾ĞÅÏ¢
+    // æ ¹æ®è§£å‹ç»“æœæä¾›ä¸åŒçš„æ—¥å¿—ä¿¡æ¯
     if (result == Z_OK) {
-        decompressedData.resize(decompressedSize);  // ĞŞÕı½âÑ¹Êı¾İµÄÊµ¼Ê´óĞ¡
-        //cout << "½âÑ¹³É¹¦£¬½âÑ¹ºóÊı¾İ´óĞ¡: " << decompressedSize << " ×Ö½Ú" << endl;
+        decompressedData.resize(decompressedSize);  // ä¿®æ­£è§£å‹æ•°æ®çš„å®é™…å¤§å°
+        //cout << "è§£å‹æˆåŠŸï¼Œè§£å‹åæ•°æ®å¤§å°: " << decompressedSize << " å­—èŠ‚" << endl;
         return true;
     }
     else {
-        cerr << "´íÎó: ½âÑ¹Ê§°Ü£¬´íÎó´úÂë: " << result << endl;
-        cerr << "´íÎó: Êä³ö»º³åÇøÌ«Ğ¡" << endl;
+        cerr <<"é”™è¯¯: è§£å‹å¤±è´¥ï¼Œé”™è¯¯ä»£ç : " << result << endl;
+
         return false;
     }
 }
 
-// ½«½âÑ¹ºóµÄÊı¾İ±£´æµ½ÎÄ¼ş
+// å°†è§£å‹åçš„æ•°æ®ä¿å­˜åˆ°æ–‡ä»¶
 bool SaveDecompressedData(const vector<char>& decompressedData, const string& outputFileName) {
     ofstream outFile(outputFileName, ios::binary);
     if (outFile) {
         outFile.write(decompressedData.data(), decompressedData.size());
         outFile.close();
-        cout << "½âÑ¹Êı¾İÒÑ±£´æµ½ÎÄ¼ş: " << outputFileName << endl;
+        cout << "è§£å‹æ•°æ®å·²ä¿å­˜åˆ°æ–‡ä»¶: " << outputFileName << endl;
         return true;
     }
     else {
-        cerr << "´íÎó: ÎŞ·¨´´½¨Êä³öÎÄ¼ş: " << outputFileName << endl;
+        cerr << "é”™è¯¯: æ— æ³•åˆ›å»ºè¾“å‡ºæ–‡ä»¶: " << outputFileName << endl;
         return false;
     }
+}
+
+// è§£å‹ç¼© Gzip æ•°æ®
+std::vector<char> DecompressGzip(const std::wstring& filePath) {
+    // å°†std::wstringè½¬æ¢ä¸ºç³»ç»Ÿé»˜è®¤çš„å¤šå­—èŠ‚ç¼–ç ï¼ˆå¦‚ GBKï¼‰
+    std::string filePathStr = wstring_to_system_string(filePath);
+
+    // æ‰“å¼€ Gzip æ–‡ä»¶
+    gzFile gzFilePtr = gzopen(filePathStr.c_str(), "rb");
+    if (!gzFilePtr) {
+        throw std::runtime_error("æ— æ³•æ‰“å¼€ Gzip æ–‡ä»¶: " + filePathStr);
+    }
+
+    // è¯»å– Gzip æ–‡ä»¶çš„å†…å®¹
+    std::vector<char> decompressedData;
+    char buffer[1024];
+    int bytesRead;
+
+    while ((bytesRead = gzread(gzFilePtr, buffer, sizeof(buffer))) > 0) {
+        decompressedData.insert(decompressedData.end(), buffer, buffer + bytesRead);
+    }
+
+    // é”™è¯¯å¤„ç†
+    if (bytesRead < 0) {
+        gzclose(gzFilePtr);
+        throw std::runtime_error("è¯»å– Gzip æ–‡ä»¶æ—¶å‡ºé”™: " + filePathStr);
+    }
+
+    // å…³é—­æ–‡ä»¶
+    gzclose(gzFilePtr);
+
+    return decompressedData;
 }

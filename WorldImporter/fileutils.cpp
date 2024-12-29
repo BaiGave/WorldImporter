@@ -2,7 +2,10 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
-
+#include <stdexcept>
+#include <windows.h>
+#include <locale>
+#include <codecvt>
 using namespace std;
 
 
@@ -82,4 +85,53 @@ bool ExportChunkNBTDataToFile(const vector<char>& data, const string& filePath) 
 
     outFile.close();  // 关闭文件
     return true;  // 成功保存数据到文件，返回 true
+}
+
+
+
+// 设置全局 locale 为支持中文，支持 UTF-8 编码
+void SetGlobalLocale() {
+    std::setlocale(LC_ALL, "zh_CN.UTF-8");  // 使用 UTF-8 编码
+}
+
+// 将 wstring 转换为 UTF-8 编码的 string
+std::string wstring_to_string(const std::wstring& wstr) {
+    std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+    return converter.to_bytes(wstr);
+}
+
+// 将 string 转换为 UTF-8 编码的 wstring
+std::wstring string_to_wstring(const std::string& str) {
+    std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+    return converter.from_bytes(str);
+}
+
+// 将std::wstring转换为Windows系统默认的多字节编码（通常为 GBK 或 ANSI）
+std::string wstring_to_system_string(const std::wstring& wstr) {
+    int size_needed = WideCharToMultiByte(CP_ACP, 0, wstr.c_str(), (int)wstr.size(), nullptr, 0, nullptr, nullptr);
+    std::string str(size_needed, 0);
+    WideCharToMultiByte(CP_ACP, 0, wstr.c_str(), (int)wstr.size(), &str[0], size_needed, nullptr, nullptr);
+    return str;
+}
+
+// 获取文件夹名（路径中的最后一部分）
+std::wstring GetFolderNameFromPath(const std::wstring& folderPath) {
+    size_t pos = folderPath.find_last_of(L"\\");
+    if (pos != std::wstring::npos) {
+        return folderPath.substr(pos + 1);
+    }
+    return folderPath;
+}
+
+// 打印字节数据
+void printBytes(const std::vector<char>& data) {
+    std::cout << "文件字节数据: " << std::endl;
+    for (size_t i = 0; i < data.size(); ++i) {
+        // 打印每个字节的十六进制表示
+        printf("%02X ", static_cast<unsigned char>(data[i]));
+        if ((i + 1) % 16 == 0) {
+            std::cout << std::endl;
+        }
+    }
+    std::cout << std::endl;
 }

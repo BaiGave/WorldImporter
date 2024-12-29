@@ -1,14 +1,16 @@
 #ifndef BLOCK_H
 #define BLOCK_H
 
+#include "config.h"
+extern Config config;  // å£°æ˜å¤–éƒ¨å˜é‡
+
 #include <vector>
 #include <string>
 
-
-// »ñÈ¡Çø¿é NBT Êı¾İµÄº¯Êı
+// è·å–åŒºå— NBT æ•°æ®çš„å‡½æ•°
 std::vector<char> GetChunkNBTData(const std::vector<char>& fileData, int x, int z);
 
-// Í¨¹ıx, y, z ×ø±ê»ñÈ¡·½¿é ID
+// é€šè¿‡x, y, z åæ ‡è·å–æ–¹å— ID
 int GetBlockId(int blockX, int blockY, int blockZ);
 
 std::string GetBlockNameById(int blockId);

@@ -1,4 +1,4 @@
-#ifndef NBTUTILS_H
+ï»¿#ifndef NBTUTILS_H
 #define NBTUTILS_H
 
 #include <string>
@@ -6,45 +6,45 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <cstdint>
-#include <type_traits>  // ÓÃÓÚ std::is_integral
+#include <type_traits>  // ç”¨äº std::is_integral
 
-// NBT Tag Types Ã¶¾Ù£¬±íÊ¾²»Í¬µÄNBT±êÇ©ÀàĞÍ
+// NBT Tag Types æšä¸¾ï¼Œè¡¨ç¤ºä¸åŒçš„NBTæ ‡ç­¾ç±»å‹
 enum class TagType : uint8_t {
-    END = 0,         // TAG_End£¬±íÊ¾Ã»ÓĞ¸ü¶àµÄ±êÇ©
-    BYTE = 1,        // TAG_Byte£¬8Î»ÓĞ·ûºÅÕûÊı
-    SHORT = 2,       // TAG_Short£¬16Î»ÓĞ·ûºÅÕûÊı
-    INT = 3,         // TAG_Int£¬32Î»ÓĞ·ûºÅÕûÊı
-    LONG = 4,        // TAG_Long£¬64Î»ÓĞ·ûºÅÕûÊı
-    FLOAT = 5,       // TAG_Float£¬32Î»¸¡¶¯¾«¶ÈÊı
-    DOUBLE = 6,      // TAG_Double£¬64Î»¸¡¶¯¾«¶ÈÊı
-    BYTE_ARRAY = 7,  // TAG_Byte_Array£¬×Ö½ÚÊı×é
-    STRING = 8,      // TAG_String£¬UTF-8±àÂë×Ö·û´®
-    LIST = 9,        // TAG_List£¬±êÇ©ÁĞ±í
-    COMPOUND = 10,   // TAG_Compound£¬¸´ºÏ±êÇ©£¬ÀàËÆÓÚÒ»¸öÃüÃûµÄÈİÆ÷
-    INT_ARRAY = 11,  // TAG_Int_Array£¬ÕûÊıÊı×é
-    LONG_ARRAY = 12  // TAG_Long_Array£¬³¤ÕûĞÍÊı×é
+    END = 0,         // TAG_Endï¼Œè¡¨ç¤ºæ²¡æœ‰æ›´å¤šçš„æ ‡ç­¾
+    BYTE = 1,        // TAG_Byteï¼Œ8ä½æœ‰ç¬¦å·æ•´æ•°
+    SHORT = 2,       // TAG_Shortï¼Œ16ä½æœ‰ç¬¦å·æ•´æ•°
+    INT = 3,         // TAG_Intï¼Œ32ä½æœ‰ç¬¦å·æ•´æ•°
+    LONG = 4,        // TAG_Longï¼Œ64ä½æœ‰ç¬¦å·æ•´æ•°
+    FLOAT = 5,       // TAG_Floatï¼Œ32ä½æµ®åŠ¨ç²¾åº¦æ•°
+    DOUBLE = 6,      // TAG_Doubleï¼Œ64ä½æµ®åŠ¨ç²¾åº¦æ•°
+    BYTE_ARRAY = 7,  // TAG_Byte_Arrayï¼Œå­—èŠ‚æ•°ç»„
+    STRING = 8,      // TAG_Stringï¼ŒUTF-8ç¼–ç å­—ç¬¦ä¸²
+    LIST = 9,        // TAG_Listï¼Œæ ‡ç­¾åˆ—è¡¨
+    COMPOUND = 10,   // TAG_Compoundï¼Œå¤åˆæ ‡ç­¾ï¼Œç±»ä¼¼äºä¸€ä¸ªå‘½åçš„å®¹å™¨
+    INT_ARRAY = 11,  // TAG_Int_Arrayï¼Œæ•´æ•°æ•°ç»„
+    LONG_ARRAY = 12  // TAG_Long_Arrayï¼Œé•¿æ•´å‹æ•°ç»„
 };
 
-// NbtTag Ç°ÏòÉùÃ÷
+// NbtTag å‰å‘å£°æ˜
 struct NbtTag;
-using NbtTagPtr = std::shared_ptr<NbtTag>;  // Ê¹ÓÃshared_ptrÒÔ±ã¹ÜÀíÄÚ´æ
+using NbtTagPtr = std::shared_ptr<NbtTag>;  // ä½¿ç”¨shared_pträ»¥ä¾¿ç®¡ç†å†…å­˜
 
-// NbtTag ½á¹¹Ìå£¬±íÊ¾Ò»¸öNBT±êÇ©
+// NbtTag ç»“æ„ä½“ï¼Œè¡¨ç¤ºä¸€ä¸ªNBTæ ‡ç­¾
 struct NbtTag {
-    TagType type;  // ±êÇ©µÄÀàĞÍ
-    std::string name;  // ±êÇ©µÄÃû³Æ
-    std::vector<char> payload;  // ±êÇ©µÄÊı¾İ¸ºÔØ
-    std::vector<NbtTagPtr> children;  // ×Ó±êÇ©ÁĞ±í
-    TagType listType;  // LIST±êÇ©ÖĞÔªËØµÄÀàĞÍ£¬Ä¬ÈÏÎªEND
+    TagType type;  // æ ‡ç­¾çš„ç±»å‹
+    std::string name;  // æ ‡ç­¾çš„åç§°
+    std::vector<char> payload;  // æ ‡ç­¾çš„æ•°æ®è´Ÿè½½
+    std::vector<NbtTagPtr> children;  // å­æ ‡ç­¾åˆ—è¡¨
+    TagType listType;  // LISTæ ‡ç­¾ä¸­å…ƒç´ çš„ç±»å‹ï¼Œé»˜è®¤ä¸ºEND
 
     NbtTag(TagType t, const std::string& n)
         : type(t), name(n), listType(TagType::END) {
     }
 
-    // ¸ù¾İÀàĞÍ»ñÈ¡Öµ
+    // æ ¹æ®ç±»å‹è·å–å€¼
     template <typename T>
     T getValue() const {
-        // ¼ÙÉèÎÒÃÇ´¦ÀíµÄÀàĞÍ¿ÉÒÔ×ª»»Îª T
+        // å‡è®¾æˆ‘ä»¬å¤„ç†çš„ç±»å‹å¯ä»¥è½¬æ¢ä¸º T
         T value;
         std::memcpy(&value, payload.data(), sizeof(T));
         return value;
@@ -52,7 +52,7 @@ struct NbtTag {
 };
 
 
-// ÓÃÓÚ×Ö½ÚË³Ğò×ª»»£¨´ó¶Ëµ½Ö÷»ú×Ö½ÚĞò£©
+// ç”¨äºå­—èŠ‚é¡ºåºè½¬æ¢ï¼ˆå¤§ç«¯åˆ°ä¸»æœºå­—èŠ‚åºï¼‰
 template <typename T>
 T byteSwap(T value) {
     static_assert(std::is_integral<T>::value, "Only integral types are supported");
@@ -78,80 +78,83 @@ T byteSwap(T value) {
             ((value & 0x000000000000FF00) << 40) |
             ((value & 0x00000000000000FF) << 56));
     }
-    return value; // ÆäËûÀàĞÍ²»´¦Àí
+    return value; // å…¶ä»–ç±»å‹ä¸å¤„ç†
 }
 
-// º¯ÊıÉùÃ÷£º½«±êÇ©ÀàĞÍ×ª»»Îª×Ö·û´®£¬±ãÓÚµ÷ÊÔ
+// å‡½æ•°å£°æ˜ï¼šå°†æ ‡ç­¾ç±»å‹è½¬æ¢ä¸ºå­—ç¬¦ä¸²ï¼Œä¾¿äºè°ƒè¯•
 std::string tagTypeToString(TagType type);
 
-// º¯ÊıÉùÃ÷£º¶ÁÈ¡UTF-8×Ö·û´®²¢¸üĞÂË÷ÒıÎ»ÖÃ
+// å‡½æ•°å£°æ˜ï¼šè¯»å–UTF-8å­—ç¬¦ä¸²å¹¶æ›´æ–°ç´¢å¼•ä½ç½®
 std::string readUtf8String(const std::vector<char>& data, size_t& index);
 
-// º¯ÊıÉùÃ÷£º¶ÁÈ¡Ò»¸öNBT±êÇ©²¢¸üĞÂË÷ÒıÎ»ÖÃ
+// å‡½æ•°å£°æ˜ï¼šè¯»å–ä¸€ä¸ªNBTæ ‡ç­¾å¹¶æ›´æ–°ç´¢å¼•ä½ç½®
 NbtTagPtr readTag(const std::vector<char>& data, size_t& index);
 
-// º¯ÊıÉùÃ÷£º¶ÁÈ¡LISTÀàĞÍ±êÇ©²¢¸üĞÂË÷ÒıÎ»ÖÃ
+// å‡½æ•°å£°æ˜ï¼šè¯»å–LISTç±»å‹æ ‡ç­¾å¹¶æ›´æ–°ç´¢å¼•ä½ç½®
 NbtTagPtr readListTag(const std::vector<char>& data, size_t& index);
 
-// º¯ÊıÉùÃ÷£º¶ÁÈ¡COMPOUNDÀàĞÍ±êÇ©²¢¸üĞÂË÷ÒıÎ»ÖÃ
+// å‡½æ•°å£°æ˜ï¼šè¯»å–COMPOUNDç±»å‹æ ‡ç­¾å¹¶æ›´æ–°ç´¢å¼•ä½ç½®
 NbtTagPtr readCompoundTag(const std::vector<char>& data, size_t& index);
 
 
-// °ïÖúº¯Êı£º½«×Ö½ÚÊı×é×ª»»Îª¿É¶ÁµÄ×Ö·û´®
+// å¸®åŠ©å‡½æ•°ï¼šå°†å­—èŠ‚æ•°ç»„è½¬æ¢ä¸ºå¯è¯»çš„å­—ç¬¦ä¸²
 std::string bytesToString(const std::vector<char>& payload);
 
-// °ïÖúº¯Êı£º½«×Ö½ÚÊı×é×ª»»Îª×Ö½ÚÀàĞÍ£¨8Î»ÓĞ·ûºÅÕûÊı£©
+// å¸®åŠ©å‡½æ•°ï¼šå°†å­—èŠ‚æ•°ç»„è½¬æ¢ä¸ºå­—èŠ‚ç±»å‹ï¼ˆ8ä½æœ‰ç¬¦å·æ•´æ•°ï¼‰
 int8_t bytesToByte(const std::vector<char>& payload);
 
-// °ïÖúº¯Êı£º½«×Ö½ÚÊı×é×ª»»Îª¶ÌÕûĞÍ£¨16Î»ÓĞ·ûºÅÕûÊı£©
+// å¸®åŠ©å‡½æ•°ï¼šå°†å­—èŠ‚æ•°ç»„è½¬æ¢ä¸ºçŸ­æ•´å‹ï¼ˆ16ä½æœ‰ç¬¦å·æ•´æ•°ï¼‰
 int16_t bytesToShort(const std::vector<char>& payload);
 
-// °ïÖúº¯Êı£º½«×Ö½ÚÊı×é×ª»»ÎªÕûĞÍ£¨32Î»ÓĞ·ûºÅÕûÊı£©
+// å¸®åŠ©å‡½æ•°ï¼šå°†å­—èŠ‚æ•°ç»„è½¬æ¢ä¸ºæ•´å‹ï¼ˆ32ä½æœ‰ç¬¦å·æ•´æ•°ï¼‰
 int32_t bytesToInt(const std::vector<char>& payload);
 
-// °ïÖúº¯Êı£º½«×Ö½ÚÊı×é×ª»»Îª³¤ÕûĞÍ£¨64Î»ÓĞ·ûºÅÕûÊı£©
+// å¸®åŠ©å‡½æ•°ï¼šå°†å­—èŠ‚æ•°ç»„è½¬æ¢ä¸ºé•¿æ•´å‹ï¼ˆ64ä½æœ‰ç¬¦å·æ•´æ•°ï¼‰
 int64_t bytesToLong(const std::vector<char>& payload);
 
-// °ïÖúº¯Êı£º½«×Ö½ÚÊı×é×ª»»Îª¸¡¶¯¾«¶ÈÊı£¨32Î»¸¡¶¯¾«¶ÈÊı£©
+// å¸®åŠ©å‡½æ•°ï¼šå°†å­—èŠ‚æ•°ç»„è½¬æ¢ä¸ºæµ®åŠ¨ç²¾åº¦æ•°ï¼ˆ32ä½æµ®åŠ¨ç²¾åº¦æ•°ï¼‰
 float bytesToFloat(const std::vector<char>& payload);
 
-// °ïÖúº¯Êı£º½«×Ö½ÚÊı×é×ª»»ÎªË«¾«¶È¸¡¶¯Êı£¨64Î»¸¡¶¯¾«¶ÈÊı£©
+// å¸®åŠ©å‡½æ•°ï¼šå°†å­—èŠ‚æ•°ç»„è½¬æ¢ä¸ºåŒç²¾åº¦æµ®åŠ¨æ•°ï¼ˆ64ä½æµ®åŠ¨ç²¾åº¦æ•°ï¼‰
 double bytesToDouble(const std::vector<char>& payload);
 
-//¼ÓÔØÈºÏµ¶ÔÕÕ±í
+//åŠ è½½ç¾¤ç³»å¯¹ç…§è¡¨
 void loadBiomeMapping(const std::string& filepath);
 
-// Í¨¹ıÃû×Ö»ñÈ¡×Ó¼¶±êÇ©
+// é€šè¿‡åå­—è·å–å­çº§æ ‡ç­¾
 NbtTagPtr getChildByName(const NbtTagPtr& tag, const std::string& childName);
 
-//»ñÈ¡×Ó¼¶±êÇ©
+//è·å–å­çº§æ ‡ç­¾
 std::vector<NbtTagPtr> getChildren(const NbtTagPtr& tag);
 
-//»ñÈ¡TagÀàĞÍ
+//è·å–Tagç±»å‹
 TagType getTagType(const NbtTagPtr& tag);
 
-// Í¨¹ıË÷Òı»ñÈ¡LIST±êÇ©ÖĞµÄÔªËØ
+// é€šè¿‡ç´¢å¼•è·å–LISTæ ‡ç­¾ä¸­çš„å…ƒç´ 
 NbtTagPtr getListElementByIndex(const NbtTagPtr& tag, size_t index);
 
-// »ñÈ¡²¢Êä³ö tag ´æ´¢µÄÖµ
+//è·å–å¹¶è¾“å‡ºStringç±»å‹tagå­˜å‚¨çš„å€¼
+std::string getStringTag(const NbtTagPtr& tag);
+
+// è·å–å¹¶è¾“å‡º tag å­˜å‚¨çš„å€¼
 void getTagValue(const NbtTagPtr& tag, int depth);
 
-// »ñÈ¡ section ÏÂµÄ biomes ±êÇ©£¨TAG_Compound£©
+// è·å– section ä¸‹çš„ biomes æ ‡ç­¾ï¼ˆTAG_Compoundï¼‰
 NbtTagPtr getBiomes(const NbtTagPtr& sectionTag);
 
-//»ñÈ¡×ÓÇø¿éµÄÈºÏµÊı¾İ
+//è·å–å­åŒºå—çš„ç¾¤ç³»æ•°æ®
 std::vector<int> getBiomeData(const NbtTagPtr& biomesTag, const std::unordered_map<std::string, int>& biomeMapping);
 
-// »ñÈ¡ biomes ÏÂµÄ palette ±êÇ©£¨LIST °üº¬×Ö·û´®£©
+// è·å– biomes ä¸‹çš„ palette æ ‡ç­¾ï¼ˆLIST åŒ…å«å­—ç¬¦ä¸²ï¼‰
 std::vector<std::string> getBiomePalette(const NbtTagPtr& biomesTag);
 
-// »ñÈ¡ section ÏÂµÄ block_states ±êÇ©£¨TAG_Compound£©
+// è·å– section ä¸‹çš„ block_states æ ‡ç­¾ï¼ˆTAG_Compoundï¼‰
 NbtTagPtr getBlockStates(const NbtTagPtr& sectionTag);
 
-// ¶ÁÈ¡ block_states µÄ palette Êı¾İ
+// è¯»å– block_states çš„ palette æ•°æ®
 std::vector<std::string> getBlockPalette(const NbtTagPtr& blockStatesTag);
 
-// ½âÎö block_states µÄ data Êı¾İ
+// è§£æ block_states çš„ data æ•°æ®
 std::vector<int> getBlockStatesData(const NbtTagPtr& blockStatesTag, const std::vector<std::string>& blockPalette);
 
 NbtTagPtr getSectionByIndex(const NbtTagPtr& rootTag, int sectionIndex);

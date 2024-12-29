@@ -49,6 +49,12 @@
     <Filter Include="头文件\export">
       <UniqueIdentifier>{70afca97-b68c-4c3b-9ece-d88a5209eb54}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\functions\nbt">
+      <UniqueIdentifier>{9a52f18d-b6e9-4348-8f16-91cc7a4a99a9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\functions\nbt">
+      <UniqueIdentifier>{1dc6216c-c72b-4bee-9620-ae60415af6cf}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -78,6 +84,15 @@
     <ClCompile Include="PointCloudExporter.cpp">
       <Filter>源文件\export</Filter>
     </ClCompile>
+    <ClCompile Include="JarReader.cpp">
+      <Filter>源文件\functions\tools</Filter>
+    </ClCompile>
+    <ClCompile Include="version.cpp">
+      <Filter>源文件\functions\tools</Filter>
+    </ClCompile>
+    <ClCompile Include="dat.cpp">
+      <Filter>源文件\functions\nbt</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="nbtutils.h">
@@ -103,6 +118,18 @@
     </ClInclude>
     <ClInclude Include="PointCloudExporter.h">
       <Filter>头文件\export</Filter>
+    </ClInclude>
+    <ClInclude Include="JarReader.h">
+      <Filter>头文件\functions\tools</Filter>
+    </ClInclude>
+    <ClInclude Include="version.h">
+      <Filter>头文件\functions\tools</Filter>
+    </ClInclude>
+    <ClInclude Include="dat.h">
+      <Filter>头文件\functions\nbt</Filter>
+    </ClInclude>
+    <ClInclude Include="global.h">
+      <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

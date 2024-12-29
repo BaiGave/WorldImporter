@@ -119,6 +119,8 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <LanguageStandard>stdcpp14</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -132,21 +134,28 @@
     <ClCompile Include="block.cpp" />
     <ClCompile Include="config.cpp" />
     <ClCompile Include="coord_conversion.cpp" />
+    <ClCompile Include="dat.cpp" />
     <ClCompile Include="decompressor.cpp" />
     <ClCompile Include="fileutils.cpp" />
+    <ClCompile Include="JarReader.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="nbtutils.cpp" />
     <ClCompile Include="PointCloudExporter.cpp" />
+    <ClCompile Include="version.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="biome_mapping.h" />
     <ClInclude Include="block.h" />
     <ClInclude Include="config.h" />
     <ClInclude Include="coord_conversion.h" />
+    <ClInclude Include="dat.h" />
     <ClInclude Include="decompressor.h" />
     <ClInclude Include="fileutils.h" />
+    <ClInclude Include="global.h" />
+    <ClInclude Include="JarReader.h" />
     <ClInclude Include="nbtutils.h" />
     <ClInclude Include="PointCloudExporter.h" />
+    <ClInclude Include="version.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="config\mappings\biomes_mapping.json" />
