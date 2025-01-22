@@ -145,7 +145,8 @@ std::string GetMinecraftVersion(const std::wstring& gameFolderPath, std::string&
 }
 
 
-// 获取 mod 列表（.jar 文件中的 modId） 
+
+// 获取 mod 列表并更新 modListCache
 void GetModList(const std::wstring& gameFolderPath, std::vector<std::string>& modList, const std::string& modLoaderType) {
     std::wstring folderName = GetFolderNameFromPath(gameFolderPath);
     std::string folderNameStr = wstring_to_string(folderName); // 转换为 std::string
@@ -153,10 +154,10 @@ void GetModList(const std::wstring& gameFolderPath, std::vector<std::string>& mo
     // 获取 mods 文件夹路径
     std::wstring modsFolderPath = gameFolderPath + L"\\mods\\";
 
+    // 获取 mods 文件夹中的所有文件，匹配 .jar 文件
     WIN32_FIND_DATA findFileData;
     HANDLE hFind = INVALID_HANDLE_VALUE;
 
-    // 获取 mods 文件夹中的所有文件，匹配 .jar 文件
     std::wstring searchPath = modsFolderPath + L"*.jar";  // 搜索路径，查找所有 .jar 文件
 
     hFind = FindFirstFile(searchPath.c_str(), &findFileData);
@@ -164,7 +165,7 @@ void GetModList(const std::wstring& gameFolderPath, std::vector<std::string>& mo
         return;
     }
 
-    // 用于存储新扫描到的 mod
+    // 临时存储当前扫描到的 mod
     std::unordered_map<std::string, FolderData> newMods;
 
     // 遍历文件夹中的所有 .jar 文件
@@ -199,63 +200,75 @@ void GetModList(const std::wstring& gameFolderPath, std::vector<std::string>& mo
 
     FindClose(hFind);
 
-    // 比较新 mod 列表与缓存中的旧 mod 列表
-    if (modListCache.find(folderNameStr) != modListCache.end()) {
-        // 存在缓存时，比较新增和消失的 mod
-        std::unordered_map<std::string, FolderData> currentMods;
+    // 临时存储一个新的 modList
+    std::unordered_map<std::string, FolderData> updatedModListMap;
 
-        // 将缓存中的 mod 存入 currentMods
-        for (const auto& modData : modListCache[folderNameStr]) {
-            currentMods[modData.namespaceName] = modData;
-        }
-
-        // 查找消失的 mod
-        for (const auto& modData : modListCache[folderNameStr]) {
-            if (newMods.find(modData.namespaceName) == newMods.end()) {
-                std::cout << "Mod disappeared: " << modData.namespaceName << std::endl;
-            }
-        }
-
-        // 查找新增的 mod，并按顺序添加
-        for (const auto& newMod : newMods) {
-            if (currentMods.find(newMod.first) == currentMods.end()) {
-                std::cout << "New mod found: " << newMod.first << std::endl;
-            }
+    // 先复制原 modList 中已有的元素到 updatedModListMap 中
+    for (const auto& mod : modList) {
+        if (newMods.find(mod) != newMods.end()) {
+            updatedModListMap[mod] = newMods[mod];
+            newMods.erase(mod);  // 删除已经存在的 mod，避免重复添加
         }
     }
 
-    // 更新 modListCache，并将新 mod 按顺序加入 modList
-    std::vector<FolderData> sortedMods;
+    // 然后将新的 mod 加入 updatedModListMap
     for (const auto& newMod : newMods) {
-        sortedMods.push_back(newMod.second);
+        updatedModListMap[newMod.first] = newMod.second;
     }
 
-    // 按顺序排序，越前面优先级越高
-    std::sort(sortedMods.begin(), sortedMods.end(), [](const FolderData& a, const FolderData& b) {
-        return a.namespaceName < b.namespaceName;  // 可以根据其他条件排序
-        });
+    // 更新 modListCache 和 modList
+    std::vector<FolderData> finalModList;
 
-    // 更新 modListCache
-    modListCache[folderNameStr] = sortedMods;
+    // 在 modList 中插入 "vanilla" 和 "resourcePack" ，如果它们尚未存在
+    bool vanillaFound = false, resourcePackFound = false;
 
-    // 更新最终的 modList
+    // 将 modList 中已有的 mod 加入 finalModList
+    for (const auto& modId : modList) {
+        if (modId == "vanilla" && !vanillaFound) {
+            finalModList.push_back({ "vanilla", wstring_to_string(modsFolderPath + L"vanilla.jar") });
+            vanillaFound = true;
+        }
+        if (modId == "resourcePack" && !resourcePackFound) {
+            finalModList.push_back({ "resourcePack", wstring_to_string(modsFolderPath + L"resourcePack.jar") });
+            resourcePackFound = true;
+        }
+
+        // 如果原 modList 中的 mod 在新的扫描列表中找不到，删除它
+        if (updatedModListMap.find(modId) != updatedModListMap.end()) {
+            finalModList.push_back(updatedModListMap[modId]);
+            updatedModListMap.erase(modId);  // 已添加的 mod 从 map 中移除
+        }
+    }
+
+    // 如果 modList 中没有 "vanilla" 和 "resourcePack"，添加它们到最后
+    if (!vanillaFound) {
+        finalModList.push_back({ "vanilla", wstring_to_string(modsFolderPath + L"vanilla.jar") });
+    }
+    if (!resourcePackFound) {
+        finalModList.push_back({ "resourcePack", wstring_to_string(modsFolderPath + L"resourcePack.jar") });
+    }
+
+    // 把新的 mod 加入 finalModList（这些是从 newMods 中没有被提前加入的）
+    for (const auto& newMod : updatedModListMap) {
+        finalModList.push_back(newMod.second);
+    }
+
+    // 更新 modListCache 和 modList
+    modListCache[folderNameStr] = finalModList;
+
+    // 更新 modList（与 modListCache 保持一致的顺序）
     modList.clear();
-    for (const auto& sortedMod : sortedMods) {
-        modList.push_back(sortedMod.namespaceName);
+    for (const auto& modData : finalModList) {
+        modList.push_back(modData.namespaceName);
     }
 }
 
-// 获取资源包列表
+// 获取资源包列表，并支持手动调整顺序
 void GetResourcePacks(const std::wstring& gameFolderPath, std::vector<std::string>& resourcePacks) {
     std::wstring folderName = GetFolderNameFromPath(gameFolderPath);
     std::string folderNameStr = wstring_to_string(folderName); // 转换为 std::string
 
-    // 在遍历之前检查是否已经存在该 folderName
-    if (resourcePacksCache.find(folderNameStr) != resourcePacksCache.end()) {
-        // 如果存在，清空缓存
-        resourcePacksCache[folderNameStr].clear();
-    }
-
+    // 获取资源包文件夹路径
     std::wstring resourcePacksFolderPath = gameFolderPath + L"\\resourcepacks\\";  // 资源包文件夹路径
 
     WIN32_FIND_DATA findFileData;
@@ -269,21 +282,62 @@ void GetResourcePacks(const std::wstring& gameFolderPath, std::vector<std::strin
         return;
     }
 
+    // 临时存储当前扫描到的资源包
+    std::unordered_map<std::string, FolderData> newResourcePacks;
+
     // 遍历文件夹中的所有文件
     do {
-        // 如果是文件而不是目录
         if ((findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
             std::wstring fileName = findFileData.cFileName;
-            resourcePacks.push_back(wstring_to_string(fileName));  // 将文件名添加到资源包列表
-
-            // 缓存资源包信息到全局 resourcePacksCache
-            FolderData resourcePackInfo = { wstring_to_string(fileName), wstring_to_string(resourcePacksFolderPath + fileName) };
-            resourcePacksCache[folderNameStr].push_back(resourcePackInfo);
+            std::string resourcePackName = wstring_to_string(fileName);
+            newResourcePacks[resourcePackName] = { resourcePackName, wstring_to_string(resourcePacksFolderPath + fileName) };
         }
     } while (FindNextFile(hFind, &findFileData) != 0);
 
     FindClose(hFind);
+
+    // 临时存储更新后的资源包列表
+    std::unordered_map<std::string, FolderData> updatedResourcePackMap;
+
+    // 先复制原 resourcePacks 中已有的元素到 updatedResourcePackMap 中
+    for (const auto& resourcePackName : resourcePacks) {
+        if (newResourcePacks.find(resourcePackName) != newResourcePacks.end()) {
+            updatedResourcePackMap[resourcePackName] = newResourcePacks[resourcePackName];
+            newResourcePacks.erase(resourcePackName);  // 删除已经存在的资源包，避免重复添加
+        }
+    }
+
+    // 然后将新的资源包加入 updatedResourcePackMap
+    for (const auto& newResourcePack : newResourcePacks) {
+        updatedResourcePackMap[newResourcePack.first] = newResourcePack.second;
+    }
+
+    // 更新 resourcePacksCache 和 resourcePacks
+    std::vector<FolderData> finalResourcePackList;
+
+    // 将 resourcePacks 中已有的资源包加入 finalResourcePackList
+    for (const auto& resourcePackName : resourcePacks) {
+        if (updatedResourcePackMap.find(resourcePackName) != updatedResourcePackMap.end()) {
+            finalResourcePackList.push_back(updatedResourcePackMap[resourcePackName]);
+            updatedResourcePackMap.erase(resourcePackName);  // 已添加的资源包从 map 中移除
+        }
+    }
+
+    // 把新的资源包加入 finalResourcePackList（这些是从 newResourcePacks 中没有被提前加入的）
+    for (const auto& newResourcePack : updatedResourcePackMap) {
+        finalResourcePackList.push_back(newResourcePack.second);
+    }
+
+    // 更新 resourcePacksCache
+    resourcePacksCache[folderNameStr] = finalResourcePackList;
+
+    // 更新 resourcePacks（与 resourcePacksCache 保持一致的顺序）
+    resourcePacks.clear();
+    for (const auto& resourcePackData : finalResourcePackList) {
+        resourcePacks.push_back(resourcePackData.namespaceName);
+    }
 }
+
 
 // 获取存档文件列表并读取LevelName
 void GetSaveFiles(const std::wstring& gameFolderPath, std::vector<std::string>& saveFiles) {

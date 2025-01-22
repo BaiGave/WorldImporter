@@ -11,6 +11,9 @@
 #include "global.h"
 #include "JarReader.h"
 #include "version.h"
+#include "blockstate.h"
+#include "model.h"
+#include "texture.h"
 #include "fileutils.h"
 Config config;  // 定义全局变量
 
@@ -46,6 +49,11 @@ void loadAndUpdateConfig() {
         // 获取 minecraft 版本
         std::string minecraftVersion = GetMinecraftVersion(gameFolderPath, modloader);
 
+
+        mods = versionConfig.modList;
+        resourcePacks = versionConfig.resourcePackList;
+
+        
         // 刷新 mod 列表、资源包列表和保存文件
         GetModList(gameFolderPath, mods, modloader);
         GetResourcePacks(gameFolderPath, resourcePacks);
@@ -68,12 +76,32 @@ void loadAndUpdateConfig() {
     std::vector<std::string> saves;
 
     std::string modloader;
+    
 
     // 假设游戏文件夹路径
     std::wstring gameFolderPath = string_to_wstring(config.packagePath);
     std::wstring FolderName = GetFolderNameFromPath(gameFolderPath);
     std::string VersionName = wstring_to_string(FolderName);
     std::string minecraftVersion = GetMinecraftVersion(gameFolderPath, modloader);
+
+    try
+    {
+        mods = config.versionConfigs[VersionName].modList;
+        
+    }
+    catch (const std::exception&)
+    {
+
+    }
+    try
+    {
+        resourcePacks = config.versionConfigs[VersionName].resourcePackList;
+
+    }
+    catch (const std::exception&)
+    {
+
+    }
 
     GetModList(gameFolderPath, mods, modloader);
     GetResourcePacks(gameFolderPath, resourcePacks);
@@ -95,15 +123,13 @@ void loadAndUpdateConfig() {
 
 
     // 获取当前整合包的版本
-    std::string Path = config.versionConfigs[config.selectedGameVersion].gameFolderPath;
-    currentSelectedGameVersion = Path;
+    currentSelectedGameVersion = config.selectedGameVersion;
 
 }
-//新建一个.h 和.cpp 文件  ，用于blockstate 方面.json文件   （名字可以就叫blockstate ), 首先需要一个读取方法  输入值是
+
 void init() {
     SetGlobalLocale();
     loadAndUpdateConfig();  // 调用新的方法加载和更新配置
-
     loadBiomeMapping(config.biomeMappingFile);
     InitializeGlobalBlockPalette();
 }
@@ -133,25 +159,18 @@ void exportPointCloud() {
     LoadConfig("config\\config.json");
 }
 
+
 int main() {
     init();
-    // 遍历 VersionCache 输出每个 folderName 和对应的 FolderData
-    for (const auto& entry : VersionCache) {
-        // 获取当前的 folderName
-        std::string folderNameStr(entry.first.begin(), entry.first.end());
-
-        // 如果 folderName 与 currentSelectedGameVersion 匹配，才输出该条数据
-        if (folderNameStr == currentSelectedGameVersion) {
-            std::cout << "Folder: " << folderNameStr << std::endl;
-
-            // 遍历 FolderData 向量并输出内容
-            for (const auto& folderData : entry.second) {
-                std::cout << "  Namespace: " << folderData.namespaceName << ", Path: " << folderData.path << std::endl;
-            }
-        }
-    }
-
-
+    //ProcessBlockstateJson("minecraft", "wheat[age=0]");
+    //ProcessBlockstateJson("minecraft", "oak_sapling");
+    //ProcessBlockstateJson("minecraft", "andesite");
+    //ProcessBlockstateJson("minecraft", "bamboo_stairs[facing=east,half=bottom,shape=inner_left]");
+    //ProcessBlockstateJson("minecraft", "acacia_button[face=ceiling,facing=east,powered=false]");
+    //ProcessBlockstateJson("minecraft", "anvil[facing=south]");
+    //ProcessBlockstateJson("minecraft", "acacia_fence[east=true,north=true,south=true,west=false]");
+    //ProcessBlockstateJson("minecraft", "redstone_wire[east=up,north=side,south=side,west=none,power=0]");
+    
     while (true) {  
         //status： 
         // 0 代表程序未启动

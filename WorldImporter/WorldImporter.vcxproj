@@ -104,6 +104,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -132,6 +133,7 @@
   <ItemGroup>
     <ClCompile Include="biome_mapping.cpp" />
     <ClCompile Include="block.cpp" />
+    <ClCompile Include="blockstate.cpp" />
     <ClCompile Include="config.cpp" />
     <ClCompile Include="coord_conversion.cpp" />
     <ClCompile Include="dat.cpp" />
@@ -139,13 +141,16 @@
     <ClCompile Include="fileutils.cpp" />
     <ClCompile Include="JarReader.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="model.cpp" />
     <ClCompile Include="nbtutils.cpp" />
     <ClCompile Include="PointCloudExporter.cpp" />
+    <ClCompile Include="texture.cpp" />
     <ClCompile Include="version.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="biome_mapping.h" />
     <ClInclude Include="block.h" />
+    <ClInclude Include="blockstate.h" />
     <ClInclude Include="config.h" />
     <ClInclude Include="coord_conversion.h" />
     <ClInclude Include="dat.h" />
@@ -153,8 +158,10 @@
     <ClInclude Include="fileutils.h" />
     <ClInclude Include="global.h" />
     <ClInclude Include="JarReader.h" />
+    <ClInclude Include="model.h" />
     <ClInclude Include="nbtutils.h" />
     <ClInclude Include="PointCloudExporter.h" />
+    <ClInclude Include="texture.h" />
     <ClInclude Include="version.h" />
   </ItemGroup>
   <ItemGroup>

@@ -55,6 +55,12 @@
     <Filter Include="源文件\functions\nbt">
       <UniqueIdentifier>{1dc6216c-c72b-4bee-9620-ae60415af6cf}</UniqueIdentifier>
     </Filter>
+    <Filter Include="源文件\functions\texture">
+      <UniqueIdentifier>{3fea0638-9c5c-4279-8725-120068eb2ca0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\functions\texture">
+      <UniqueIdentifier>{925aea1a-6470-4f39-bedc-981c4d99b1ce}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -93,6 +99,15 @@
     <ClCompile Include="dat.cpp">
       <Filter>源文件\functions\nbt</Filter>
     </ClCompile>
+    <ClCompile Include="blockstate.cpp">
+      <Filter>源文件\functions\json</Filter>
+    </ClCompile>
+    <ClCompile Include="model.cpp">
+      <Filter>源文件\functions\json</Filter>
+    </ClCompile>
+    <ClCompile Include="texture.cpp">
+      <Filter>源文件\functions\texture</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="nbtutils.h">
@@ -130,6 +145,15 @@
     </ClInclude>
     <ClInclude Include="global.h">
       <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="blockstate.h">
+      <Filter>头文件\functions\json</Filter>
+    </ClInclude>
+    <ClInclude Include="model.h">
+      <Filter>头文件\functions\json</Filter>
+    </ClInclude>
+    <ClInclude Include="texture.h">
+      <Filter>头文件\functions\texture</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

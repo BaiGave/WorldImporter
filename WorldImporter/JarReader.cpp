@@ -122,7 +122,7 @@ std::vector<unsigned char> JarReader::getBinaryFileContent(const std::string& fi
     // 查找文件在 .jar 文件中的索引
     zip_file_t* fileInJar = zip_fopen(zipFile, filePathInJar.c_str(), 0);
     if (!fileInJar) {
-        std::cerr << "Failed to open file in .jar: " << filePathInJar << std::endl;
+        //std::cerr << "Failed to open file in .jar: " << filePathInJar << std::endl;
         return fileContent;
     }
 

@@ -1,4 +1,4 @@
-#include "decompressor.h"
+﻿#include "decompressor.h"
 #include "fileutils.h"
 #include <zlib.h>
 #include <iostream>
