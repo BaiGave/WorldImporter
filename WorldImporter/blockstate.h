@@ -11,19 +11,20 @@
 #include "model.h"
 #include "config.h"
 #include "JarReader.h"
+#include "GlobalCache.h"
+#include <future>
+#include <mutex>
 
-// 外部声明
-extern std::unordered_map<std::string, std::vector<FolderData>> VersionCache;
-extern std::unordered_map<std::string, std::vector<FolderData>> modListCache;
-extern std::unordered_map<std::string, std::vector<FolderData>> resourcePacksCache;
-extern std::unordered_map<std::string, std::vector<FolderData>> saveFilesCache;
 
-extern std::string currentSelectedGameVersion;
+// 全局缓存，键为 namespace，值为 blockId 到 ModelData 的映射
+static std::unordered_map<std::string, std::unordered_map<std::string, ModelData>> BlockModelCache;
 
-extern Config config;
+std::unordered_map<std::string, ModelData> ProcessBlockstateJson(const std::string& namespaceName, const std::vector<std::string>& blockIds);
 
-// 函数声明
+
 nlohmann::json GetBlockstateJson(const std::string& namespaceName, const std::string& blockId);
-nlohmann::json ProcessBlockstateJson(const std::string& namespaceName, const std::string& blockId);
 
+void ProcessAllBlockstateVariants();
+
+void PrintModelCache(const std::unordered_map<std::string, std::unordered_map<std::string, ModelData>>& cache);
 #endif // BLOCKSTATE_H

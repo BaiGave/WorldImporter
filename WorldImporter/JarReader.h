@@ -4,6 +4,7 @@
 #include <zip.h>
 #include <string>
 #include <vector>
+#include "fileutils.h"
 #include <nlohmann/json.hpp>  // 用于解析JSON
 
 #ifdef _WIN32
@@ -12,6 +13,13 @@
 
 class JarReader {
 public:
+    bool open() {
+        if (zipFile) return true;
+        int error;
+        zipFile = zip_open(wstring_to_string(jarFilePath).c_str(), 0, &error);
+        return zipFile != nullptr;
+    }
+
     // 枚举类型，用于表示 mod 的类型
     enum class ModType {
         Unknown,  // 未知类型
@@ -19,6 +27,10 @@ public:
         Mod
     };
 
+    void cacheAllResources(
+        std::unordered_map<std::string, std::vector<unsigned char>>& textureCache,
+        std::unordered_map<std::string, nlohmann::json>& blockstateCache,
+        std::unordered_map<std::string, nlohmann::json>& modelCache);
     // 构造函数，接受 .jar 文件路径
     JarReader(const std::wstring& jarFilePath);
 
@@ -34,6 +46,12 @@ public:
 
     // 获取 .jar 文件中指定路径的文件内容（二进制）
     std::vector<unsigned char> getBinaryFileContent(const std::string& filePathInJar);
+
+    void cacheAllBlockstates(std::unordered_map<std::string, nlohmann::json>& cache);
+
+    void cacheAllModels(std::unordered_map<std::string, nlohmann::json>& cache);
+
+    void cacheAllTextures(std::unordered_map<std::string, std::vector<unsigned char>>& textureCache);
 
     // 获取 .jar 文件中指定子目录下的所有文件
     std::vector<std::string> getFilesInSubDirectory(const std::string& subDir);
@@ -88,6 +106,7 @@ private:
     std::wstring jarFilePath;  // .jar 文件的路径
     ModType modType;  // 当前 mod 的类型
     std::string modNamespace; // 当前 mod 的命名空间
+
 };
 
 #endif // JARREADER_H

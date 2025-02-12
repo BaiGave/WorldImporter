@@ -6,6 +6,7 @@
 #include "block.h"
 #include "PointCloudExporter.h"
 #include <fstream> 
+#include <latch>
 #include <locale> 
 #include <codecvt>
 #include "global.h"
@@ -15,6 +16,7 @@
 #include "model.h"
 #include "texture.h"
 #include "fileutils.h"
+#include "GlobalCache.h"
 Config config;  // 定义全局变量
 
 using namespace std;
@@ -129,13 +131,13 @@ void loadAndUpdateConfig() {
 
 void init() {
     SetGlobalLocale();
-    loadAndUpdateConfig();  // 调用新的方法加载和更新配置
+    loadAndUpdateConfig();
     loadBiomeMapping(config.biomeMappingFile);
     InitializeGlobalBlockPalette();
+    InitializeAllCaches();
 }
 
 void exportPointCloud() {
-
     // 创建点云导出器实例，指定输出文件
     PointCloudExporter exporter("output.obj", "block_id_mapping.json");
 
@@ -159,18 +161,55 @@ void exportPointCloud() {
     LoadConfig("config\\config.json");
 }
 
-
 int main() {
     init();
-    //ProcessBlockstateJson("minecraft", "wheat[age=0]");
-    //ProcessBlockstateJson("minecraft", "oak_sapling");
-    //ProcessBlockstateJson("minecraft", "andesite");
-    //ProcessBlockstateJson("minecraft", "bamboo_stairs[facing=east,half=bottom,shape=inner_left]");
-    //ProcessBlockstateJson("minecraft", "acacia_button[face=ceiling,facing=east,powered=false]");
-    //ProcessBlockstateJson("minecraft", "anvil[facing=south]");
-    //ProcessBlockstateJson("minecraft", "acacia_fence[east=true,north=true,south=true,west=false]");
-    //ProcessBlockstateJson("minecraft", "redstone_wire[east=up,north=side,south=side,west=none,power=0]");
     
+    // 测量执行时间
+    auto start_time = high_resolution_clock::now();
+    //std::vector<std::string> blockList = {
+    //"grass_block[snowy=false]",
+    //"wheat[age=0]",
+    //"wheat[age=1]",
+    //"wheat[age=2]",
+    //"wheat[age=3]",
+    //"wheat[age=4]",
+    //"oak_sapling",
+    //"bamboo_stairs[facing=east,half=bottom,shape=inner_left]",
+    //"acacia_button[face=ceiling,facing=east,powered=false]",
+    //"anvil[facing=south]",
+    //"acacia_fence[east=true,north=true,south=true,west=false]",
+    //"redstone_wire[east=up,north=side,south=side,west=none,power=0]",
+    //"activator_rail[powered=false,shape=north_south]"
+    //};
+
+    //const auto& modelCache = ProcessBlockstateJson("minecraft", blockList);
+    //
+
+    //blockList = {"blackstone_bricks_stairs[facing=east,half=bottom,shape=straight]",
+    //"acacia_ladder[facing=north]"};
+
+    //const auto& modelCache1 = ProcessBlockstateJson("quark", blockList);
+    //
+
+    //for (const auto& namespaceEntry : modelCache1) {
+    //    const std::string& namespaceName = namespaceEntry.first;
+    //    const auto& blockIdMap = namespaceEntry.second;
+
+    //    for (const auto& blockEntry : blockIdMap) {
+    //        const std::string& blockId = blockEntry.first;
+    //        const ModelData& modelData = blockEntry.second;
+    //        // 生成文件（假设 CreateModelFiles 是线程安全的）
+    //        CreateModelFiles(modelData, modelData.objName + ".obj", modelData.objName + ".mtl");
+    //    }
+    //}
+    ProcessAllBlockstateVariants();
+    auto end_time = high_resolution_clock::now();
+    auto duration = duration_cast<milliseconds>(end_time - start_time);
+    cout << "Total time: " << duration.count() << " milliseconds" << endl;
+    //PrintTextureCache(textureCache);
+    //PrintModListCache();
+    //PrintModelCache(modelCache1);
+
     while (true) {  
         //status： 
         // 0 代表程序未启动

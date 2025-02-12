@@ -139,6 +139,7 @@
     <ClCompile Include="dat.cpp" />
     <ClCompile Include="decompressor.cpp" />
     <ClCompile Include="fileutils.cpp" />
+    <ClCompile Include="GlobalCache.cpp" />
     <ClCompile Include="JarReader.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="model.cpp" />
@@ -157,6 +158,7 @@
     <ClInclude Include="decompressor.h" />
     <ClInclude Include="fileutils.h" />
     <ClInclude Include="global.h" />
+    <ClInclude Include="GlobalCache.h" />
     <ClInclude Include="JarReader.h" />
     <ClInclude Include="model.h" />
     <ClInclude Include="nbtutils.h" />

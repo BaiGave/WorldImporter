@@ -7,9 +7,12 @@
 #include <string>
 #include <cmath>
 #include <nlohmann/json.hpp>  // 用于解析 JSON
+#include <mutex>
+#include <future>
 #include "JarReader.h"
 #include "config.h"
 #include "texture.h"
+#include "GlobalCache.h"
 #include "version.h"
 #pragma once
 
@@ -17,19 +20,49 @@
 #ifndef M_PI
 #define M_PI 3.14159265358979323846264338327950288
 #endif
-// 外部声明
-extern std::unordered_map<std::string, std::vector<FolderData>> VersionCache;
-extern std::unordered_map<std::string, std::vector<FolderData>> modListCache;
-extern std::unordered_map<std::string, std::vector<FolderData>> resourcePacksCache;
-extern std::unordered_map<std::string, std::vector<FolderData>> saveFilesCache;
 
-extern std::string currentSelectedGameVersion;
 
-extern Config config;
+// 模型数据结构体
+struct ModelData {
+    // 顶点数据（x,y,z顺序存储）
+    std::vector<float> vertices;          // 每3个元素构成一个顶点
+    std::vector<float> uvCoordinates;     // 每2个元素构成一个UV坐标
+    
+    // 面数据（四边面）
+    std::vector<int> faces;               // 每4个顶点索引构成一个面
+    std::vector<int> uvFaces;             // 每4个UV索引构成一个面
+    
+    // 材质系统（保持原优化方案）
+    std::vector<int> materialIndices;     // 每个面对应的材质索引
+
+    std::vector<std::string> materialNames;
+    std::vector<std::string> texturePaths;
+    
+    std::string objName;
+};
+
+
+
+static std::mutex cacheMutex;
+static std::recursive_mutex parentModelCacheMutex;
+static std::mutex texturePathCacheMutex; // 保护缓存的互斥锁
+
+// 静态缓存
+static std::unordered_map<std::string, ModelData> modelCache; // Key: "namespace:blockId"
+static std::unordered_map<std::string, nlohmann::json> parentModelCache;
+static std::unordered_map<std::string, std::string> texturePathCache; // Key: "namespace:pathPart", Value: 保存的材质路径
+
+
 
 // 函数声明
+ModelData ProcessModelJson(const std::string& namespaceName, const std::string& blockId,int rotationX, int rotationY);
+ModelData MergeModelData(const ModelData& data1, const ModelData& data2);
+void MergeModelsDirectly(ModelData& data1, const ModelData& data2);
+void CreateModelFiles(const ModelData& data, const std::string& filename);
+
+
+
 nlohmann::json GetModelJson(const std::string& namespaceName, const std::string& blockId);
-nlohmann::json ProcessModelJson(const std::string& namespaceName, const std::string& blockId);
 nlohmann::json LoadParentModel(const std::string& namespaceName, const std::string& blockId, nlohmann::json& currentModelJson);
 nlohmann::json MergeModelJson(const nlohmann::json& parentModelJson, const nlohmann::json& currentModelJson);
 

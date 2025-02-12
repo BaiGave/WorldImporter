@@ -5,8 +5,7 @@
 #include <numeric>
 #include <Windows.h>   
 #include <iostream>
-
-
+#include <sstream>
 bool matchConditions(const std::unordered_map<std::string, std::string>& blockConditions, const nlohmann::json& when) {
     // 判断 when 条件是否满足
     if (when.is_object()) {
@@ -71,307 +70,519 @@ bool matchConditions(const std::unordered_map<std::string, std::string>& blockCo
     return true;
 }
 
-
 // 获取目标路径对应的 .json 文件的内容
-nlohmann::json GetBlockstateJson(const std::string& namespaceName, const std::string& blockId) {
-    // 获取当前整合包的版本
-    std::string currentVersion = currentSelectedGameVersion;
+nlohmann::json GetBlockstateJson(const std::string& namespaceName,
+    const std::string& blockId) {
 
-    // 在 modListCache 中查找对应的模组列表
-    if (modListCache.find(currentVersion) == modListCache.end()) {
-        std::cerr << "Mod list for version " << currentVersion << " not found!" << std::endl;
-        return nlohmann::json();  // 返回空的 JSON
+    // 构造缓存键
+    std::string cacheKey = namespaceName + ":" + blockId;
+
+    // 加锁保护缓存访问
+    std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
+
+    auto it = GlobalCache::blockstates.find(cacheKey);
+    if (it != GlobalCache::blockstates.end()) {
+        return it->second;
     }
 
-    // 获取该版本的游戏文件夹路径
-    std::string gameFolderPath = config.versionConfigs[currentVersion].gameFolderPath;
-
-    // 遍历 modListCache 中该版本的模组列表，查找对应的 .json 文件
-    for (const auto& folderData : modListCache[currentVersion]) {
-        // 获取当前模组的命名空间
-        std::string modNamespace = folderData.namespaceName;
-
-        // 如果是 Vanilla (minecraft)
-        if (modNamespace == "vanilla") {
-            // 从 VersionCache 中获取 minecraft 的路径
-            if (VersionCache.find(currentVersion) != VersionCache.end()) {
-                for (const auto& folderData : VersionCache[currentVersion]) {
-                    // 获取 minecraft 文件夹路径
-                    std::wstring minecraftPath = string_to_wstring(folderData.path);
-                    JarReader minecraftReader(minecraftPath);
-
-                    // 构造 blockstate 文件的路径
-                    std::string blockstateFilePath = "assets/" + namespaceName + "/blockstates/" + blockId + ".json";
-                    std::string fileContent = minecraftReader.getFileContent(blockstateFilePath);
-
-                    // 如果找到了文件，解析 JSON 内容并返回
-                    if (!fileContent.empty()) {
-                        try {
-                            nlohmann::json blockstateJson = nlohmann::json::parse(fileContent);
-                            return blockstateJson;
-                        }
-                        catch (const std::exception& e) {
-                            std::cerr << "Error parsing JSON: " << e.what() << std::endl;
-                            return nlohmann::json();  // 返回空的 JSON
-                        }
-                    }
-                }
-            }
-            else {
-                std::cerr << "Minecraft version not found in VersionCache!" << std::endl;
-                return nlohmann::json();  // 返回空的 JSON
-            }
-        }
-        // 如果是 ResourcePack
-        else if (modNamespace == "resourcePack") {
-            // 遍历 resourcePacksCache 查找对应的 resourcePack 文件
-            for (const auto& folderData : resourcePacksCache[currentVersion]) {
-                std::wstring resourcePackPath = string_to_wstring(folderData.path);
-                JarReader resourcePackReader(resourcePackPath);
-
-                // 构造 blockstate 文件的路径
-                std::string blockstateFilePath = "assets/" + namespaceName + "/blockstates/" + blockId + ".json";
-                std::string fileContent = resourcePackReader.getFileContent(blockstateFilePath);
-
-                // 如果找到了文件，解析 JSON 内容并返回
-                if (!fileContent.empty()) {
-                    try {
-                        nlohmann::json blockstateJson = nlohmann::json::parse(fileContent);
-                        return blockstateJson;
-                    }
-                    catch (const std::exception& e) {
-                        std::cerr << "Error parsing JSON: " << e.what() << std::endl;
-                        return nlohmann::json();  // 返回空的 JSON
-                    }
-                }
-            }
-        }
-        // 如果是普通 Mod 模组，继续按原逻辑处理
-        else {
-            // 构造 blockstate 文件的路径
-            std::string blockstateFilePath = "assets/" + namespaceName + "/blockstates/" + blockId + ".json";
-            std::wstring jarFilePath = string_to_wstring(folderData.path);
-            JarReader jarReader(jarFilePath);
-
-            // 如果找到了文件，解析 JSON 内容并返回
-            std::string fileContent = jarReader.getFileContent(blockstateFilePath);
-            if (!fileContent.empty()) {
-                try {
-                    nlohmann::json blockstateJson = nlohmann::json::parse(fileContent);
-                    return blockstateJson;
-                }
-                catch (const std::exception& e) {
-                    std::cerr << "Error parsing JSON: " << e.what() << std::endl;
-                    return nlohmann::json();  // 返回空的 JSON
-                }
-            }
-        }
-    }
-
-    // 如果没有找到文件，返回空 JSON
-    std::cerr << "blockstate file not found for blockId: " << blockId << std::endl;
-    return nlohmann::json();  // 返回空的 JSON
+    // 未找到时的处理（可选）
+    std::cerr << "Blockstate not found: " << cacheKey << std::endl;
+    return nlohmann::json();
 }
 
+std::unordered_map<std::string, ModelData> ProcessBlockstateJson(
+    const std::string& namespaceName,
+    const std::vector<std::string>& blockIds
+) {
+    std::unordered_map<std::string, ModelData> result;
+    // 确保 namespace 条目存在
+    auto& namespaceCache = BlockModelCache[namespaceName];
 
-nlohmann::json ProcessBlockstateJson(const std::string& namespaceName, const std::string& blockId) {
-    // 使用正则表达式分离 blockId 和方括号中的条件
-    std::regex blockIdRegex("^(.*?)\\[(.*)\\]$"); // 匹配 blockId 和方括号中的条件部分
-    std::smatch match;
-
-    std::string baseBlockId = blockId;  // 默认 baseBlockId 为原始的 blockId
-    std::string condition = "";         // 默认条件为空
-
-    // 如果 blockId 包含方括号，则提取基础部分和条件部分
-    std::unordered_map<std::string, std::string> blockConditions;  // 存储 blockId 中的条件
-    if (std::regex_match(blockId, match, blockIdRegex)) {
-        baseBlockId = match.str(1);  // 提取方括号前的部分作为基础 blockId
-        condition = match.str(2);    // 提取方括号中的内容作为条件
-
-        // 解析 blockId 中的条件并存储为键值对
-        std::regex conditionRegex("(\\w+)=(true|false|side\\|up|none|side|up|\\d+)");  // 更新条件格式以支持 side|up
-        std::sregex_iterator iter(condition.begin(), condition.end(), conditionRegex);
-        std::sregex_iterator end;
-        while (iter != end) {
-            blockConditions[(*iter)[1].str()] = (*iter)[2].str();
-            ++iter;
+    for (const auto& blockId : blockIds) {
+        auto cacheIt = namespaceCache.find(blockId);
+        if (cacheIt != namespaceCache.end()) {
+            result[blockId] = cacheIt->second;
+            continue;
         }
-    }
+        // 如果已缓存，跳过处理
+        if (namespaceCache.find(blockId) != namespaceCache.end()) {
+            continue;
+        }
 
-    // 先通过 GetBlockstateJson 读取文件，使用基础的 blockId
-    nlohmann::json blockstateJson = GetBlockstateJson(namespaceName, baseBlockId);
 
-    // 如果读取失败，返回空的 JSON
-    if (blockstateJson.is_null()) {
-        return nlohmann::json();
-    }
+        // 解析 blockId 和条件
+        static const std::regex blockIdRegex(R"(^(.*?)\[(.*)\]$)");
+        std::smatch match;
 
-    // 处理读取到的 JSON 数据，根据实际需求进行处理
-    if (blockstateJson.contains("variants")) {
-        // 获取 "variants" 部分
-        auto variants = blockstateJson["variants"];
+        std::string baseBlockId = blockId;
+        std::string condition;
+        std::unordered_map<std::string, std::string> blockConditions;
 
-        // 遍历每个变种项
-        for (auto& variant : variants.items()) {
-            std::string variantKey = variant.key();
-            // 判断变种名是否符合条件
-            if (condition.empty() || variantKey == condition) {
-                // 如果变种值是数组类型，处理加权选择
-                if (variant.value().is_array()) {
-                    // 获取所有模型及其权重
-                    std::vector<std::pair<nlohmann::json, int>> modelsWithWeights;
-                    int totalWeight = 0;
+        if (std::regex_match(blockId, match, blockIdRegex)) {
+            baseBlockId = match.str(1);
+            condition = match.str(2);
 
-                    for (const auto& item : variant.value()) {
-                        // 获取每个模型的 weight 属性，如果没有指定，则默认值为 1
-                        int weight = item.contains("weight") ? item["weight"].get<int>() : 1;
-                        modelsWithWeights.push_back({ item, weight });
-                        totalWeight += weight;
-                    }
+            static const std::regex conditionRegex(R"((\w+)=([^,]+))");
+            auto conditions_begin = std::sregex_iterator(condition.begin(), condition.end(), conditionRegex);
+            auto conditions_end = std::sregex_iterator();
 
-                    // 随机选择一个模型，根据权重
-                    if (totalWeight > 0) {
-                        // 创建一个随机数生成器
-                        std::random_device rd;
-                        std::mt19937 gen(rd());
-                        std::uniform_int_distribution<> dis(1, totalWeight);
-
-                        // 随机选择一个权重
-                        int randomWeight = dis(gen);
-                        int cumulativeWeight = 0;
-                        for (const auto& model : modelsWithWeights) {
-                            cumulativeWeight += model.second;
-                            if (randomWeight <= cumulativeWeight) {
-                                // 获取 modelId
-                                std::string modelId = model.first.contains("model") ? model.first["model"].get<std::string>() : "";
-
-                                if (!modelId.empty()) {
-                                    // 判断 modelId 是否包含冒号，如果包含冒号，使用冒号前的部分作为新的 namespaceName
-                                    size_t colonPos = modelId.find(':');
-                                    std::string modelNamespace = namespaceName;  // 默认为原 namespaceName
-
-                                    if (colonPos != std::string::npos) {
-                                        modelNamespace = modelId.substr(0, colonPos);  // 提取冒号前的部分
-                                        modelId = modelId.substr(colonPos + 1);      // 提取冒号后的部分
-                                    }
-
-                                    // 使用 ProcessModelJson 获取模型数据
-                                    nlohmann::json selectedModelJson = ProcessModelJson(modelNamespace, modelId);
-
-                                    // 输出最终选择的模型数据
-                                    std::cout << "Processed model JSON: " << selectedModelJson << std::endl;
-
-                                    // 在此可以进行其他处理，比如返回最终的 JSON 或做进一步的合并
-                                }
-
-                                break;
-                            }
-                        }
-                    }
-                }
-                else {
-                    // 处理模型ID
-                    std::string modelId = variant.value().contains("model") ? variant.value()["model"].get<std::string>() : "";
-
-                    if (!modelId.empty()) {
-                        // 判断 modelId 是否包含冒号，如果包含冒号，使用冒号前的部分作为新的 namespaceName
-                        size_t colonPos = modelId.find(':');
-                        std::string modelNamespace = namespaceName;  // 默认为原 namespaceName
-
-                        if (colonPos != std::string::npos) {
-                            modelNamespace = modelId.substr(0, colonPos);  // 提取冒号前的部分
-                            modelId = modelId.substr(colonPos + 1);      // 提取冒号后的部分
-                        }
-
-                        // 使用 ProcessModelJson 获取模型数据
-                        nlohmann::json selectedModelJson = ProcessModelJson(modelNamespace, modelId);
-
-                        // 输出最终选择的模型数据
-                        std::cout << "Processed model JSON: " << selectedModelJson << std::endl;
-
-                        // 在此可以进行其他处理，比如返回最终的 JSON 或做进一步的合并
-                    }
-                }
+            for (auto i = conditions_begin; i != conditions_end; ++i) {
+                std::smatch submatch = *i;
+                blockConditions[submatch[1].str()] = submatch[2].str();
             }
         }
-    }
 
-    // 处理 multipart 部分
-    if (blockstateJson.contains("multipart")) {
-        // 获取 "multipart" 部分
-        auto multipart = blockstateJson["multipart"];
+        // 读取 blockstate JSON
+        nlohmann::json blockstateJson = GetBlockstateJson(namespaceName, baseBlockId);
+        if (blockstateJson.is_null()) {
+            continue; // 文件不存在或解析失败，跳过
+        }
 
-        // 遍历每个 multipart 条目
-        for (const auto& item : multipart) {
-            // 每个 multipart 条目包含条件和模型
-            if (item.contains("when") && item.contains("apply")) {
-                auto when = item["when"];
-                auto apply = item["apply"];
+        // 处理 Variants 和 Multipart
+        ModelData mergedModel;
+        std::vector<ModelData> selectedModels;
 
-                // 判断条件是否符合
-                bool conditionMatched = matchConditions(blockConditions, when);
+        // 处理读取到的 JSON 数据，根据实际需求进行处理
+        if (blockstateJson.contains("variants")) {
 
-                // 如果条件匹配，则输出 apply 部分的模型
-                if (conditionMatched) {
+            // 获取 "variants" 部分
+            auto variants = blockstateJson["variants"];
 
-                    // 处理模型ID
-                    if (apply.is_array()) {
-                        // 如果 apply 部分是一个数组，处理加权选择
-                        int totalWeight = 0;
+            // 遍历每个变种项
+            for (auto& variant : variants.items()) {
+                std::string variantKey = variant.key();
+                // 判断变种名是否符合条件
+                if (condition.empty() || variantKey == condition) {
+                    // 提取旋转参数
+                    int rotationX = 0;
+                    int rotationY = 0;
+                    if (variant.value().contains("x")) {
+                        rotationX = variant.value()["x"].get<int>();
+                    }
+                    if (variant.value().contains("y")) {
+                        rotationY = variant.value()["y"].get<int>();
+                    }
+                    // 如果变种值是数组类型，处理加权选择
+                    if (variant.value().is_array()) {
+                        // 获取所有模型及其权重
                         std::vector<std::pair<nlohmann::json, int>> modelsWithWeights;
+                        int totalWeight = 0;
 
-                        for (const auto& modelItem : apply) {
-                            int weight = modelItem.contains("weight") ? modelItem["weight"].get<int>() : 1;
-                            modelsWithWeights.push_back({ modelItem, weight });
+                        for (const auto& item : variant.value()) {
+                            // 获取每个模型的 weight 属性，如果没有指定，则默认值为 1
+                            int weight = item.contains("weight") ? item["weight"].get<int>() : 1;
+                            modelsWithWeights.push_back({ item, weight });
                             totalWeight += weight;
                         }
 
-                        // 随机选择一个模型
+                        // 随机选择一个模型，根据权重
                         if (totalWeight > 0) {
+                            // 创建一个随机数生成器
                             std::random_device rd;
                             std::mt19937 gen(rd());
                             std::uniform_int_distribution<> dis(1, totalWeight);
 
+                            // 随机选择一个权重
                             int randomWeight = dis(gen);
                             int cumulativeWeight = 0;
                             for (const auto& model : modelsWithWeights) {
                                 cumulativeWeight += model.second;
                                 if (randomWeight <= cumulativeWeight) {
+                                    // 获取 modelId
                                     std::string modelId = model.first.contains("model") ? model.first["model"].get<std::string>() : "";
-                                    if (!modelId.empty()) {
+
+                                    if (!modelId.empty()) { 
+                                        // 判断 modelId 是否包含冒号，如果包含冒号，使用冒号前的部分作为新的 namespaceName
                                         size_t colonPos = modelId.find(':');
-                                        std::string modelNamespace = namespaceName;
+                                        std::string modelNamespace = namespaceName;  // 默认为原 namespaceName
+
                                         if (colonPos != std::string::npos) {
-                                            modelNamespace = modelId.substr(0, colonPos);
-                                            modelId = modelId.substr(colonPos + 1);
+                                            modelNamespace = modelId.substr(0, colonPos);  // 提取冒号前的部分
+                                            modelId = modelId.substr(colonPos + 1);      // 提取冒号后的部分
                                         }
-                                        nlohmann::json selectedModelJson = ProcessModelJson(modelNamespace, modelId);
-                                        std::cout << "Processed model JSON: " << selectedModelJson << std::endl;
+
+
+                                        ModelData selectedModel = ProcessModelJson(modelNamespace, modelId, rotationX, rotationY);
+                                        selectedModels.push_back(selectedModel); // 收集选中的模型
                                     }
+
                                     break;
                                 }
                             }
                         }
                     }
                     else {
-                        // 如果 apply 部分不是数组，直接处理单个模型
-                        std::string modelId = apply.contains("model") ? apply["model"].get<std::string>() : "";
+                        // 处理模型ID
+                        std::string modelId = variant.value().contains("model") ? variant.value()["model"].get<std::string>() : "";
+
                         if (!modelId.empty()) {
+                            // 判断 modelId 是否包含冒号，如果包含冒号，使用冒号前的部分作为新的 namespaceName
                             size_t colonPos = modelId.find(':');
-                            std::string modelNamespace = namespaceName;
+                            std::string modelNamespace = namespaceName;  // 默认为原 namespaceName
+
                             if (colonPos != std::string::npos) {
-                                modelNamespace = modelId.substr(0, colonPos);
-                                modelId = modelId.substr(colonPos + 1);
+                                modelNamespace = modelId.substr(0, colonPos);  // 提取冒号前的部分
+                                modelId = modelId.substr(colonPos + 1);      // 提取冒号后的部分
                             }
-                            nlohmann::json selectedModelJson = ProcessModelJson(modelNamespace, modelId);
-                            std::cout << "Processed model JSON: " << selectedModelJson << std::endl;
+
+                            ModelData selectedModel = ProcessModelJson(modelNamespace, modelId, rotationX, rotationY);
+                            selectedModels.push_back(selectedModel); // 收集选中的模型
+
                         }
                     }
                 }
             }
         }
-    }
 
-    return blockstateJson;
+        // 处理 multipart 部分
+        if (blockstateJson.contains("multipart")) {
+            // 获取 "multipart" 部分
+            auto multipart = blockstateJson["multipart"];
+
+            // 遍历每个 multipart 条目
+            for (const auto& item : multipart) {
+                // 每个 multipart 条目必须包含 apply，但 when 是可选的
+                if (item.contains("apply")) {
+                    auto apply = item["apply"];
+                    bool conditionMatched = true;  // 默认没有 when 时条件为 true
+                    // 如果有 when 条件，则进行判断
+                    if (item.contains("when")) {
+                        auto when = item["when"];
+                        conditionMatched = matchConditions(blockConditions, when);
+                    }
+               
+                
+                    // 如果条件匹配，则输出 apply 部分的模型
+                    if (conditionMatched) {
+                        // 提取旋转参数
+                        int rotationX = 0;
+                        int rotationY = 0;
+                        if (apply.contains("x")) {
+                            rotationX = apply["x"].get<int>();
+                        }
+                        if (apply.contains("y")) {
+                            rotationY = apply["y"].get<int>();
+                        }
+
+                        // 处理模型ID
+                        if (apply.is_array()) {
+                            // 如果 apply 部分是一个数组，处理加权选择
+                            int totalWeight = 0;
+                            std::vector<std::pair<nlohmann::json, int>> modelsWithWeights;
+
+                            for (const auto& modelItem : apply) {
+                                int weight = modelItem.contains("weight") ? modelItem["weight"].get<int>() : 1;
+                                modelsWithWeights.push_back({ modelItem, weight });
+                                totalWeight += weight;
+                            }
+
+                            // 随机选择一个模型
+                            if (totalWeight > 0) {
+                                std::random_device rd;
+                                std::mt19937 gen(rd());
+                                std::uniform_int_distribution<> dis(1, totalWeight);
+
+                                int randomWeight = dis(gen);
+                                int cumulativeWeight = 0;
+                                for (const auto& model : modelsWithWeights) {
+                                    cumulativeWeight += model.second;
+                                    if (randomWeight <= cumulativeWeight) {
+                                        std::string modelId = model.first.contains("model") ? model.first["model"].get<std::string>() : "";
+                                        if (!modelId.empty()) {
+                                            size_t colonPos = modelId.find(':');
+                                            std::string modelNamespace = namespaceName;
+                                            if (colonPos != std::string::npos) {
+                                                modelNamespace = modelId.substr(0, colonPos);
+                                                modelId = modelId.substr(colonPos + 1);
+                                            }
+                                            ModelData selectedModel = ProcessModelJson(modelNamespace, modelId, rotationX, rotationY);
+                                            selectedModels.push_back(selectedModel); // 收集选中的模型
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        else {
+                            // 如果 apply 部分不是数组，直接处理单个模型
+                            std::string modelId = apply.contains("model") ? apply["model"].get<std::string>() : "";
+                            if (!modelId.empty()) {
+                                size_t colonPos = modelId.find(':');
+                                std::string modelNamespace = namespaceName;
+                                if (colonPos != std::string::npos) {
+                                    modelNamespace = modelId.substr(0, colonPos);
+                                    modelId = modelId.substr(colonPos + 1);
+                                }
+                                ModelData selectedModel = ProcessModelJson(modelNamespace, modelId, rotationX, rotationY);
+
+                            
+                                selectedModels.push_back(selectedModel); // 收集选中的模型
+                            }
+                        }
+                    }
+                
+                }
+            }
+        }
+
+        // 合并模型
+        if (!selectedModels.empty()) {
+            mergedModel = selectedModels[0];
+            for (size_t i = 1; i < selectedModels.size(); ++i) {
+                mergedModel = MergeModelData(mergedModel, selectedModels[i]);
+            }
+
+            // 生成文件（仅在首次处理时）
+            std::string fileName = blockId;
+            size_t slashPos = fileName.find_last_of("/\\");
+            if (slashPos != std::string::npos) {
+                fileName = fileName.substr(slashPos + 1);
+            }
+            mergedModel.objName = fileName;
+
+        }
+
+        // 存入缓存
+        namespaceCache[blockId] = mergedModel;
+        result[blockId] = mergedModel;
+        }
+
+    // 返回全局缓存
+    return result;
+}
+// 新增辅助函数：计算排列矩阵维度
+int CalculateMatrixSize(int variantCount) {
+    return static_cast<int>(std::ceil(std::sqrt(variantCount)));
 }
 
+
+void ProcessAllBlockstateVariants() {
+    // 获取全局缓存中的blockstates
+    std::unordered_map<std::string, nlohmann::json> allBlockstates;
+    {
+        std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
+        allBlockstates = GlobalCache::blockstates;
+    }
+
+    // 创建全局合并模型容器
+    ModelData mergedModel;
+    std::string mergedBaseName = "combined_master_model";
+    int totalModelCount = 0;
+    int ModelCount = 0;
+    for (const auto& blockstatePair : allBlockstates) {
+        const nlohmann::json& blockstateJson = blockstatePair.second;
+        if (blockstateJson.contains("multipart")) continue;
+
+        // 处理variants
+        if (blockstateJson.contains("variants")) {
+            const auto& variants = blockstateJson["variants"];
+            totalModelCount+=variants.size();
+        }
+
+        
+    }
+    // 计算全局网格位置
+    const int n = CalculateMatrixSize(totalModelCount);
+    const float spacing = 2.0f;
+
+   
+    // 第一阶段：流式处理并合并所有模型
+    for (const auto& blockstatePair : allBlockstates) {
+        const std::string& cacheKey = blockstatePair.first;
+        const nlohmann::json& blockstateJson = blockstatePair.second;
+
+        // 分割命名空间和基础方块ID
+        size_t colonPos = cacheKey.find(':');
+        if (colonPos == std::string::npos) continue;
+
+        std::string namespaceName = cacheKey.substr(0, colonPos);
+        std::string baseBlockId = cacheKey.substr(colonPos + 1);
+
+        if (blockstateJson.contains("multipart")) continue;
+
+        // 处理variants
+        if (blockstateJson.contains("variants")) {
+            std::vector<std::string> variantBlockIds;
+            const auto& variants = blockstateJson["variants"];
+
+            // 收集所有变种ID
+            for (const auto& variantEntry : variants.items()) {
+                std::string variantKey = variantEntry.key();
+                std::string fullBlockId = baseBlockId;
+                // 构造带状态的方块ID（过滤空variant）
+                if (!variantKey.empty()) {
+                    // 转换variant语法：variantKey -> state条件
+                    std::string stateCondition;
+                    std::istringstream iss(variantKey);
+                    std::string statePair;
+
+                    // 分割多个状态条件（用逗号分隔）
+                    while (std::getline(iss, statePair, ',')) {
+                        size_t eqPos = statePair.find('=');
+                        if (eqPos != std::string::npos) {
+                            std::string state = statePair.substr(0, eqPos);
+                            std::string value = statePair.substr(eqPos + 1);
+
+                            // 标准化值（去除引号）
+                            if (!value.empty() && value.front() == '\'' && value.back() == '\'') {
+                                value = value.substr(1, value.size() - 2);
+                            }
+
+                            if (!stateCondition.empty()) {
+                                stateCondition += ",";
+                            }
+                            stateCondition += state + "=" + value;
+                        }
+                    }
+
+                    if (!stateCondition.empty()) {
+                        fullBlockId += "[" + stateCondition + "]";
+                    }
+                }
+
+                // 构造完整带命名空间的blockId
+                std::string namespacedBlockId = fullBlockId;
+                variantBlockIds.push_back(namespacedBlockId);
+            }
+
+            if (!variantBlockIds.empty()) {
+                // 获取变种模型并合并到主模型
+                const auto& modelCache = ProcessBlockstateJson(namespaceName, variantBlockIds);
+
+                
+                // 记录开始时间
+                //auto start = std::chrono::high_resolution_clock::now();
+                // 修改后的循环结构
+                // 正确代码（根据返回类型调整）
+                for (const auto& entry : modelCache) {  // 先获取整个条目
+                    const std::string& blockId = entry.first;
+                    const ModelData& currentModel = entry.second;
+
+                    
+                    ModelCount++;
+                    // 计算偏移量
+                    const int row = ModelCount / n;
+                    const int col = ModelCount % n;
+                    const float xOffset = col * spacing;
+                    const float zOffset = row * spacing;
+                    ModelData mutableModel = entry.second; // 创建副本
+
+                    // 修改后的顶点偏移应用（适配连续存储结构）
+                    for (size_t i = 0; i < mutableModel.vertices.size(); i += 3) {
+                        // 顶点坐标布局：[x0,y0,z0, x1,y1,z1,...]
+                        mutableModel.vertices[i] += xOffset;   // X坐标
+                        mutableModel.vertices[i + 2] += zOffset; // Z坐标
+                    }
+
+                    
+                    
+                    MergeModelsDirectly(mergedModel, mutableModel);
+                    
+                }
+
+                // 记录结束时间
+                //auto end = std::chrono::high_resolution_clock::now();
+                //std::chrono::duration<double, std::milli> duration = end - start;  // 使用毫秒为单位
+
+                // 输出消耗时间
+                //std::cout << "Time taken for processing models: " << duration.count() << " milliseconds." << std::endl;
+
+            }
+        }
+
+        
+    }
+
+    // 第二阶段：导出最终合并文件
+    if (!mergedModel.vertices.empty()) {
+        CreateModelFiles(mergedModel, "test");
+    }
+}
+
+
+
+
+
+
+// 输出缓存内容的方法
+//void PrintModelCache(const std::unordered_map<std::string, std::unordered_map<std::string, ModelData>>& cache) {
+//    for (const auto& namespaceEntry : cache) {
+//        const std::string& namespaceName = namespaceEntry.first;
+//        const auto& blockIdMap = namespaceEntry.second;
+//
+//        std::cout << "Namespace: " << namespaceName << "\n";
+//        for (const auto& blockEntry : blockIdMap) {
+//            const std::string& blockId = blockEntry.first;
+//            const ModelData& modelData = blockEntry.second;
+//
+//            std::cout << "  Block ID: " << blockId << "\n";
+//
+//            // 输出顶点数据
+//            std::cout << "    Vertices:\n";
+//            for (const auto& vertex : modelData.vertices) {
+//                std::cout << "      [";
+//                for (float coord : vertex) {
+//                    std::cout << coord << " ";
+//                }
+//                std::cout << "]\n";
+//            }
+//
+//            // 输出UV坐标数据
+//            std::cout << "    UV Coordinates:\n";
+//            for (const auto& uv : modelData.uvCoordinates) {
+//                std::cout << "      [";
+//                for (float coord : uv) {
+//                    std::cout << coord << " ";
+//                }
+//                std::cout << "]\n";
+//            }
+//
+//            // 输出面数据
+//            std::cout << "    Faces to Vertices:\n";
+//            for (const auto& faceEntry : modelData.facesToVertices) {
+//                int faceId = faceEntry.first;
+//                const std::vector<int>& vertices = faceEntry.second;
+//                std::cout << "      Face " << faceId << ": [";
+//                for (int vertexId : vertices) {
+//                    std::cout << vertexId << " ";
+//                }
+//                std::cout << "]\n";
+//            }
+//
+//            // 输出面所对应的uv数据
+//            std::cout << "    Faces to UVs:\n";
+//            for (const auto& faceEntry : modelData.uvToFaceId) {
+//                int faceId = faceEntry.first;
+//                const std::vector<int>& uvs = faceEntry.second;
+//                std::cout << "      Face " << faceId << ": [";
+//                for (int uvId : uvs) {
+//                    std::cout << uvId << " ";
+//                }
+//                std::cout << "]\n";
+//            }
+//
+//            // 输出材质数据
+//            std::cout << "    Material to Face IDs:\n";
+//            for (const auto& materialEntry : modelData.materialToFaceIds) {
+//                const std::string& materialName = materialEntry.first;
+//                const std::vector<int>& faceIds = materialEntry.second;
+//                std::cout << "      Material " << materialName << ": [";
+//                for (int faceId : faceIds) {
+//                    std::cout << faceId << " ";
+//                }
+//                std::cout << "]\n";
+//            }
+//
+//
+//            // 输出纹理路径
+//            std::cout << "    Texture to Path:\n";
+//            for (const auto& textureEntry : modelData.textureToPath) {
+//                const std::string& textureName = textureEntry.first;
+//                const std::string& texturePath = textureEntry.second;
+//                std::cout << "      Texture " << textureName << ": " << texturePath << "\n";
+//            }
+//
+//            std::cout << "\n";
+//        }
+//    }
+//}

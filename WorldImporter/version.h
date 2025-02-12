@@ -22,4 +22,5 @@ std::string GetMinecraftVersion(const std::wstring& gameFolderPath, std::string&
 void GetModList(const std::wstring& gameFolderPath, std::vector<std::string>& modList, const std::string& modLoaderType);
 void GetResourcePacks(const std::wstring& gameFolderPath, std::vector<std::string>& resourcePacks);
 void GetSaveFiles(const std::wstring& gameFolderPath, std::vector<std::string>& saveFiles);
+void PrintModListCache();
 #endif // VERSION_H

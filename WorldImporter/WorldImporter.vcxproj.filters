@@ -108,6 +108,9 @@
     <ClCompile Include="texture.cpp">
       <Filter>源文件\functions\texture</Filter>
     </ClCompile>
+    <ClCompile Include="GlobalCache.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="nbtutils.h">
@@ -154,6 +157,9 @@
     </ClInclude>
     <ClInclude Include="texture.h">
       <Filter>头文件\functions\texture</Filter>
+    </ClInclude>
+    <ClInclude Include="GlobalCache.h">
+      <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

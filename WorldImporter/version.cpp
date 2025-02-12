@@ -399,3 +399,20 @@ void GetSaveFiles(const std::wstring& gameFolderPath, std::vector<std::string>& 
 
     FindClose(hFind);
 }
+
+
+// 输出 modListCache 的方法
+void PrintModListCache() {
+    for (const auto& modEntry : modListCache) { // 遍历所有 mod 条目
+        // 输出当前键值对的键（mod名称）
+        std::cout << "[" << modEntry.first << "]\n";
+
+        // 遍历该键对应的 vector<FolderData>
+        for (const auto& folderData : modEntry.second) {
+            std::cout << "  Namespace: " << folderData.namespaceName
+                << " | Path: " << folderData.path << "\n";
+        }
+
+        std::cout << std::endl; // 不同键之间用空行分隔
+    }
+}
