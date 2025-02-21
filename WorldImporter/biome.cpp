@@ -1,4 +1,4 @@
-#include "biome_mapping.h"
+#include "biome.h"
 #include <fstream>
 #include <iostream>
 #include <stdexcept>

@@ -11,6 +11,8 @@ unsigned ExtractChunkLength(const std::vector<char>& fileData, unsigned offset);
 
 bool ExportChunkNBTDataToFile(const std::vector<char>& data, const std::string& filePath);
 
+void GenerateSolidsJson(const std::string& outputPath, const std::vector<std::string>& targetParentPaths);
+
 // 设置全局 locale 为支持中文，支持 UTF-8 编码
 void SetGlobalLocale();
 
@@ -27,5 +29,6 @@ std::string wstring_to_system_string(const std::wstring& wstr);
 std::wstring GetFolderNameFromPath(const std::wstring& folderPath);
 
 void printBytes(const std::vector<char>& data);
+
 
 #endif // FILEUTILS_H

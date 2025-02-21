@@ -6,8 +6,84 @@
 #include <windows.h>
 #include <locale>
 #include <codecvt>
+#include <random>
+#include "block.h"   // 需要 Block 相关逻辑
+#include "blockstate.h" // 需要 ProcessBlockstateJson
 using namespace std;
 
+std::vector<std::string> GetParentPaths(const std::string& modelNamespace, const std::string& modelBlockId) {
+    std::vector<std::string> parentPaths;
+    nlohmann::json currentModelJson = GetModelJson(modelNamespace, modelBlockId);
+    while (true) {
+        if (currentModelJson.contains("parent")) {
+            const std::string parentModelId = currentModelJson["parent"].get<std::string>();
+            parentPaths.push_back(parentModelId);
+
+            size_t parentColonPos = parentModelId.find(':');
+            std::string parentNamespace = (parentColonPos != std::string::npos) ? parentModelId.substr(0, parentColonPos) : "minecraft";
+            std::string parentBlockId = (parentColonPos != std::string::npos) ? parentModelId.substr(parentColonPos + 1) : parentModelId;
+
+            currentModelJson = GetModelJson(parentNamespace, parentBlockId);
+        }
+        else {
+            break;
+        }
+    }
+    return parentPaths;
+}
+
+std::vector<std::vector<std::string>> GetAllParentPaths(const std::string& blockFullName) {
+    size_t colonPos = blockFullName.find(':');
+    std::string namespaceName = (colonPos != std::string::npos) ? blockFullName.substr(0, colonPos) : "minecraft";
+    std::string blockId = (colonPos != std::string::npos) ? blockFullName.substr(colonPos + 1) : blockFullName;
+
+    size_t statePos = blockId.find('[');
+    std::string baseBlockId = (statePos != std::string::npos) ? blockId.substr(0, statePos) : blockId;
+
+    nlohmann::json blockstateJson = GetBlockstateJson(namespaceName, baseBlockId);
+    std::vector<std::vector<std::string>> allParentPaths;
+
+    if (blockstateJson.contains("variants")) {
+        std::vector<std::string> modelIds;
+        for (const auto& variant : blockstateJson["variants"].items()) {
+            if (variant.value().is_array()) {
+                for (const auto& item : variant.value()) {
+                    if (item.contains("model")) {
+                        modelIds.push_back(item["model"].get<std::string>());
+                    }
+                }
+            }
+            else {
+                if (variant.value().contains("model")) {
+                    modelIds.push_back(variant.value()["model"].get<std::string>());
+                }
+            }
+        }
+
+        for (const auto& modelId : modelIds) {
+            size_t modelColonPos = modelId.find(':');
+            std::string modelNamespace = (modelColonPos != std::string::npos) ? modelId.substr(0, modelColonPos) : "minecraft";
+            std::string modelBlockId = (modelColonPos != std::string::npos) ? modelId.substr(modelColonPos + 1) : modelId;
+
+            std::vector<std::string> parentPaths = GetParentPaths(modelNamespace, modelBlockId);
+            parentPaths.push_back(modelId);
+            allParentPaths.push_back(parentPaths);
+        }
+    }
+    else if (blockstateJson.contains("multipart")) {
+        allParentPaths.push_back({ blockFullName });
+    }
+    else {
+        // 其他情况，可能直接返回当前模型的路径
+        allParentPaths.push_back({ blockFullName });
+    }
+
+    return allParentPaths;
+}
+std::string ExtractModelName(const std::string& modelId) {
+    size_t colonPos = modelId.find(':');
+    return (colonPos != std::string::npos) ? modelId.substr(colonPos + 1) : modelId;
+}
 
 std::vector<char> ReadFileToMemory(const std::string& directoryPath, int regionX, int regionZ) {
     // 构造区域文件的路径
@@ -88,7 +164,59 @@ bool ExportChunkNBTDataToFile(const vector<char>& data, const string& filePath) 
 }
 
 
+void GenerateSolidsJson(const std::string& outputPath, const std::vector<std::string>& targetParentPaths) {
+    std::unordered_set<std::string> solidBlocks;
 
+    // 遍历所有已缓存的方块状态
+    std::unordered_map<std::string, nlohmann::json> allBlockstates;
+    {
+        std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
+        allBlockstates = GlobalCache::blockstates;
+    }
+
+    for (const auto& blockstatePair : allBlockstates) {
+        const std::string& blockFullName = blockstatePair.first; // 格式如 "minecraft:stone"
+        const nlohmann::json& blockstateJson = blockstatePair.second;
+
+        std::vector<std::vector<std::string>> allParentPaths = GetAllParentPaths(blockFullName);
+
+        bool allSolid = true;
+        for (const auto& parentPaths : allParentPaths) {
+            bool currentSolid = false;
+            for (const auto& parentPath : parentPaths) {
+                std::string normalizedParent = ExtractModelName(parentPath);
+                for (const auto& target : targetParentPaths) {
+                    if (normalizedParent.find(target) != std::string::npos) {
+                        currentSolid = true;
+                        break;
+                    }
+                }
+                if (currentSolid) break;
+            }
+
+            if (!currentSolid) {
+                allSolid = false;
+                break;
+            }
+        }
+
+        if (allSolid) {
+            std::string fullId = blockFullName.substr(0, blockFullName.find('[')); // 移除状态
+            solidBlocks.insert(fullId);
+        }
+    }
+
+    nlohmann::json j;
+    j["solid_blocks"] = solidBlocks;
+    std::ofstream file(outputPath);
+    if (file.is_open()) {
+        file << j.dump(4);
+        std::cout << "成功生成 solids.json" << std::endl;
+    }
+    else {
+        std::cerr << "错误: 无法写入文件 " << outputPath << std::endl;
+    }
+}
 // 设置全局 locale 为支持中文，支持 UTF-8 编码
 void SetGlobalLocale() {
     std::setlocale(LC_ALL, "zh_CN.UTF-8");  // 使用 UTF-8 编码

@@ -4,7 +4,7 @@
 #include <iomanip>
 #include <cmath>
 #include <unordered_map>
-#include "biome_mapping.h"
+#include "biome.h"
 
 // 将 TagType 转换为字符串的辅助函数
 std::string tagTypeToString(TagType type) {

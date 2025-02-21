@@ -2,7 +2,7 @@
 #include <chrono>
 #include <thread>
 #include "config.h"
-#include "biome_mapping.h"
+#include "biome.h"
 #include "block.h"
 #include "PointCloudExporter.h"
 #include <fstream> 
@@ -17,6 +17,8 @@
 #include "texture.h"
 #include "fileutils.h"
 #include "GlobalCache.h"
+#include "RegionModelExporter.h"
+
 Config config;  // 定义全局变量
 
 using namespace std;
@@ -133,6 +135,7 @@ void init() {
     SetGlobalLocale();
     loadAndUpdateConfig();
     loadBiomeMapping(config.biomeMappingFile);
+    loadSolidBlocks(config.solidBlocksFile);
     InitializeGlobalBlockPalette();
     InitializeAllCaches();
 }
@@ -183,32 +186,30 @@ int main() {
     //};
 
     //const auto& modelCache = ProcessBlockstateJson("minecraft", blockList);
-    //
 
-    //blockList = {"blackstone_bricks_stairs[facing=east,half=bottom,shape=straight]",
-    //"acacia_ladder[facing=north]"};
-
-    //const auto& modelCache1 = ProcessBlockstateJson("quark", blockList);
-    //
-
-    //for (const auto& namespaceEntry : modelCache1) {
-    //    const std::string& namespaceName = namespaceEntry.first;
-    //    const auto& blockIdMap = namespaceEntry.second;
-
-    //    for (const auto& blockEntry : blockIdMap) {
-    //        const std::string& blockId = blockEntry.first;
-    //        const ModelData& modelData = blockEntry.second;
-    //        // 生成文件（假设 CreateModelFiles 是线程安全的）
-    //        CreateModelFiles(modelData, modelData.objName + ".obj", modelData.objName + ".mtl");
+    //for (const auto& entry : modelCache) {  // 先获取整个条目
+    //    const std::string& blockId = entry.first;
+    //    const ModelData& currentModel = entry.second;
+    //    if (!currentModel.vertices.empty()) {
+    //        CreateModelFiles(currentModel, blockId);
     //    }
+
     //}
-    ProcessAllBlockstateVariants();
+    // 生成包含所有使用 cube 模型的方块
+    //GenerateSolidsJson("solids.json", {"block/cube_mirrored_all", "block/cube_all","block/cube_column"});
+    RegionModelExporter::ExportRegionModels(
+        config.minX, config.maxX,
+        config.minY, config.maxY,
+        config.minZ, config.maxZ,
+        "region_models"
+    );
+    //exportPointCloud();
     auto end_time = high_resolution_clock::now();
     auto duration = duration_cast<milliseconds>(end_time - start_time);
     cout << "Total time: " << duration.count() << " milliseconds" << endl;
+
     //PrintTextureCache(textureCache);
     //PrintModListCache();
-    //PrintModelCache(modelCache1);
 
     while (true) {  
         //status： 
@@ -223,6 +224,26 @@ int main() {
         else if (config.status == 2) {
             // 如果是 2，执行点云导出逻辑
             exportPointCloud();
+        }
+        else if (config.status == 3) {
+            // 如果是 3，导出区域内所有方块模型
+            RegionModelExporter::ExportRegionModels(
+                config.minX, config.maxX,
+                config.minY, config.maxY,
+                config.minZ, config.maxZ,
+                "region_models"
+            );
+            // 在程序执行完成后，将 status 改为 1((待机) 并保存
+            config.status = 1;
+
+            // 保存更新后的配置文件
+            WriteConfig(config, "config\\config.json");
+
+            LoadConfig("config\\config.json");
+        }
+        else if (config.status == 0) {
+            // 如果是 0，执行整合包所有方块状态导出逻辑
+            ProcessAllBlockstateVariants();
         }
         else if (config.status == -1) {
             // 如果 status 为 -1，退出程序

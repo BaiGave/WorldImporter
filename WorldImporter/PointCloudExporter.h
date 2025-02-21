@@ -3,6 +3,7 @@
 #define POINT_CLOUD_EXPORTER_H
 
 #include <string>
+#include <vector>
 #include <unordered_map>
 #include <iostream>
 #include <fstream>
@@ -14,14 +15,16 @@ public:
     // 构造函数，传入导出的文件名
     PointCloudExporter(const std::string& objFileName, const std::string& jsonFileName);
 
+    // 预先生成所有方块的模型文件
+    void PreprocessBlockModels(std::vector<Block> blockPalette);
+
     // 导出点云到 .obj 文件
     void ExportPointCloud(int xStart, int xEnd, int yStart, int yEnd, int zStart, int zEnd);
-
 
 private:
     std::ofstream objFile;  // 输出 .obj 文件流
     std::ofstream jsonFile; // 输出 JSON 文件流
-    std::unordered_map<int, std::string> blockPalette;  // 方块调色板
+    std::vector<std::string> blockPalette;  // 方块调色板
     nlohmann::json blockIdMapping;  // 用于存储 ID 对照表
 };
 

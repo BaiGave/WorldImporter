@@ -72,7 +72,7 @@
     <ClCompile Include="nbtutils.cpp">
       <Filter>源文件\utils</Filter>
     </ClCompile>
-    <ClCompile Include="biome_mapping.cpp">
+    <ClCompile Include="biome.cpp">
       <Filter>源文件\functions\mapping</Filter>
     </ClCompile>
     <ClCompile Include="decompressor.cpp">
@@ -111,6 +111,12 @@
     <ClCompile Include="GlobalCache.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="RegionModelExporter.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="objExporter.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="nbtutils.h">
@@ -119,7 +125,7 @@
     <ClInclude Include="fileutils.h">
       <Filter>头文件\utils</Filter>
     </ClInclude>
-    <ClInclude Include="biome_mapping.h">
+    <ClInclude Include="biome.h">
       <Filter>头文件\functions\mapping</Filter>
     </ClInclude>
     <ClInclude Include="decompressor.h">
@@ -159,6 +165,12 @@
       <Filter>头文件\functions\texture</Filter>
     </ClInclude>
     <ClInclude Include="GlobalCache.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="RegionModelExporter.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="objExporter.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
