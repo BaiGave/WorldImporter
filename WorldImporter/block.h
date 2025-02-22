@@ -2,6 +2,7 @@
 #define BLOCK_H
 
 #include "config.h"
+#include "nbtutils.h"
 extern Config config;
 
 #include <vector>
@@ -316,7 +317,7 @@ struct Block {
     }
 };
 extern std::vector<Block> globalBlockPalette;
-
+extern std::unordered_map<std::tuple<int, int, int>, std::vector<int>, triple_hash> biomeDataCache;
 
 // 获取区块NBT数据的函数
 std::vector<char> GetChunkNBTData(const std::vector<char>& fileData, int x, int z);
@@ -324,7 +325,10 @@ std::vector<char> GetChunkNBTData(const std::vector<char>& fileData, int x, int 
 void LoadCacheBlockDataAutomatically(int chunkX, int chunkZ, int sectionY);
 
 void LoadAndCacheBlockData(int chunkX, int chunkZ, int sectionY, const std::tuple<int, int, int>& blockKey);
-// 通过x, y, z坐标获取方块ID
+
+// 声明 getRegionFromCache 和 getChunkFromCache 函数
+std::vector<char> getRegionFromCache(int regionX, int regionZ);
+std::shared_ptr<NbtTag> getChunkFromCache(int chunkX, int chunkZ, std::vector<char>& regionData);// 通过x, y, z坐标获取方块ID
 int GetBlockId(int blockX, int blockY, int blockZ);
 
 // 获取方块名称转换为Block对象
@@ -338,8 +342,13 @@ std::string GetBlockNamespaceById(int blockId);
 // 获取方块ID时同时获取相邻方块的air状态，返回当前方块ID
 int GetBlockIdWithNeighbors(int blockX, int blockY, int blockZ, bool* neighborIsAir);
 
+int GetHeightMapY(int blockX, int blockZ, const std::string& heightMapType);
+
+std::string PrintHeightMapCache(bool verbose = false, bool showAllChunks = false);
+
 // 返回全局的block对照表(Block对象)
 std::vector<Block> GetGlobalBlockPalette();
+
 
 // 初始化，注册"minecraft:air"为ID0
 void InitializeGlobalBlockPalette();

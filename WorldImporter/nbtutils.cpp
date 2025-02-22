@@ -517,76 +517,27 @@ NbtTagPtr getBiomes(const NbtTagPtr& sectionTag) {
 
 
 //获取子区块的群系数据
-std::vector<int> getBiomeData(const NbtTagPtr& biomesTag, const std::unordered_map<std::string, int>& biomeMapping) {
-    auto dataTag = getChildByName(biomesTag, "data");
-    auto paletteTag = getChildByName(biomesTag, "palette");
+std::vector<int> getBiomeData(const std::shared_ptr<NbtTag>& tag) {
+    std::vector<int> biomeIds;
+    if (tag && tag->type == TagType::LIST) {
+        for (const auto& child : tag->children) {
+            if (child->type == TagType::STRING) {
+                const std::string& biomeName = child->name;
+                int bid = Biome::GetId(biomeName);
 
-    if (!dataTag || dataTag->type != TagType::LONG_ARRAY) {
-        throw std::runtime_error("No valid data tag found in biomes.");
-    }
-    if (!paletteTag || paletteTag->type != TagType::LIST) {
-        throw std::runtime_error("No valid palette tag found in biomes.");
-    }
-
-    // 解析 palette 列表中的群系名称
-    std::vector<std::string> palette;
-    for (const auto& child : paletteTag->children) {
-        if (child->type == TagType::STRING) {
-            std::string biomeName(child->payload.begin(), child->payload.end());
-            palette.push_back(biomeName);
-        }
-    }
-
-    if (palette.empty()) {
-        throw std::runtime_error("Palette is empty.");
-    }
-
-    // 检查 data 是否为特殊值 ff e8 ff e8 ff e8 ff e8
-    const auto& dataPayload = dataTag->payload;
-    const long long* longArray = reinterpret_cast<const long long*>(dataPayload.data());
-    size_t numLongs = dataPayload.size() / sizeof(long long);
-
-    // 检查特殊值：长整型 ff e8 ff e8 ff e8 ff e8
-    const long long SPECIAL_VALUE = 0xffe8ffe8ffe8ffe8;
-    bool allSpecial = (numLongs == 1 && byteSwap(longArray[0]) == SPECIAL_VALUE);
-
-    std::vector<int> biomeIds(16 * 16 * 16, 0); // 默认情况下为 0
-
-    if (allSpecial) {
-        // 如果是特殊值，所有群系都设置为 palette[1] 对应的群系
-        std::string specialBiome = palette[1];
-        if (biomeMapping.find(specialBiome) != biomeMapping.end()) {
-            int specialBiomeId = biomeMapping.at(specialBiome);
-            std::fill(biomeIds.begin(), biomeIds.end(), specialBiomeId);
-        }
-    }
-    else {
-        // 计算每个状态的位宽
-        int paletteSize = palette.size();
-        int bitsPerBlock = std::ceil(std::log2(paletteSize));
-        int statesPerLong = 64 / bitsPerBlock;
-
-        // 解析 data 数组
-        for (int i = 0; i < 16 * 16 * 16; ++i) {
-            int longIndex = i / statesPerLong;       // 当前方块所在的 long 索引
-            int bitOffset = (i % statesPerLong) * bitsPerBlock; // 当前方块在 long 中的偏移量
-
-            if (longIndex >= numLongs) {
-                throw std::runtime_error("Not enough longs in data to decode all states.");
-            }
-
-            // 提取对应的位段
-            long long value = byteSwap(longArray[longIndex]); // 确保字节序正确
-            int paletteIndex = (value >> bitOffset) & ((1LL << bitsPerBlock) - 1);
-
-            // 根据 paletteIndex 找到对应的 biome 名称
-            std::string biomeName = palette[paletteIndex];
-            if (biomeMapping.find(biomeName) != biomeMapping.end()) {
-                biomeIds[i] = biomeMapping.at(biomeName); // 获取对应的数字 ID
+                // 处理未注册的生物群系
+                if (bid == -1) {
+                    static std::once_flag warnFlag;
+                    std::call_once(warnFlag, [&]() {
+                        std::cerr << "发现未注册的生物群系: " << biomeName
+                            << "，将使用默认ID 0\n";
+                        });
+                    bid = 0; // 默认值
+                }
+                biomeIds.push_back(bid);
             }
         }
     }
-
     return biomeIds;
 }
 

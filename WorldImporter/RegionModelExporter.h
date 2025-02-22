@@ -16,6 +16,7 @@ public:
         const std::string& outputName = "region_model");
 
     static ModelData GenerateChunkModel(int chunkX, int sectionY, int chunkZ);
+    static ModelData CreateDefaultCubeModel(const std::string& materialName);
 
 private:
     // 获取区域内所有唯一的方块ID（带状态）

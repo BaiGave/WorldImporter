@@ -2,21 +2,23 @@
 #define COORD_CONVERSION_H
 
 
-// ¼ÆËã YZX ±àÂëºóµÄÊı×Ö
+// è®¡ç®— YZX ç¼–ç åçš„æ•°å­—
 int toYZX(int x, int y, int z);
 
-//Èç¹û½á¹ûÊÇ¸ºÊı£¬Ìí¼Ó16£¬Ê¹Æä±äÎªÕıÊı
+//å¦‚æœç»“æœæ˜¯è´Ÿæ•°ï¼Œæ·»åŠ 16ï¼Œä½¿å…¶å˜ä¸ºæ­£æ•°
 int mod16(int value);
 
-//Èç¹û½á¹ûÊÇ¸ºÊı£¬Ìí¼Ó32£¬Ê¹Æä±äÎªÕıÊı
+//å¦‚æœç»“æœæ˜¯è´Ÿæ•°ï¼Œæ·»åŠ 32ï¼Œä½¿å…¶å˜ä¸ºæ­£æ•°
 int mod32(int value);
 
-// º¯ÊıÉùÃ÷£ºÇø¿é×ø±ê×ª»»ÎªÇøÓò×ø±ê
+// å‡½æ•°å£°æ˜ï¼šåŒºå—åæ ‡è½¬æ¢ä¸ºåŒºåŸŸåæ ‡
 void chunkToRegion(int chunkX, int chunkZ, int& regionX, int& regionZ);
 
-// º¯ÊıÉùÃ÷£º·½¿é×ø±ê×ª»»ÎªÇø¿é×ø±ê
+// å‡½æ•°å£°æ˜ï¼šæ–¹å—åæ ‡è½¬æ¢ä¸ºåŒºå—åæ ‡
 void blockToChunk(int blockX, int blockZ, int& chunkX, int& chunkZ);
 
-// º¯ÊıÉùÃ÷£º·½¿éY×ø±ê×ª»»Îª×ÓÇø¿éY×ø±ê
+// å‡½æ•°å£°æ˜ï¼šæ–¹å—Yåæ ‡è½¬æ¢ä¸ºå­åŒºå—Yåæ ‡
 void blockYToSectionY(int blockY, int& chunkY);
+
+int AdjustSectionY(int SectionY);
 #endif // COORD_CONVERSION_H

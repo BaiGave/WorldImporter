@@ -118,8 +118,7 @@ float bytesToFloat(const std::vector<char>& payload);
 // 帮助函数：将字节数组转换为双精度浮动数（64位浮动精度数）
 double bytesToDouble(const std::vector<char>& payload);
 
-//加载群系对照表
-void loadBiomeMapping(const std::string& filepath);
+long long reverseEndian(long long value);
 
 // 通过名字获取子级标签
 NbtTagPtr getChildByName(const NbtTagPtr& tag, const std::string& childName);
@@ -142,8 +141,6 @@ void getTagValue(const NbtTagPtr& tag, int depth);
 // 获取 section 下的 biomes 标签（TAG_Compound）
 NbtTagPtr getBiomes(const NbtTagPtr& sectionTag);
 
-//获取子区块的群系数据
-std::vector<int> getBiomeData(const NbtTagPtr& biomesTag, const std::unordered_map<std::string, int>& biomeMapping);
 
 // 获取 biomes 下的 palette 标签（LIST 包含字符串）
 std::vector<std::string> getBiomePalette(const NbtTagPtr& biomesTag);

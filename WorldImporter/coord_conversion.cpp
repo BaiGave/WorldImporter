@@ -3,44 +3,49 @@
 #include <iostream>
 #include <string>
 
-// ¼ÆËã YZX ±àÂëºóµÄÊı×Ö
+// è®¡ç®— YZX ç¼–ç åçš„æ•°å­—
 int toYZX(int x, int y, int z) {
     int encoded = (y << 8) | (z << 4) | x;
     //std::cout << "Encoded YZX (" << x << ", " << y << ", " << z << ") -> " << encoded << std::endl;
     return encoded;
 }
 
-// Èç¹û½á¹ûÊÇ¸ºÊı£¬Ìí¼Ó16£¬Ê¹Æä±äÎªÕıÊı£¬È·±£·µ»ØµÄ×ø±êÔÚ [0, 15] ·¶Î§ÄÚ
+// å¦‚æœç»“æœæ˜¯è´Ÿæ•°ï¼Œæ·»åŠ 16ï¼Œä½¿å…¶å˜ä¸ºæ­£æ•°ï¼Œç¡®ä¿è¿”å›çš„åæ ‡åœ¨ [0, 15] èŒƒå›´å†…
 int mod16(int value) {
-    int result = value % 16;  // ¼ÆËãÓàÊı
+    int result = value % 16;  // è®¡ç®—ä½™æ•°
     if (result < 0) {
-        result += 16;  // Èç¹ûÊÇ¸ºÊı£¬×ª»»ÎªÕıÊı
+        result += 16;  // å¦‚æœæ˜¯è´Ÿæ•°ï¼Œè½¬æ¢ä¸ºæ­£æ•°
     }
     return result;
 }
 
 
-// Èç¹û½á¹ûÊÇ¸ºÊı£¬Ìí¼Ó32£¬Ê¹Æä±äÎªÕıÊı£¬È·±£·µ»ØµÄ×ø±êÔÚ [0, 31] ·¶Î§ÄÚ
+// å¦‚æœç»“æœæ˜¯è´Ÿæ•°ï¼Œæ·»åŠ 32ï¼Œä½¿å…¶å˜ä¸ºæ­£æ•°ï¼Œç¡®ä¿è¿”å›çš„åæ ‡åœ¨ [0, 31] èŒƒå›´å†…
 int mod32(int value) {
     int result = value % 32;
     return result < 0 ? result + 32 : result;
 }
 
-// Çø¿é×ø±ê×ª»»ÎªÇøÓò×ø±ê
+// åŒºå—åæ ‡è½¬æ¢ä¸ºåŒºåŸŸåæ ‡
 void chunkToRegion(int chunkX, int chunkZ, int& regionX, int& regionZ) {
-    // Ê¹ÓÃÎ»ÒÆ½øĞĞ×ª»»
-    regionX = chunkX >> 5;  // Ïàµ±ÓÚ chunkX / 32
-    regionZ = chunkZ >> 5;  // Ïàµ±ÓÚ chunkZ / 32
+    // ä½¿ç”¨ä½ç§»è¿›è¡Œè½¬æ¢
+    regionX = chunkX >> 5;  // ç›¸å½“äº chunkX / 32
+    regionZ = chunkZ >> 5;  // ç›¸å½“äº chunkZ / 32
 }
 
-// ·½¿é×ø±ê×ª»»ÎªÇø¿é×ø±ê
+// æ–¹å—åæ ‡è½¬æ¢ä¸ºåŒºå—åæ ‡
 void blockToChunk(int blockX, int blockZ, int& chunkX, int& chunkZ) {
-    // Ê¹ÓÃÎ»ÒÆ½øĞĞ×ª»»
-    chunkX = blockX >> 4;  // Ïàµ±ÓÚ chunkX / 16
-    chunkZ = blockZ >> 4;  // Ïàµ±ÓÚ chunkZ / 16
+    // ä½¿ç”¨ä½ç§»è¿›è¡Œè½¬æ¢
+    chunkX = blockX >> 4;  // ç›¸å½“äº chunkX / 16
+    chunkZ = blockZ >> 4;  // ç›¸å½“äº chunkZ / 16
 }
 
-// ·½¿éY×ø±ê×ª»»Îª×ÓÇø¿éY×ø±ê
+// æ–¹å—Yåæ ‡è½¬æ¢ä¸ºå­åŒºå—Yåæ ‡
 void blockYToSectionY(int blockY, int& chunkY) {
-    chunkY = blockY >> 4; // Ïàµ±ÓÚ chunkY / 16
+    chunkY = blockY >> 4; // ç›¸å½“äº chunkY / 16
+}
+
+int AdjustSectionY(int SectionY) {
+    const int OFFSET = 64;
+    return SectionY + OFFSET;
 }

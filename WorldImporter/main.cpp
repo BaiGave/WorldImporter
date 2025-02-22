@@ -134,7 +134,6 @@ void loadAndUpdateConfig() {
 void init() {
     SetGlobalLocale();
     loadAndUpdateConfig();
-    loadBiomeMapping(config.biomeMappingFile);
     loadSolidBlocks(config.solidBlocksFile);
     InitializeGlobalBlockPalette();
     InitializeAllCaches();
@@ -207,13 +206,17 @@ int main() {
     auto end_time = high_resolution_clock::now();
     auto duration = duration_cast<milliseconds>(end_time - start_time);
     cout << "Total time: " << duration.count() << " milliseconds" << endl;
+    Biome::PrintAllRegisteredBiomes();
+    int biomeId = GetBiomeId(20, 2, 50);
+    std::cout << "生物群系ID: " << biomeId << std::endl;
+    int y = GetHeightMapY(1, 1, "MOTION_BLOCKING_NO_LEAVES");
+    std::cout << "地形阻挡高度：" << y << std::endl;
 
     //PrintTextureCache(textureCache);
     //PrintModListCache();
 
     while (true) {  
         //status： 
-        // 0 代表程序未启动
         // 1 代表待机（每隔一定时间刷新）
         // 2 代表执行导出点云
         

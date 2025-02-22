@@ -1,19 +1,23 @@
-#ifndef BIOME_MAPPING_H
-#define BIOME_MAPPING_H
-
-#include "nlohmann/json.hpp"
-#include <unordered_map>
+#pragma once
 #include <string>
+#include <unordered_map>
+#include <mutex>
 
-using json = nlohmann::json;
+class Biome {
+public:
+    // 获取或注册群系ID（线程安全）
+    static int GetId(const std::string& name);
 
-extern std::unordered_map<std::string, int> biomeMapping;
-
-// 加载群系对照表
-void loadBiomeMapping(const std::string& filepath);
+    // 打印所有已注册群系
+    static void PrintAllRegisteredBiomes();
 
 
-// 根据群系名获取ID
-int getBiomeId(const std::string& biome);
+private:
+    static std::unordered_map<std::string, int> biomeRegistry;
+    static std::mutex registryMutex;
 
-#endif // BIOME_MAPPING_H
+    // 禁止实例化
+    Biome() = delete;
+};
+// 通过坐标获取生物群系ID
+int GetBiomeId(int blockX, int blockY, int blockZ);

@@ -417,46 +417,61 @@ void createObjFile(const ModelData& data, const std::string& objName) {
 }
 // 创建 .mtl 文件，接收 textureToPath 作为参数
 void createMtlFile(const ModelData& data, const std::string& mtlFileName) {
-    // 获取可执行文件目录路径
     std::string exeDir = getExecutableDir();
-    // 构建完整路径
     std::string fullMtlPath = exeDir + mtlFileName + ".mtl";
 
     std::ofstream mtlFile(fullMtlPath);
     if (mtlFile.is_open()) {
         for (size_t i = 0; i < data.materialNames.size(); ++i) {
-            const std::string& textureName = data.materialNames[i];  // 材质名称
-            std::string texturePath = data.texturePaths[i];  // 材质对应的文件路径
+            const std::string& textureName = data.materialNames[i];
+            std::string texturePath = data.texturePaths[i];
 
-            // 检测 mtlFileName 是否包含 "//"
-            if (mtlFileName.find("//") != std::string::npos) {
-                // 在 texturePath 前面添加 "../"
-                texturePath = "../" + texturePath;
+            // 处理材质名称为 LIGHT 的情况
+            if (texturePath== "None") {
+
+                // 写入材质名称
+                mtlFile << "newmtl " << textureName << "\n";
+
+                // 设置更高的光泽度和亮度属性
+                mtlFile << "Ns 200.000000\n"; // 高光泽度
+                mtlFile << "Ka 1.000000 1.000000 1.000000\n"; // 高环境光
+                mtlFile << "Ks 0.900000 0.900000 0.900000\n"; // 高镜面反射
+                mtlFile << "Ke 0.900000 0.900000 0.900000\n"; // 高自发光
+                mtlFile << "Ni 1.500000\n"; // 折射率
+                mtlFile << "illum 2\n"; // 使用高反射光照模型
+
+            }
+            else {
+                // 处理其他材质
+                // 写入材质名称
+                mtlFile << "newmtl " << textureName << "\n";
+
+                // 保持原有固定材质属性
+                mtlFile << "Ns 90.000000\n"; // 光泽度
+                mtlFile << "Ka 1.000000 1.000000 1.000000\n"; // 环境光颜色
+                mtlFile << "Ks 0.000000 0.000000 0.000000\n"; // 镜面反射
+                mtlFile << "Ke 0.000000 0.000000 0.000000\n"; // 自发光
+                mtlFile << "Ni 1.500000\n"; // 折射率
+                mtlFile << "illum 1\n"; // 照明模型
+
+                // 写入纹理信息，注意这里是相对路径
+                if (mtlFileName.find("//") != std::string::npos) {
+                    // 在 texturePath 前面添加 "../"
+                    texturePath = "../" + texturePath;
+                }
+
+                // 确保路径以 ".png" 结尾，如果没有则加上
+                if (texturePath.find(".png") == std::string::npos) {
+                    texturePath += ".png";
+                }
+
+                mtlFile << "map_Kd " << texturePath << "\n"; // 颜色纹理
+                mtlFile << "map_d " << texturePath << "\n"; // 透明度纹理
             }
 
-            // 确保路径以 ".png" 结尾，如果没有则加上
-            if (texturePath.find(".png") == std::string::npos) {
-                texturePath += ".png";
-            }
-            // 写入材质名称
-            mtlFile << "newmtl " << textureName << std::endl;
-
-            // 下面是固定的材质属性，您可以根据需要修改
-            mtlFile << "Ns 90.000000" << std::endl; // 光泽度
-            mtlFile << "Ka 1.000000 1.000000 1.000000" << std::endl; // 环境光颜色
-            mtlFile << "Ks 0.000000 0.000000 0.000000" << std::endl; // 镜面反射
-            mtlFile << "Ke 0.000000 0.000000 0.000000" << std::endl; // 自发光
-            mtlFile << "Ni 1.500000" << std::endl; // 折射率
-            mtlFile << "illum 1" << std::endl; // 照明模型
-
-            // 写入纹理信息，注意这里是相对路径
-            mtlFile << "map_Kd " << texturePath << std::endl; // 颜色纹理
-            mtlFile << "map_d " << texturePath << std::endl;  // 透明度纹理
-
-            mtlFile << std::endl; // 添加空行，以便分隔不同材质
+            mtlFile << "\n"; // 添加空行，以便分隔不同材质
         }
 
-        // 关闭文件
         mtlFile.close();
     }
     else {

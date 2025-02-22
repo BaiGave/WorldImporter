@@ -8,6 +8,7 @@
 #include "model.h"
 #include "blockstate.h"
 #include "nbtutils.h"
+#include "biome.h"
 #include "fileutils.h"
 #include "decompressor.h"
 #include "coord_conversion.h"
@@ -49,12 +50,35 @@ std::unordered_map<std::pair<int, int>, std::vector<char>, pair_hash> regionCach
 std::unordered_map<std::pair<int, int>, std::shared_ptr<NbtTag>, pair_hash> chunkCache;
 std::unordered_map<std::tuple<int, int, int>, std::vector<std::string>, triple_hash> blockPaletteCache;
 std::unordered_map<std::tuple<int, int, int>, std::vector<int>, triple_hash> blockDataCache;
+std::unordered_map<std::tuple<int, int, int>, std::vector<int>, triple_hash> biomeDataCache;
+std::unordered_map<std::pair<int, int>, std::unordered_map<std::string, std::vector<int>>, pair_hash> heightMapCache;
 std::vector<Block> globalBlockPalette;
 std::unordered_set<std::string> solidBlocks;
 
 // --------------------------------------------------------------------------------
 // 文件操作相关函数
 // --------------------------------------------------------------------------------
+std::vector<int> decodeHeightMap(const std::vector<int64_t>& data) {
+    // 根据数据长度自动判断存储格式
+    int bitsPerEntry = (data.size() == 37) ? 9 : 8; // 主世界37个long用9bit，其他32个用8bit
+    int entriesPerLong = 64 / bitsPerEntry;
+    int mask = (1 << bitsPerEntry) - 1;
+    std::vector<int> heights;
+
+    for (const auto& longVal : data) {
+        int64_t value = reverseEndian(longVal);
+        for (int i = 0; i < entriesPerLong; ++i) {
+            int height = static_cast<int>((value >> (i * bitsPerEntry)) & mask);
+            heights.push_back(height);
+            if (heights.size() >= 256) break;
+        }
+        if (heights.size() >= 256) break;
+    }
+
+    heights.resize(256);
+    return heights;
+}
+
 std::vector<char> GetChunkNBTData(const std::vector<char>& fileData, int x, int z) {
     unsigned offset = CalculateOffset(fileData, x, z);
     if (offset == 0) {
@@ -122,14 +146,54 @@ std::shared_ptr<NbtTag> getChunkFromCache(int chunkX, int chunkZ, std::vector<ch
     return chunkCache[chunkKey];
 }
 
+std::string PrintHeightMapCache(bool verbose, bool showAllChunks) {
+    std::ostringstream ss;
+
+    if (heightMapCache.empty()) {
+        return "HeightMapCache is empty\n";
+    }
+
+    ss << "====== HeightMap Cache Report ======\n";
+    ss << "Total cached chunks: " << heightMapCache.size() << "\n\n";
+
+    // C++14兼容遍历方式
+    for (const auto& chunkEntry : heightMapCache) {
+        const auto& chunkCoord = chunkEntry.first;
+        const auto& typeMap = chunkEntry.second;
+        int chunkX = chunkCoord.first;
+        int chunkZ = chunkCoord.second;
+
+        if (!showAllChunks && typeMap.empty()) continue;
+
+        ss << "[Chunk (" << chunkX << "," << chunkZ << ")]\n";
+
+        // 类型遍历
+        for (const auto& typeEntry : typeMap) {
+            const std::string& mapType = typeEntry.first;
+            const auto& heightArray = typeEntry.second;
+
+            ss << "  Type: " << mapType << "\n";
+
+            if (verbose) {
+                for (int z = 0; z < 16; ++z) {
+                    ss << "    ";
+                    for (int x = 0; x < 16; ++x) {
+                        int index = x + z * 16;
+                        ss << std::setw(4) << heightArray[index] << " ";
+                    }
+                    ss << "\n";
+                }
+            }
+        }
+        ss << "\n";
+    }
+
+    return ss.str();
+}
+
 // --------------------------------------------------------------------------------
 // 方块相关核心函数
 // --------------------------------------------------------------------------------
-int AdjustSectionY(int SectionY) {
-    const int OFFSET = 64;
-    return SectionY + OFFSET;
-}
-
 void RegisterBlockPalette(const std::vector<std::string>& blockPalette) {
     for (const auto& blockName : blockPalette) {
         if (find_if(globalBlockPalette.begin(), globalBlockPalette.end(), [&blockName](const Block& b) {
@@ -193,8 +257,79 @@ void LoadAndCacheBlockData(int chunkX, int chunkZ, int sectionY, const std::tupl
                 globalBlockData.push_back(globalBlockPalette.size() - 1);
             }
         }
+
+    }
+    // ================ 新增高度图处理 ================
+    auto heightMapsTag = getChildByName(tag, "Heightmaps");
+    if (heightMapsTag && heightMapsTag->type == TagType::COMPOUND) {
+        std::vector<std::string> mapTypes = {
+            "MOTION_BLOCKING",
+            "MOTION_BLOCKING_NO_LEAVES",
+            "OCEAN_FLOOR",
+            "WORLD_SURFACE"
+        };
+
+
+        for (const auto& mapType : mapTypes) {
+            auto mapDataTag = getChildByName(heightMapsTag, mapType);
+            if (mapDataTag && mapDataTag->type == TagType::LONG_ARRAY) {
+                size_t numLongs = mapDataTag->payload.size() / sizeof(int64_t);
+                const int64_t* rawData = reinterpret_cast<const int64_t*>(mapDataTag->payload.data());
+                std::vector<int64_t> longData(rawData, rawData + numLongs);
+
+                // 直接传入long数组即可
+                std::vector<int> heights = decodeHeightMap(longData);
+                heightMapCache[std::make_pair(chunkX, chunkZ)][mapType] = heights;
+            }
+        }
+    }
+    // ================ 新增群系数据处理 ================
+    // 获取群系数据
+    auto bio = getBiomes(sec);
+    std::vector<int> biomeData;
+
+    if (bio) {
+        // 获取群系调色板
+        std::vector<std::string> biomePalette = getBiomePalette(bio);
+
+        // 获取 data 标签
+        auto dataTag = getChildByName(bio, "data");
+        if (dataTag && dataTag->type == TagType::LONG_ARRAY) {
+            // 解析 long 数组
+            size_t numLongs = dataTag->payload.size() / sizeof(int64_t);
+            const int64_t* data = reinterpret_cast<const int64_t*>(dataTag->payload.data());
+
+            // 计算编码参数
+            int bitsPerIndex = biomePalette.size() > 1 ?
+                static_cast<int>(std::ceil(std::log2(biomePalette.size()))) : 1;
+            int entriesPerLong = 64 / bitsPerIndex;
+            int mask = (1 << bitsPerIndex) - 1;
+
+            // 解析每个 long 值
+            for (size_t i = 0; i < numLongs; ++i) {
+                int64_t value = reverseEndian(data[i]);
+                for (int j = 0; j < entriesPerLong; ++j) {
+                    int index = (value >> (j * bitsPerIndex)) & mask;
+                    if (index < biomePalette.size()) {
+                        int bid = Biome::GetId(biomePalette[index]);
+                        biomeData.push_back(bid == -1 ? 0 : bid); // 无效 ID 使用默认
+                    }
+                    else {
+                        biomeData.push_back(0); // 无效索引使用默认
+                    }
+                }
+            }
+
+            // 确保数据长度为 4096（16x16x16）
+            if (biomeData.size() > 4096) biomeData.resize(4096);
+            else if (biomeData.size() < 4096) biomeData.resize(4096, 0);
+        }
     }
 
+    // 缓存群系数据
+    if (!biomeData.empty()) {
+        biomeDataCache[blockKey] = biomeData;
+    }
     // 更新缓存
     blockDataCache[blockKey] = globalBlockData;
 }
@@ -245,7 +380,78 @@ void LoadCacheBlockDataAutomatically(int chunkX, int chunkZ, int sectionY) {
     int relativeChunkZ = mod32(chunkZ);
     int adjustedSectionY = AdjustSectionY(sectionY);
     auto blockKey = std::make_tuple(relativeChunkX, relativeChunkZ, adjustedSectionY);
+    // ================ 新增高度图处理 ================
+    auto heightMapsTag = getChildByName(tag, "Heightmaps");
+    if (heightMapsTag && heightMapsTag->type == TagType::COMPOUND) {
+        std::vector<std::string> mapTypes = {
+            "MOTION_BLOCKING",
+            "MOTION_BLOCKING_NO_LEAVES",
+            "OCEAN_FLOOR",
+            "WORLD_SURFACE"
+        };
 
+
+        for (const auto& mapType : mapTypes) {
+            auto mapDataTag = getChildByName(heightMapsTag, mapType);
+            if (mapDataTag && mapDataTag->type == TagType::LONG_ARRAY) {
+                size_t numLongs = mapDataTag->payload.size() / sizeof(int64_t);
+                const int64_t* rawData = reinterpret_cast<const int64_t*>(mapDataTag->payload.data());
+                std::vector<int64_t> longData(rawData, rawData + numLongs);
+
+                // 直接传入long数组即可
+                std::vector<int> heights = decodeHeightMap(longData);
+                heightMapCache[std::make_pair(chunkX, chunkZ)][mapType] = heights;
+            }
+        }
+    }
+
+    // ================ 新增群系数据处理 ================
+    // 获取群系数据
+    auto bio = getBiomes(sec);
+    std::vector<int> biomeData;
+
+    if (bio) {
+        // 获取群系调色板
+        std::vector<std::string> biomePalette = getBiomePalette(bio);
+
+        // 获取 data 标签
+        auto dataTag = getChildByName(bio, "data");
+        if (dataTag && dataTag->type == TagType::LONG_ARRAY) {
+            // 解析 long 数组
+            size_t numLongs = dataTag->payload.size() / sizeof(int64_t);
+            const int64_t* data = reinterpret_cast<const int64_t*>(dataTag->payload.data());
+
+            // 计算编码参数
+            int bitsPerIndex = biomePalette.size() > 1 ?
+                static_cast<int>(std::ceil(std::log2(biomePalette.size()))) : 1;
+            int entriesPerLong = 64 / bitsPerIndex;
+            int mask = (1 << bitsPerIndex) - 1;
+
+            // 解析每个 long 值
+            for (size_t i = 0; i < numLongs; ++i) {
+                int64_t value = reverseEndian(data[i]);
+                for (int j = 0; j < entriesPerLong; ++j) {
+                    int index = (value >> (j * bitsPerIndex)) & mask;
+                    if (index < biomePalette.size()) {
+                        int bid = Biome::GetId(biomePalette[index]);
+                        biomeData.push_back(bid == -1 ? 0 : bid); // 无效 ID 使用默认
+                    }
+                    else {
+                        biomeData.push_back(0); // 无效索引使用默认
+                    }
+                }
+            }
+
+            // 确保数据长度为 4096（16x16x16）
+            if (biomeData.size() > 4096) biomeData.resize(4096);
+            else if (biomeData.size() < 4096) biomeData.resize(4096, 0);
+        }
+    }
+
+    // 缓存群系数据
+    if (!biomeData.empty()) {
+        biomeDataCache[blockKey] = biomeData;
+    }
     // 更新缓存
     blockDataCache[blockKey] = globalBlockData;
 }
@@ -359,6 +565,36 @@ int GetBlockIdWithNeighbors(int blockX, int blockY, int blockZ, bool* neighborIs
     return currentId;
 }
 
+int GetHeightMapY(int blockX, int blockZ, const std::string& heightMapType) {
+    // 将世界坐标转换为区块坐标
+    int chunkX, chunkZ;
+    blockToChunk(blockX, blockZ, chunkX, chunkZ);
+
+    // 触发区块加载（确保高度图数据存在）
+    GetBlockId(blockX, 0, blockZ); // Y坐标任意，只为触发加载
+
+    // 查找缓存
+    auto chunkKey = std::make_pair(chunkX, chunkZ);
+    auto chunkIter = heightMapCache.find(chunkKey);
+    if (chunkIter == heightMapCache.end()) {
+        return -1; // 区块未加载
+    }
+
+    // 获取指定类型的高度图
+    auto& typeMap = chunkIter->second;
+    auto typeIter = typeMap.find(heightMapType);
+    if (typeIter == typeMap.end()) {
+        return -2; // 类型不存在
+    }
+
+    // 计算局部坐标
+    int localX = mod16(blockX);
+    int localZ = mod16(blockZ);
+    int index = localX + localZ * 16;
+
+    // 返回高度值
+    return (index < 256) ? typeIter->second[index] : -1;
+}
 // --------------------------------------------------------------------------------
 // 全局方块配置相关函数
 // --------------------------------------------------------------------------------
