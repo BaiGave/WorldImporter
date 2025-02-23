@@ -219,49 +219,48 @@ int main() {
     //PrintTextureCache(textureCache);
     //PrintModListCache();
 
-    while (true) {  
+    // while (true) {  
         //status： 
-        // 1 代表待机（每隔一定时间刷新）
-        // 2 代表执行导出点云
         
+        // if (config.status == 1) {
+        //     // 加载配置
+        loadAndUpdateConfig();  // 重新加载和更新配置
+        // }
+        // else 
         if (config.status == 1) {
-            // 加载配置
-            loadAndUpdateConfig();  // 重新加载和更新配置
-        }
-        else if (config.status == 2) {
-            // 如果是 2，执行点云导出逻辑
-            exportPointCloud();
-        }
-        else if (config.status == 3) {
-            // 如果是 3，导出区域内所有方块模型
+            // 如果是 1，导出区域内所有方块模型
             RegionModelExporter::ExportRegionModels(
                 config.minX, config.maxX,
                 config.minY, config.maxY,
                 config.minZ, config.maxZ,
                 "region_models"
             );
-            // 在程序执行完成后，将 status 改为 1((待机) 并保存
-            config.status = 1;
-
+            // 在程序执行完成后，将 status 改为 0((待机) 并保存
+            config.status = 0;
+            
             // 保存更新后的配置文件
             WriteConfig(config, "config\\config.json");
-
+            
             LoadConfig("config\\config.json");
+        }
+        else if (config.status == 2) {
+            // 如果是 2，执行点云导出逻辑
+            exportPointCloud();
         }
         else if (config.status == 0) {
             // 如果是 0，执行整合包所有方块状态导出逻辑
             ProcessAllBlockstateVariants();
         }
-        else if (config.status == -1) {
-            // 如果 status 为 -1，退出程序
-            cout << "退出程序..." << endl;
-            break;  // 退出循环并关闭程序
-        }
+        // else if (config.status == -1) {
+        //     // 如果 status 为 -1，退出程序
+        //     cout << "退出程序..." << endl;
+        //     // break;  // 退出循环并关闭程序
+        // }
         
 
         // 每 0.5 秒检查一次
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    }
+        // std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    // }
 
     return 0;
 }
