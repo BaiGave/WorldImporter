@@ -283,8 +283,8 @@ void LoadAndCacheBlockData(int chunkX, int chunkZ, int sectionY, const std::tupl
             }
         }
     }
-    // ================ 新增群系数据处理 ================
-    // 获取群系数据
+    // ================ 修改后的群系数据处理 ================
+// 获取群系数据
     auto bio = getBiomes(sec);
     std::vector<int> biomeData;
 
@@ -294,6 +294,7 @@ void LoadAndCacheBlockData(int chunkX, int chunkZ, int sectionY, const std::tupl
 
         // 获取 data 标签
         auto dataTag = getChildByName(bio, "data");
+
         if (dataTag && dataTag->type == TagType::LONG_ARRAY) {
             // 解析 long 数组
             size_t numLongs = dataTag->payload.size() / sizeof(int64_t);
@@ -312,23 +313,32 @@ void LoadAndCacheBlockData(int chunkX, int chunkZ, int sectionY, const std::tupl
                     int index = (value >> (j * bitsPerIndex)) & mask;
                     if (index < biomePalette.size()) {
                         int bid = Biome::GetId(biomePalette[index]);
-                        biomeData.push_back(bid == -1 ? 0 : bid); // 无效 ID 使用默认
+                        biomeData.push_back(bid == -1 ? 0 : bid);
                     }
                     else {
-                        biomeData.push_back(0); // 无效索引使用默认
+                        biomeData.push_back(0);
                     }
                 }
             }
-
-            // 确保数据长度为 4096（16x16x16）
-            if (biomeData.size() > 4096) biomeData.resize(4096);
-            else if (biomeData.size() < 4096) biomeData.resize(4096, 0);
         }
-    }
+        else {
+            // 当data标签不存在时，使用调色板第一个元素填充整个子区块
+            if (!biomePalette.empty()) {
+                int defaultBid = Biome::GetId(biomePalette[0]);
+                biomeData.resize(4096, defaultBid == -1 ? 0 : defaultBid);
+            }
+            else {
+                biomeData.resize(4096, 0);
+            }
+        }
 
-    // 缓存群系数据
-    if (!biomeData.empty()) {
-        biomeDataCache[blockKey] = biomeData;
+        // 确保数据长度正确
+        if (biomeData.size() > 4096) {
+            biomeData.resize(4096);
+        }
+        else if (biomeData.size() < 4096) {
+            biomeData.resize(4096, 0); // 补充默认值
+        }
     }
     // 更新缓存
     blockDataCache[blockKey] = globalBlockData;
@@ -405,8 +415,8 @@ void LoadCacheBlockDataAutomatically(int chunkX, int chunkZ, int sectionY) {
         }
     }
 
-    // ================ 新增群系数据处理 ================
-    // 获取群系数据
+    // ================ 修改后的群系数据处理 ================
+// 获取群系数据
     auto bio = getBiomes(sec);
     std::vector<int> biomeData;
 
@@ -416,6 +426,7 @@ void LoadCacheBlockDataAutomatically(int chunkX, int chunkZ, int sectionY) {
 
         // 获取 data 标签
         auto dataTag = getChildByName(bio, "data");
+
         if (dataTag && dataTag->type == TagType::LONG_ARRAY) {
             // 解析 long 数组
             size_t numLongs = dataTag->payload.size() / sizeof(int64_t);
@@ -434,20 +445,33 @@ void LoadCacheBlockDataAutomatically(int chunkX, int chunkZ, int sectionY) {
                     int index = (value >> (j * bitsPerIndex)) & mask;
                     if (index < biomePalette.size()) {
                         int bid = Biome::GetId(biomePalette[index]);
-                        biomeData.push_back(bid == -1 ? 0 : bid); // 无效 ID 使用默认
+                        biomeData.push_back(bid == -1 ? 0 : bid);
                     }
                     else {
-                        biomeData.push_back(0); // 无效索引使用默认
+                        biomeData.push_back(0);
                     }
                 }
             }
+        }
+        else {
+            // 当data标签不存在时，使用调色板第一个元素填充整个子区块
+            if (!biomePalette.empty()) {
+                int defaultBid = Biome::GetId(biomePalette[0]);
+                biomeData.resize(4096, defaultBid == -1 ? 0 : defaultBid);
+            }
+            else {
+                biomeData.resize(4096, 0);
+            }
+        }
 
-            // 确保数据长度为 4096（16x16x16）
-            if (biomeData.size() > 4096) biomeData.resize(4096);
-            else if (biomeData.size() < 4096) biomeData.resize(4096, 0);
+        // 确保数据长度正确
+        if (biomeData.size() > 4096) {
+            biomeData.resize(4096);
+        }
+        else if (biomeData.size() < 4096) {
+            biomeData.resize(4096, 0); // 补充默认值
         }
     }
-
     // 缓存群系数据
     if (!biomeData.empty()) {
         biomeDataCache[blockKey] = biomeData;
@@ -502,6 +526,7 @@ int GetBlockId(int blockX, int blockY, int blockZ) {
     int encodedValue = toYZX(relativeX, relativeY, relativeZ);
     return (encodedValue < cachedData.size()) ? cachedData[encodedValue] : 0;
 }
+
 // --------------------------------------------------------------------------------
 // 方块扩展信息查询函数
 // --------------------------------------------------------------------------------

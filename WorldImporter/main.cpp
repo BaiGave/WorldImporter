@@ -196,21 +196,25 @@ int main() {
     //}
     // 生成包含所有使用 cube 模型的方块
     //GenerateSolidsJson("solids.json", {"block/cube_mirrored_all", "block/cube_all","block/cube_column"});
-    RegionModelExporter::ExportRegionModels(
-        config.minX, config.maxX,
-        config.minY, config.maxY,
-        config.minZ, config.maxZ,
-        "region_models"
-    );
-    //exportPointCloud();
+    //RegionModelExporter::ExportRegionModels(
+    //    config.minX, config.maxX,
+    //    config.minY, config.maxY,
+    //    config.minZ, config.maxZ,
+    //    "region_models"
+    //);
+    ////exportPointCloud();
+    // 生成从(0,0)到(15,15)区域的群系图，基于地面高度
+    auto biomeMap = Biome::GenerateBiomeMap(-50, -50, 150, 150, -1);
+
     auto end_time = high_resolution_clock::now();
     auto duration = duration_cast<milliseconds>(end_time - start_time);
     cout << "Total time: " << duration.count() << " milliseconds" << endl;
     Biome::PrintAllRegisteredBiomes();
-    int biomeId = GetBiomeId(20, 2, 50);
+
+    /*int biomeId = GetBiomeId(20, 2, 50);
     std::cout << "生物群系ID: " << biomeId << std::endl;
     int y = GetHeightMapY(1, 1, "MOTION_BLOCKING_NO_LEAVES");
-    std::cout << "地形阻挡高度：" << y << std::endl;
+    std::cout << "地形阻挡高度：" << y << std::endl;*/
 
     //PrintTextureCache(textureCache);
     //PrintModListCache();

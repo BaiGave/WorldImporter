@@ -11,6 +11,7 @@ public:
     // 打印所有已注册群系
     static void PrintAllRegisteredBiomes();
 
+    static std::vector<std::vector<int>> GenerateBiomeMap(int minX, int minZ, int maxX, int maxZ, int y = -1);
 
 private:
     static std::unordered_map<std::string, int> biomeRegistry;
@@ -19,5 +20,6 @@ private:
     // 禁止实例化
     Biome() = delete;
 };
+
 // 通过坐标获取生物群系ID
 int GetBiomeId(int blockX, int blockY, int blockZ);

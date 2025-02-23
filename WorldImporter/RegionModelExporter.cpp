@@ -260,7 +260,6 @@ void RegionModelExporter::ExportRegionModels(int xStart, int xEnd, int yStart, i
     }
 }
 
-
 ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int chunkZ) {
     ModelData chunkModel;
     // 计算区块内的方块范围
@@ -273,7 +272,8 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
             for (int z = blockZStart; z < blockZStart + 16; ++z) {
                 bool neighbors[6];
                 int id = GetBlockIdWithNeighbors(x, y, z, neighbors);
-
+                
+                
                 string blockName = GetBlockNameById(id);
                 string ns = GetBlockNamespaceById(id);
                 string bN;

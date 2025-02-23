@@ -2,7 +2,9 @@
 #include "block.h"
 #include "coord_conversion.h"
 #include <iostream>
-
+#include <stdexcept>
+#include <fstream>
+#include <string>
 // 初始化静态成员
 std::unordered_map<std::string, int> Biome::biomeRegistry;
 std::mutex Biome::registryMutex;
@@ -49,6 +51,34 @@ void Biome::PrintAllRegisteredBiomes() {
         std::cout << "  ID: " << entry.second
             << "\t名称: " << entry.first << "\n";
     }
+}
+
+// 实现生成群系图的方法
+std::vector<std::vector<int>> Biome::GenerateBiomeMap(int minX, int minZ, int maxX, int maxZ, int y) {
+    std::vector<std::vector<int>> biomeMap;
+    biomeMap.reserve((maxX - minX + 1) * (maxZ - minZ + 1));
+
+    // 遍历区域内的所有x和z坐标
+    for (int x = minX; x <= maxX; ++x) {
+        std::vector<int> row;
+        row.reserve(maxZ - minZ + 1);
+        for (int z = minZ; z <= maxZ; ++z) {
+            int currentY = y;
+            if (currentY == -1) {
+                // 获取地面高度，若失败则使用默认值
+                currentY = GetHeightMapY(x, z, "MOTION_BLOCKING_NO_LEAVES");
+                if (currentY < -64) currentY = -64; // 限制y在合法范围内
+                else if (currentY > 255) currentY = 255;
+            }
+
+            // 获取群系ID，自动处理区块加载
+            int biomeId = GetBiomeId(x, currentY, z);
+            row.push_back(biomeId);
+        }
+        biomeMap.push_back(row);
+    }
+
+    return biomeMap;
 }
 
 int GetBiomeId(int blockX, int blockY, int blockZ) {

@@ -18,7 +18,6 @@ void WriteConfig(const Config& config, const std::string& configFile) {
     // 写入全局配置
     file << "worldPath = " << config.worldPath << std::endl;
     file << "packagePath = " << config.packagePath << std::endl;
-    file << "biomeMappingFile = " << config.biomeMappingFile << std::endl;
     file << "minX = " << config.minX << std::endl;
     file << "minY = " << config.minY << std::endl;
     file << "minZ = " << config.minZ << std::endl;
@@ -103,9 +102,6 @@ Config LoadConfig(const std::string& configFile) {
             }
             else if (key == "packagePath") {
                 config.packagePath = value;
-            }
-            else if (key == "biomeMappingFile") {
-                config.biomeMappingFile = value;
             }
             else if (key == "minX") {
                 config.minX = std::stoi(value);

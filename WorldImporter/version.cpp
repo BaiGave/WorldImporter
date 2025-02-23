@@ -3,6 +3,7 @@
 #include "fileutils.h"
 #include "dat.h"
 #include <fstream>
+#include <iostream>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
@@ -10,140 +11,93 @@ using json = nlohmann::json;
 // 获取 Minecraft 版本 id
 std::string GetMinecraftVersion(const std::wstring& gameFolderPath, std::string& modLoaderType) {
     // 获取整合包的文件夹名作为版本名称
-    std::wstring folderName = GetFolderNameFromPath(gameFolderPath);  // 这里假设文件夹名就是版本名
-    std::string folderNameStr = wstring_to_string(folderName);  // 转换为 std::string
+    std::wstring folderName = GetFolderNameFromPath(gameFolderPath);
+    std::string folderNameStr = wstring_to_string(folderName);
 
-    // 在遍历之前检查是否已经存在该 folderName 对应的缓存
+    // 清空缓存（如果存在）
     if (VersionCache.find(folderNameStr) != VersionCache.end()) {
-        // 如果存在，清空缓存
         VersionCache[folderNameStr].clear();
     }
 
-    // 构建 version.json 文件的路径
+    // 尝试读取 version.json
     std::wstring versionJsonPath = gameFolderPath + L"\\" + folderName + L".json";
+    std::ifstream versionFile(versionJsonPath, std::ios::binary);
+    versionFile.imbue(std::locale("en_US.UTF-8"));
 
-    // 设置 locale，支持 UTF-8 编码读取文件
-    std::ifstream versionFile(versionJsonPath, std::ios::binary);  // 使用 ifstream 读取文件
-    versionFile.imbue(std::locale("en_US.UTF-8"));  // 使用 UTF-8 编码读取文件
-
-    if (!versionFile.is_open()) {
-        std::cerr << "Could not open the version.json file: " << wstring_to_string(versionJsonPath) << std::endl;
-        return "";
-    }
-
-    // 读取文件内容并解析为 JSON 对象
+    bool hasVersionJson = versionFile.is_open();
     json versionData;
-    versionFile >> versionData;  // 使用 nlohmann::json 解析
+    bool isForgePack = false, isFabricPack = false, isNeoForgePack = false;
 
-    versionFile.close();  // 关闭文件
+    if (hasVersionJson) {
+        try {
+            versionFile >> versionData;
+            versionFile.close();
 
-    // 查找是否存在 "forgeclient" 参数在 "game" 数组中
-    bool isForgePack = false;
-    bool isFabricPack = false;
-    bool isNeoForgePack = false;
-    if (versionData.contains("arguments") && versionData["arguments"].contains("game")) {
-        const auto& gameArgs = versionData["arguments"]["game"];
-        if (gameArgs.is_array()) {
-            // 遍历 game 数组，检查是否包含 "forgeclient"
-            for (const auto& arg : gameArgs) {
-                if (arg.is_string() && arg.get<std::string>() == "forgeclient") {
+            // 解析 mod 加载器类型
+            if (versionData.contains("arguments") && versionData["arguments"].contains("game")) {
+                for (const auto& arg : versionData["arguments"]["game"]) {
+                    if (arg.is_string()) {
+                        std::string argStr = arg.get<std::string>();
+                        if (argStr == "forgeclient") isForgePack = true;
+                        else if (argStr == "neoforgeclient") isNeoForgePack = true;
+                    }
+                }
+            }
+
+            if (versionData.contains("mainClass")) {
+                std::string mainClass = versionData["mainClass"];
+                if (mainClass == "net.fabricmc.loader.impl.launch.knot.KnotClient" ||
+                    mainClass == "org.quiltmc.loader.impl.launch.knot.KnotClient") {
+                    isFabricPack = true;
+                }
+                else if (mainClass == "net.minecraftforge.bootstrap.ForgeBootstrap") {
                     isForgePack = true;
-                    break;
                 }
             }
-        }
-    }
-    if (versionData.contains("arguments") && versionData["arguments"].contains("game")) {
-        const auto& gameArgs = versionData["arguments"]["game"];
-        if (gameArgs.is_array()) {
-            // 遍历 game 数组，检查是否包含 "neoforgeclient"
-            for (const auto& arg : gameArgs) {
-                if (arg.is_string() && arg.get<std::string>() == "neoforgeclient") {
-                    isNeoForgePack = true;
-                    break;
-                }
-            }
-        }
-    }
 
-    if (versionData.contains("mainClass")) {
-        std::string mainClass = versionData["mainClass"];
+            // 设置 modLoaderType
+            if (isForgePack)       modLoaderType = "Forge";
+            else if (isNeoForgePack) modLoaderType = "NeoForge";
+            else if (isFabricPack)  modLoaderType = "Fabric";
+            else                   modLoaderType = "Vanilla";
 
-        if (mainClass == "net.fabricmc.loader.impl.launch.knot.KnotClient") {
-            isFabricPack = true;
         }
-        else if (mainClass == "net.minecraftforge.bootstrap.ForgeBootstrap")
-        {
-            isForgePack = true;
+        catch (...) {
+            std::cerr << "Failed to parse version.json, using fallback" << std::endl;
+            hasVersionJson = false;
         }
-        else if (mainClass == "org.quiltmc.loader.impl.launch.knot.KnotClient")
-        {
-            isFabricPack = true;
-        }
-    }
-
-    // 设置 modLoaderType 根据是否是 Forge
-    if (isForgePack) {
-        modLoaderType = "Forge";
-    }
-    else if (isNeoForgePack)
-    {
-        modLoaderType = "NeoForge";
-    }
-    else if (isFabricPack)
-    {
-        modLoaderType = "Fabric";
     }
     else {
-        modLoaderType = "Vanilla";
+        std::cerr << "version.json not found, using fallback" << std::endl;
+        modLoaderType = "Vanilla";  // 默认值
     }
 
-    // 获取 jar 字段
-    if (versionData.contains("jar")) {
-        std::string jar = versionData["jar"];
-        // 将 std::string 转换为 std::wstring
-        std::wstring w_jar = string_to_wstring(jar);
+    // 构建 .jar 文件路径（优先使用 version.json 中的信息，否则使用文件夹名）
+    std::string jarName = (hasVersionJson && versionData.contains("jar"))
+        ? versionData["jar"].get<std::string>()  // 显式转换为 string
+        : folderNameStr;                         // 已经是 string
 
-        // 使用获取的版本名构建 .jar 文件路径
-        std::wstring jarFilePath = gameFolderPath + L"\\" + w_jar + L".jar";
+    std::wstring jarFilePath = gameFolderPath + L"\\" + string_to_wstring(jarName) + L".jar";
 
-        // 缓存版本信息到全局 VersionCache
-        FolderData versionInfo = { "minecraft", wstring_to_string(jarFilePath) };
+    // 更新缓存
+    FolderData versionInfo = { "minecraft", wstring_to_string(jarFilePath) };
+    auto& folderDataList = VersionCache[folderNameStr];
 
-        // 获取 folderName 对应的键
-        auto& folderDataList = VersionCache[folderNameStr];
+    auto it = std::find_if(folderDataList.begin(), folderDataList.end(),
+        [](const FolderData& data) { return data.namespaceName == "minecraft"; });
 
-        // 检查是否已经有名为 "minecraft" 的 FolderData
-        bool found = false;
-        for (auto& data : folderDataList) {
-            if (data.namespaceName == "minecraft") {
-                // 如果找到，更新 path
-                data.path = wstring_to_string(jarFilePath);
-                found = true;
-                break;
-            }
-        }
+    if (it != folderDataList.end()) it->path = wstring_to_string(jarFilePath);
+    else folderDataList.push_back(versionInfo);
 
-        // 如果没有找到 "minecraft"，则插入新的 FolderData
-        if (!found) {
-            folderDataList.push_back(versionInfo);
-        }
-
-        // 使用 JarReader 处理 .jar 文件
-        JarReader jarReader(jarFilePath);
-
-        // 根据不同的 mod 类型，获取 modId
-        if (jarReader.getModType() == JarReader::ModType::Vanilla) {
-            return jarReader.getVanillaVersionId();
-        }
-
-        return "";  // 返回版本 id
+    // 从 JAR 文件获取版本
+    JarReader jarReader(jarFilePath);
+    if (jarReader.getModType() == JarReader::ModType::Vanilla) {
+        return jarReader.getVanillaVersionId();
     }
 
-    std::cerr << "Could not find Minecraft version (id) in version.json" << std::endl;
+    std::cerr << "Could not determine Minecraft version from JAR" << std::endl;
     return "";
 }
-
 
 
 // 获取 mod 列表并更新 modListCache
