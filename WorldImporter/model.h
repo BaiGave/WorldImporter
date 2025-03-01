@@ -57,7 +57,7 @@ static std::unordered_map<std::string, std::string> texturePathCache; // Key: "n
 // 模型处理
 ModelData ProcessModelJson(const std::string& namespaceName,
     const std::string& blockId,
-    int rotationX, int rotationY,bool uvlock);
+    int rotationX, int rotationY,bool uvlock, int randomIndex = 0, const std::string& blockstateName="");
 
 // 模型合并
 ModelData MergeModelData(const ModelData& data1, const ModelData& data2);

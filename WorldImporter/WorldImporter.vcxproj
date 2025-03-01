@@ -117,7 +117,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
@@ -138,6 +138,7 @@
     <ClCompile Include="coord_conversion.cpp" />
     <ClCompile Include="dat.cpp" />
     <ClCompile Include="decompressor.cpp" />
+    <ClCompile Include="EntityBlock.cpp" />
     <ClCompile Include="fileutils.cpp" />
     <ClCompile Include="GlobalCache.cpp" />
     <ClCompile Include="JarReader.cpp" />
@@ -149,6 +150,7 @@
     <ClCompile Include="RegionModelExporter.cpp" />
     <ClCompile Include="texture.cpp" />
     <ClCompile Include="version.cpp" />
+    <ClCompile Include="源.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="biome.h" />
@@ -158,6 +160,7 @@
     <ClInclude Include="coord_conversion.h" />
     <ClInclude Include="dat.h" />
     <ClInclude Include="decompressor.h" />
+    <ClInclude Include="EntityBlock.h" />
     <ClInclude Include="fileutils.h" />
     <ClInclude Include="global.h" />
     <ClInclude Include="GlobalCache.h" />

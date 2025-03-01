@@ -7,66 +7,111 @@
 #include <Windows.h>
 #include <iostream>
 #include <sstream>
+
 std::unordered_map<std::string, std::unordered_map<std::string, ModelData>> BlockModelCache;
+
+std::unordered_map<std::string,
+    std::unordered_map<std::string,
+    std::vector<WeightedModelData>>> VariantModelCache;
+
+std::unordered_map<std::string,
+    std::unordered_map<std::string,
+    std::vector<std::vector<WeightedModelData>>>> MultipartModelCache;
 // --------------------------------------------------------------------------------
 // 条件匹配函数
 // --------------------------------------------------------------------------------
 bool matchConditions(const std::unordered_map<std::string, std::string>& blockConditions, const nlohmann::json& when) {
-    // 判断 when 条件是否满足
     if (when.is_object()) {
-        // 处理 OR 条件
-        if (when.contains("OR")) {
-            for (const auto& condition : when["OR"]) {
-                if (matchConditions(blockConditions, condition)) {
-                    return true;
-                }
-            }
-            return false;
+        // 处理空对象条件
+        if (when.empty()) {
+            return false; // 触发警告：No elements found in selector
         }
 
-        // 处理 AND 条件
-        if (when.contains("AND")) {
-            for (const auto& condition : when["AND"]) {
-                if (!matchConditions(blockConditions, condition)) {
-                    return false;
+        // 检查是否为单一OR或AND条件
+        if (when.size() == 1) {
+            // 处理OR条件
+            if (when.contains("OR")) {
+                const auto& orCond = when["OR"];
+                if (!orCond.is_array()) {
+                    return false; // 触发警告：OR应为数组
                 }
+                for (const auto& cond : orCond) {
+                    if (matchConditions(blockConditions, cond)) {
+                        return true;
+                    }
+                }
+                return false;
             }
-            return true;
-        }
-
-        // 处理普通属性条件
-        for (auto& condition : when.items()) {
-            std::string key = condition.key();
-            std::string value = condition.value();
-
-            if (blockConditions.find(key) != blockConditions.end()) {
-                // 值包含 "|" 时，视为 "或" 条件
-                if (value.find('|') != std::string::npos) {
-                    std::vector<std::string> options;
-                    size_t pos = 0;
-                    while ((pos = value.find('|')) != std::string::npos) {
-                        options.push_back(value.substr(0, pos));
-                        value.erase(0, pos + 1);
-                    }
-                    options.push_back(value);
-
-                    if (std::find(options.begin(), options.end(), blockConditions.at(key)) != options.end()) {
-                        continue;
-                    }
-                    else {
+            // 处理AND条件
+            else if (when.contains("AND")) {
+                const auto& andCond = when["AND"];
+                if (!andCond.is_array()) {
+                    return false; // 触发警告：AND应为数组
+                }
+                for (const auto& cond : andCond) {
+                    if (!matchConditions(blockConditions, cond)) {
                         return false;
                     }
                 }
-                else if (blockConditions.at(key) != value) { // 严格匹配
-                    return false;
-                }
-            }
-            else {
-                return false;
+                return true;
             }
         }
+
+        // 处理普通多条件检查
+        for (const auto& item : when.items()) {
+            const std::string& prop = item.key();
+            const auto& valueJson = item.value();
+
+            // 检查值类型是否为字符串
+            if (!valueJson.is_string()) {
+                return false; // 触发异常警告
+            }
+            std::string valueStr = valueJson.get<std::string>();
+
+            // 解析反转标记
+            bool invert = false;
+            if (!valueStr.empty() && valueStr[0] == '!') {
+                invert = true;
+                valueStr = valueStr.substr(1);
+            }
+
+            // 分割选项值
+            std::vector<std::string> options;
+            size_t pos;
+            while ((pos = valueStr.find('|')) != std::string::npos) {
+                options.push_back(valueStr.substr(0, pos));
+                valueStr.erase(0, pos + 1);
+            }
+            options.push_back(valueStr);
+
+            // 空选项检查
+            if (options.empty() || (options.size() == 1 && options[0].empty())) {
+                return false; // 触发警告：空属性值
+            }
+
+            // 检查方块属性是否存在
+            auto blockIt = blockConditions.find(prop);
+            if (blockIt == blockConditions.end()) {
+                return false; // 触发警告：未知属性
+            }
+
+            // 判断属性值是否匹配
+            bool valueMatched = std::find(options.begin(), options.end(), blockIt->second) != options.end();
+            if (invert) {
+                if (valueMatched) return false;
+            }
+            else {
+                if (!valueMatched) return false;
+            }
+        }
+        return true;
     }
-    return true;
+    // 当条件不存在时默认匹配
+    else if (when.is_null()) {
+        return true;
+    }
+    // 非对象/null类型无效
+    return false;
 }
 
 // 辅助函数：将键值对字符串解析为map
@@ -390,15 +435,326 @@ std::unordered_map<std::string, ModelData> ProcessBlockstateJson(const std::stri
                 fileName = fileName.substr(slashPos + 1);
             }
         }
-        /*if (blockId.find("note") != std::string::npos) {
-            std::cout << "C" << blockId << std::endl;
-        }*/
         // 缓存模型数据
         namespaceCache[blockId] = mergedModel;
         result[blockId] = mergedModel;
     }
 
     return result;
+}
+
+void LoadBlockstateJson(const std::string& namespaceName, const std::vector<std::string>& blockIds) {
+    for (const auto& blockId : blockIds) {
+        // 解析 blockId 和条件
+        static const std::regex blockIdRegex(R"(^(.*?)\[(.*)\]$)");
+        std::smatch match;
+        std::string baseBlockId = blockId;
+        std::string condition;
+        std::unordered_map<std::string, std::string> blockConditions;
+        std::string blockstateName = namespaceName + ":" + blockId;
+
+        if (std::regex_match(blockId, match, blockIdRegex)) {
+            baseBlockId = match.str(1);
+            condition = match.str(2);
+
+            static const std::regex conditionRegex(R"((\w+)=([^,]+))");
+            auto conditionsBegin = std::sregex_iterator(condition.begin(), condition.end(), conditionRegex);
+            auto conditionsEnd = std::sregex_iterator();
+
+            for (auto i = conditionsBegin; i != conditionsEnd; ++i) {
+                std::smatch submatch = *i;
+                blockConditions[submatch[1].str()] = submatch[2].str();
+            }
+        }
+
+        // 读取 blockstate JSON
+        nlohmann::json blockstateJson = GetBlockstateJson(namespaceName, baseBlockId);
+        if (blockstateJson.is_null()) {
+            continue;
+        }
+
+        ModelData mergedModel;
+        std::vector<ModelData> selectedModels;
+
+        // 处理 variants
+        if (blockstateJson.contains("variants")) {
+            for (auto& variant : blockstateJson["variants"].items()) {
+                std::string variantKey = variant.key();
+                std::string normalizedCondition = SortedVariantKey(condition);
+                std::string normalizedVariantKey = SortedVariantKey(variantKey);
+
+                // 解析为键值对
+                auto conditionMap = ParseKeyValuePairs(normalizedCondition);
+                auto variantMap = ParseKeyValuePairs(normalizedVariantKey);
+
+                // 判断条件：variantMap 的所有键值对需存在于 conditionMap 中
+                if (condition.empty() || IsSubset(variantMap, conditionMap)) {
+                    int rotationX = 0, rotationY = 0;
+                    bool uvlock = false;
+
+                    if (variant.value().contains("x")) {
+                        rotationX = variant.value()["x"].get<int>();
+                    }
+                    if (variant.value().contains("y")) {
+                        rotationY = variant.value()["y"].get<int>();
+                    }
+                    if (variant.value().contains("uvlock")) {
+                        uvlock = variant.value()["uvlock"].get<bool>();
+                    }
+                    // 处理模型加权数组
+                    if (variant.value().is_array()) {
+                        std::vector<WeightedModelData> weightedModels;
+                        std::string cacheKey = namespaceName + ":" + baseBlockId + ":" + variantKey;
+
+                        int t = 0;
+                        for (const auto& item : variant.value()) {
+                            
+                            int weight = item.contains("weight") ? item["weight"].get<int>() : 1;
+                            std::string modelId = item.contains("model") ? item["model"].get<std::string>() : "";
+
+                            if (!modelId.empty()) {
+                                // 处理模型命名空间
+                                size_t colonPos = modelId.find(':');
+                                std::string modelNamespace = namespaceName;
+                                if (colonPos != std::string::npos) {
+                                    modelNamespace = modelId.substr(0, colonPos);
+                                    modelId = modelId.substr(colonPos + 1);
+                                }
+
+                                // 生成模型数据
+                                ModelData model = ProcessModelJson(modelNamespace, modelId,
+                                    rotationX, rotationY, uvlock,t, blockstateName);
+
+                                weightedModels.push_back({ model, weight });
+                                t = t + 1;
+                            }
+                            
+                        }
+
+                        // 存入缓存
+                        VariantModelCache[namespaceName][blockId] = weightedModels;
+                        continue;
+
+                    }
+                    else {
+                        std::string modelId = variant.value().contains("model") ? variant.value()["model"].get<std::string>() : "";
+                        if (!modelId.empty()) {
+                            size_t colonPos = modelId.find(':');
+                            std::string modelNamespace = namespaceName;
+
+                            if (colonPos != std::string::npos) {
+                                modelNamespace = modelId.substr(0, colonPos);
+                                modelId = modelId.substr(colonPos + 1);
+                            }
+
+                            mergedModel = ProcessModelJson(modelNamespace, modelId, rotationX, rotationY, uvlock,0, blockstateName);
+                            BlockModelCache[namespaceName][blockId] = mergedModel;
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+
+        // 处理 multipart
+        if (blockstateJson.contains("multipart")) {
+            auto multipart = blockstateJson["multipart"];
+            bool useMultipartModelCache = false;
+
+            for (const auto& item : multipart) {
+                if (item.contains("apply") && item["apply"].is_array()) {
+                    useMultipartModelCache = true;
+                    break;
+                }
+            }
+
+            // 如果有 apply 是数组，使用 MultipartModelCache，否则使用 BlockModelCache
+            if (useMultipartModelCache) {
+                std::vector<std::vector<WeightedModelData>> multipartModelsList;
+
+                for (const auto& item : multipart) {
+                    if (item.contains("apply")) {
+                        auto apply = item["apply"];
+                        bool conditionMatched = true;
+
+                        if (item.contains("when")) {
+                            conditionMatched = matchConditions(blockConditions, item["when"]);
+                        }
+
+                        if (conditionMatched) {
+                            int rotationX = 0, rotationY = 0;
+                            bool uvlock = false; // 新增 uvlock 捕获
+
+                            if (apply.contains("x")) {
+                                rotationX = apply["x"].get<int>();
+                            }
+                            if (apply.contains("y")) {
+                                rotationY = apply["y"].get<int>();
+                            }
+                            // 新增 uvlock 处理
+                            if (apply.contains("uvlock")) {
+                                uvlock = apply["uvlock"].get<bool>();
+                            }
+
+                            // 处理 apply 数组
+                            std::vector<WeightedModelData> multipartModels;
+                            int t = 0;
+                            for (const auto& modelItem : apply) {
+                                int weight = modelItem.contains("weight") ? modelItem["weight"].get<int>() : 1;
+                                std::string modelId = modelItem.contains("model") ? modelItem["model"].get<std::string>() : "";
+
+                                if (!modelId.empty()) {
+                                    // 处理模型命名空间
+                                    size_t colonPos = modelId.find(':');
+                                    std::string modelNamespace = namespaceName;
+                                    if (colonPos != std::string::npos) {
+                                        modelNamespace = modelId.substr(0, colonPos);
+                                        modelId = modelId.substr(colonPos + 1);
+                                    }
+
+                                    // 生成模型数据
+                                    ModelData model = ProcessModelJson(modelNamespace, modelId,
+                                        rotationX, rotationY, uvlock, t, blockstateName);
+
+                                    multipartModels.push_back({ model, weight });
+                                    t = t + 1;
+                                }
+                            }
+
+                            // 将 multipartModels 添加到缓存
+                            multipartModelsList.push_back(multipartModels);
+                        }
+                    }
+                }
+
+                // 存入 MultipartModelCache
+                MultipartModelCache[namespaceName][blockId] = multipartModelsList;
+            }
+            else {
+                // 处理没有数组的 apply
+                std::vector<ModelData> selectedModels;
+
+                for (const auto& item : multipart) {
+                    if (item.contains("apply")) {
+                        auto apply = item["apply"];
+                        bool conditionMatched = true;
+
+                        if (item.contains("when")) {
+                            conditionMatched = matchConditions(blockConditions, item["when"]);
+                        }
+
+                        if (conditionMatched) {
+                            int rotationX = 0, rotationY = 0;
+                            bool uvlock = false;
+
+                            if (apply.contains("x")) {
+                                rotationX = apply["x"].get<int>();
+                            }
+                            if (apply.contains("y")) {
+                                rotationY = apply["y"].get<int>();
+                            }
+                            if (apply.contains("uvlock")) {
+                                uvlock = apply["uvlock"].get<bool>();
+                            }
+
+                            // 处理单个模型
+                            std::string modelId = apply.contains("model") ? apply["model"].get<std::string>() : "";
+                            if (!modelId.empty()) {
+                                size_t colonPos = modelId.find(':');
+                                std::string modelNamespace = namespaceName;
+
+                                if (colonPos != std::string::npos) {
+                                    modelNamespace = modelId.substr(0, colonPos);
+                                    modelId = modelId.substr(colonPos + 1);
+                                }
+
+                                ModelData selectedModel = ProcessModelJson(modelNamespace, modelId, rotationX, rotationY, uvlock, 0, blockstateName);
+                                selectedModels.push_back(selectedModel);
+                            }
+                        }
+                    }
+                }
+
+                // 合并模型
+                if (!selectedModels.empty()) {
+                    mergedModel = selectedModels[0];
+                    for (size_t i = 1; i < selectedModels.size(); ++i) {
+                        mergedModel = MergeModelData(mergedModel, selectedModels[i]);
+                    }
+                }
+
+                // 存入 BlockModelCache
+                BlockModelCache[namespaceName][blockId] = mergedModel;
+            }
+        }
+    }
+}
+
+ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::string& blockId) {
+    // 先检查主缓存
+    if (BlockModelCache.count(namespaceName) &&
+        BlockModelCache[namespaceName].count(blockId)) {
+        return BlockModelCache[namespaceName][blockId];
+    }
+
+    // 检查 variant 缓存
+    if (VariantModelCache.count(namespaceName) &&
+        VariantModelCache[namespaceName].count(blockId)) {
+        auto& models = VariantModelCache[namespaceName][blockId];
+        int totalWeight = 0;
+        for (const auto& wm : models) {
+            totalWeight += wm.weight;
+        }
+
+        if (totalWeight > 0) {
+            static std::random_device rd;
+            static std::mt19937 gen(rd());
+            std::uniform_int_distribution<> dis(1, totalWeight);
+            int randomWeight = dis(gen);
+            int cumulative = 0;
+
+            for (const auto& wm : models) {
+                cumulative += wm.weight;
+                if (randomWeight <= cumulative) {
+                    return wm.model;
+                }
+            }
+        }
+    }
+
+    // 检查 multipart 缓存
+    if (MultipartModelCache.count(namespaceName) &&
+        MultipartModelCache[namespaceName].count(blockId)) {
+        ModelData merged;
+        auto& partList = MultipartModelCache[namespaceName][blockId];
+
+        for (auto& parts : partList) {
+            int totalWeight = 0;
+            for (const auto& wm : parts) {
+                totalWeight += wm.weight;
+            }
+
+            if (totalWeight > 0) {
+                static std::random_device rd;
+                static std::mt19937 gen(rd());
+                std::uniform_int_distribution<> dis(1, totalWeight);
+                int randomWeight = dis(gen);
+                int cumulative = 0;
+
+                for (const auto& wm : parts) {
+                    cumulative += wm.weight;
+                    if (randomWeight <= cumulative) {
+                        merged = MergeModelData(merged, wm.model);
+                        break;
+                    }
+                }
+            }
+        }
+        return merged;
+    }
+
+    // 返回空模型
+    return ModelData();
 }
 
 void ProcessBlockstateForBlocks(const std::vector<Block>& blocks) {
@@ -408,8 +764,8 @@ void ProcessBlockstateForBlocks(const std::vector<Block>& blocks) {
     for (const auto& block : blocks) {
         std::string namespaceName = block.GetNamespace(); // 使用 Block 结构体的 GetNamespace 方法
         std::string blockId = block.GetModifiedName();
-
         namespaceToBlockIdsMap[namespaceName].push_back(blockId);
+        std::cout << block.name<<":"<<block.level << std::endl;
     }
 
     // 处理每个命名空间下的方块 ID
@@ -417,11 +773,8 @@ void ProcessBlockstateForBlocks(const std::vector<Block>& blocks) {
         const std::string& namespaceName = entry.first;
         const std::vector<std::string>& blockIds = entry.second;
 
-        auto blockstateData = ProcessBlockstateJson(namespaceName, blockIds);
-        // 合并结果到全局缓存
-        for (const auto& pair : blockstateData) {
-            BlockModelCache[namespaceName][pair.first] = pair.second;
-        }
+        LoadBlockstateJson(namespaceName, blockIds);
+       
     }
 
 }

@@ -33,6 +33,12 @@ namespace GlobalCache {
     // 模型缓存 [namespace:model_path -> JSON]
     extern std::unordered_map<std::string, nlohmann::json> models;
 
+    // 生物群系缓存 [namespace:biome_id -> JSON]
+    extern std::unordered_map<std::string, nlohmann::json> biomes;
+
+    // 色图缓存 [namespace:colormap_name -> PNG数据]
+    extern std::unordered_map<std::string, std::vector<unsigned char>> colormaps;
+
     // 同步原语
     extern std::once_flag initFlag;
     extern std::mutex cacheMutex;

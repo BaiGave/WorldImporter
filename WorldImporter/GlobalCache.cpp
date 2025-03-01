@@ -15,6 +15,8 @@ namespace GlobalCache {
     std::unordered_map<std::string, std::vector<unsigned char>> textures;
     std::unordered_map<std::string, nlohmann::json> blockstates;
     std::unordered_map<std::string, nlohmann::json> models;
+    std::unordered_map<std::string, nlohmann::json> biomes;
+    std::unordered_map<std::string, std::vector<unsigned char>> colormaps;
 
     // 同步原语
     std::once_flag initFlag;
@@ -24,6 +26,8 @@ namespace GlobalCache {
     // 线程控制
     std::atomic<bool> stopFlag{ false };
     std::queue<std::wstring> jarQueue;
+
+
 }
 
 // ========= 外部依赖定义 =========
@@ -91,9 +95,14 @@ void InitializeAllCaches() {
                     std::unordered_map<std::string, std::vector<unsigned char>> localTextures;
                     std::unordered_map<std::string, nlohmann::json> localBlockstates;
                     std::unordered_map<std::string, nlohmann::json> localModels;
+                    std::unordered_map<std::string, nlohmann::json> localBiomes;
+                    std::unordered_map<std::string, std::vector<unsigned char>> localColormaps;
+
+                    
 
                     reader.cacheAllResources(localTextures, localBlockstates, localModels);
-
+                    reader.cacheAllBiomes(localBiomes);
+                    reader.cacheAllColormaps(localColormaps);
                     // 合并到全局缓存
                     {
                         std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
@@ -116,6 +125,16 @@ void InitializeAllCaches() {
                         // 合并 models（带冲突检测）
                         for (auto& pair : localModels) {
                             GlobalCache::models.emplace(pair.first, std::move(pair.second));
+                        }
+
+                        // 合并生物群系
+                        for (auto& pair : localBiomes) {
+                            GlobalCache::biomes.insert(pair);
+                        }
+
+                        // 合并色图
+                        for (auto& pair : localColormaps) {
+                            GlobalCache::colormaps.insert(pair);
                         }
                     }
                 }
@@ -153,6 +172,8 @@ void InitializeAllCaches() {
             << " - Textures: " << GlobalCache::textures.size() << "\n"
             << " - Blockstates: " << GlobalCache::blockstates.size() << "\n"
             << " - Models: " << GlobalCache::models.size() << "\n"
+            << " - Biomes: " << GlobalCache::biomes.size() << "\n"
+            << " - Colormaps: " << GlobalCache::colormaps.size() << "\n"
             << " - Time: " << ms << "ms" << std::endl;
         });
 }

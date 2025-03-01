@@ -117,6 +117,12 @@
     <ClCompile Include="objExporter.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="EntityBlock.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="源.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="nbtutils.h">
@@ -171,6 +177,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="objExporter.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="EntityBlock.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

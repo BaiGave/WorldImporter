@@ -1,5 +1,6 @@
 #include "model.h"
 #include "fileutils.h"
+#include "EntityBlock.h"
 #include <Windows.h>   
 #include <iostream>
 #include <fstream>
@@ -177,10 +178,10 @@ void ApplyRotationToUV(ModelData& modelData, int rotationX, int rotationY) {
         else faceTypes.push_back(UNKNOWN);
     }
 
-    // 角度预处理
-    auto getAdjusted = [](int a) { return (360 - a) % 360; };
-    const int x = rotationX;
-    const int y = rotationY;
+    // 根据旋转组合处理UV旋转
+    auto getCase = [rotationX, rotationY]() {
+        return std::to_string(rotationX) + "-" + std::to_string(rotationY);
+        };
 
     // OpenMP并行处理
 #pragma omp parallel for
@@ -188,46 +189,106 @@ void ApplyRotationToUV(ModelData& modelData, int rotationX, int rotationY) {
         const FaceType face = faceTypes[i];
         int angle = 0;
 
-        if (x == 0 && y != 0) {
-            if (face == UP) angle = getAdjusted(-y);
-            else if (face == DOWN) angle = getAdjusted(y);
+        const std::string caseKey = getCase();
+
+        if (caseKey == "0-0") {
+            // 不旋转
         }
-        else if (x == 90) {
+        else if (caseKey == "0-90" || caseKey == "0-180" || caseKey == "0-270") {
+            if (face == UP) angle = -rotationY;
+            else if (face == DOWN) angle = -rotationY;
+        }
+        else if (caseKey == "90-0") {
             if (face == UP) angle = 180;
-            else if (y == 0) {
-                if (face == NORTH) angle = 180;
-                else if (face == WEST) angle = 90;
-                else if (face == EAST) angle = 270;
-            }
-            else if (y == 90) {
-                if (face == NORTH || face == SOUTH) angle = 270;
-                else if (face == WEST) angle = 90;
-                else if (face == EAST) angle = 270;
-            }
-            else if (y == 180) {
-                if (face == SOUTH) angle = 180;
-                else if (face == WEST) angle = 90;
-                else if (face == EAST) angle = 270;
-            }
-            else if (y == 270) {
-                if (face == NORTH || face == SOUTH) angle = 90;
-                else if (face == WEST) angle = 90;
-                else if (face == EAST) angle = 270;
-            }
+            else if (face == EAST) angle = 180;
+            else if (face == WEST) angle = 90;
+            else if (face == NORTH) angle = -90;
         }
-        else if (x == 180) {
-            if (face == UP) angle = y;
-            else if (face == DOWN) angle = (360 - y) % 360;
-            else if (face == NORTH || face == SOUTH || face == WEST || face == EAST) angle = 180;
+        else if (caseKey == "90-90") {
+            if (face == UP) angle = 180;
+            else if (face == EAST) angle = -90;
+            else if (face == DOWN) angle = -90;
+            else if (face == WEST) angle = 90;
+            else if (face == NORTH) angle = -90;
         }
-        else if (x == 270) {
-            if (face == WEST) angle = 270;
-            else if (face == EAST) angle = 90;
+        else if (caseKey == "90-180") {
+            if (face == NORTH) angle = 180;
             else if (face == DOWN) angle = 180;
-            else if (y == 0 && face == NORTH) angle = 180;
-            else if (y == 90 && (face == NORTH || face == SOUTH)) angle = 90;
-            else if (y == 180 && face == SOUTH) angle = 180;
-            else if (y == 270 && (face == NORTH || face == SOUTH)) angle = 270;
+            else if (face == WEST) angle = 90;
+            else if (face == UP) angle = -90;
+        }
+        else if (caseKey == "90-270") {
+            if (face == UP) angle = 180;
+            else if (face == EAST) angle = 90;
+            else if (face == DOWN) angle = 90;
+            else if (face == WEST) angle = 90;
+            else if (face == NORTH) angle = -90;
+        }
+        else if (caseKey == "180-0") {
+            if (face == UP) angle = rotationY;
+            else if (face == EAST) angle = 180;
+            else if (face == SOUTH) angle = 180;
+            else if (face == WEST) angle = 180;
+            else if (face == NORTH) angle = 180;
+            else if (face == DOWN) angle = rotationY;
+        }
+        else if (caseKey == "180-90") {
+            if (face == UP) angle = rotationY;
+            else if (face == EAST) angle = 180;
+            else if (face == SOUTH) angle = 180;
+            else if (face == WEST) angle = 180;
+            else if (face == NORTH) angle = 180;
+            else if (face == DOWN) angle = rotationY;
+        }
+        else if (caseKey == "180-180") {
+            if (face == UP) angle = rotationY;
+            else if (face == EAST) angle = 180;
+            else if (face == SOUTH) angle = 180;
+            else if (face == WEST) angle = 180;
+            else if (face == NORTH) angle = 180;
+            else if (face == DOWN) angle = rotationY;
+        }
+        else if (caseKey=="180-270") {
+            if (face == UP) angle = rotationY;
+            else if (face == EAST) angle = 180;
+            else if (face == SOUTH) angle = 180;
+            else if (face == WEST) angle = 180;
+            else if (face == NORTH) angle = 180;
+            else if (face == DOWN) angle = rotationY;
+        }
+        else if (caseKey == "270-0") {
+            if (face == EAST) angle = 180;
+            else if (face == WEST) angle = -90;
+            else if (face == NORTH) angle = 90;
+            else if (face == SOUTH) angle = 180;
+        }
+        else if (caseKey == "270-90") {
+            if (face == EAST) angle = 90;
+            else if (face == DOWN) angle = 90;
+            else if (face == WEST) angle = -90;
+            else if (face == NORTH) angle = 90;
+            else if (face == SOUTH) angle = 180;
+        }
+        else if (caseKey == "270-180") {
+            if (face == DOWN) angle = 180;
+            else if (face == WEST) angle = -90;
+            else if (face == NORTH) angle = 90;
+            else if (face == SOUTH) angle = 180;
+        }
+        else if (caseKey == "270-270") {
+            if (face == EAST) angle = -90;
+            else if (face == DOWN) angle = -90;
+            else if (face == WEST) angle = -90;
+            else if (face == NORTH) angle = 90;
+            else if (face == SOUTH) angle = 180;
+        }
+        else {
+            // 未处理的旋转组合
+            static std::unordered_set<std::string> warnedCases;
+            if (warnedCases.find(caseKey) == warnedCases.end()) {
+                warnedCases.insert(caseKey);
+                std::cerr << "Bad UV lock rotation in model: " << caseKey << std::endl;
+            }
         }
 
         if (angle != 0) {
@@ -503,109 +564,123 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
     int faceId = 0;
     std::unordered_map<std::string, int> faceCountMap; // 面计数映射
 
-    if (modelJson.contains("elements")) {
-        auto elements = modelJson["elements"];
+    auto elements = modelJson["elements"];
 
-        for (const auto& element : elements) {
-            if (element.contains("from") && element.contains("to") && element.contains("faces")) {
-                auto from = element["from"];
-                auto to = element["to"];
-                auto faces = element["faces"];
+    for (const auto& element : elements) {
+        if (element.contains("from") && element.contains("to") && element.contains("faces")) {
+            auto from = element["from"];
+            auto to = element["to"];
+            auto faces = element["faces"];
 
 
-                // 转换原始坐标为 OBJ 坐标系（/16）
-                float x1 = from[0].get<float>() / 16.0f;
-                float y1 = from[1].get<float>() / 16.0f;
-                float z1 = from[2].get<float>() / 16.0f;
-                float x2 = to[0].get<float>() / 16.0f;
-                float y2 = to[1].get<float>() / 16.0f;
-                float z2 = to[2].get<float>() / 16.0f;
-                // 生成基础顶点数据
-                std::unordered_map<std::string, std::vector<std::vector<float>>> elementVertices;
-                // 遍历元素的面，动态生成顶点数据
-                for (auto& face : faces.items()) {
-                    std::string faceName = face.key();
-                    if (faceName == "north") {
-                        elementVertices[faceName] = { {x1, y1, z1}, {x1, y2, z1}, {x2, y2, z1}, {x2, y1, z1} };
-                    }
-                    else if (faceName == "south") {
-                        elementVertices[faceName] = { {x2, y1, z2}, {x2, y2, z2}, {x1, y2, z2}, {x1, y1, z2} };
-                    }
-                    else if (faceName == "east") {
-                        elementVertices[faceName] = { {x2, y1, z1}, {x2, y2, z1}, {x2, y2, z2}, {x2, y1, z2} };
-                    }
-                    else if (faceName == "west") {
-                        elementVertices[faceName] = { {x1, y1, z2}, {x1, y2, z2}, {x1, y2, z1}, {x1, y1, z1} };
-                    }
-                    else if (faceName == "up") {
-                        elementVertices[faceName] = { {x1, y2, z1}, {x1, y2, z2}, {x2, y2, z2}, {x2, y2, z1} };
-                    }
-                    else if (faceName == "down") {
-                        elementVertices[faceName] = { {x2, y1, z2}, {x2, y1, z1}, {x1, y1, z1}, {x1, y1, z2} };
+            // 转换原始坐标为 OBJ 坐标系（/16）
+            float x1 = from[0].get<float>() / 16.0f;
+            float y1 = from[1].get<float>() / 16.0f;
+            float z1 = from[2].get<float>() / 16.0f;
+            float x2 = to[0].get<float>() / 16.0f;
+            float y2 = to[1].get<float>() / 16.0f;
+            float z2 = to[2].get<float>() / 16.0f;
+            // 生成基础顶点数据
+            std::unordered_map<std::string, std::vector<std::vector<float>>> elementVertices;
+            // 遍历元素的面，动态生成顶点数据
+            for (auto& face : faces.items()) {
+                std::string faceName = face.key();
+                if (faceName == "north") {
+                    elementVertices[faceName] = { {x1, y1, z1}, {x1, y2, z1}, {x2, y2, z1}, {x2, y1, z1} };
+                }
+                else if (faceName == "south") {
+                    elementVertices[faceName] = { {x2, y1, z2}, {x2, y2, z2}, {x1, y2, z2}, {x1, y1, z2} };
+                }
+                else if (faceName == "east") {
+                    elementVertices[faceName] = { {x2, y1, z1}, {x2, y2, z1}, {x2, y2, z2}, {x2, y1, z2} };
+                }
+                else if (faceName == "west") {
+                    elementVertices[faceName] = { {x1, y1, z2}, {x1, y2, z2}, {x1, y2, z1}, {x1, y1, z1} };
+                }
+                else if (faceName == "up") {
+                    elementVertices[faceName] = { {x1, y2, z1}, {x1, y2, z2}, {x2, y2, z2}, {x2, y2, z1} };
+                }
+                else if (faceName == "down") {
+                    elementVertices[faceName] = { {x2, y1, z2}, {x2, y1, z1}, {x1, y1, z1}, {x1, y1, z2} };
+                }
+            }
+
+            // 处理元素旋转
+            if (element.contains("rotation")) {
+                auto rotation = element["rotation"];
+                std::string axis = rotation["axis"].get<std::string>();
+                float angle_deg = rotation["angle"].get<float>();
+                auto origin = rotation["origin"];
+
+                // 转换旋转中心到 OBJ 坐标系
+                float ox = origin[0].get<float>() / 16.0f;
+                float oy = origin[1].get<float>() / 16.0f;
+                float oz = origin[2].get<float>() / 16.0f;
+                float angle_rad = angle_deg * (M_PI / 180.0f); // 转换为弧度
+
+                // 对每个面的顶点应用旋转
+                for (auto& faceEntry : elementVertices) {
+                    auto& vertices = faceEntry.second;
+                    for (auto& vertex : vertices) {
+                        float& vx = vertex[0];
+                        float& vy = vertex[1];
+                        float& vz = vertex[2];
+
+                        // 平移至旋转中心相对坐标
+                        float tx = vx - ox;
+                        float ty = vy - oy;
+                        float tz = vz - oz;
+
+                        // 根据轴类型进行旋转
+                        if (axis == "x") {
+                            // 绕X轴旋转
+                            float new_y = ty * cos(angle_rad) - tz * sin(angle_rad);
+                            float new_z = ty * sin(angle_rad) + tz * cos(angle_rad);
+                            ty = new_y;
+                            tz = new_z;
+                        }
+                        else if (axis == "y") {
+                            // 绕Y轴旋转
+                            float new_x = tx * cos(angle_rad) + tz * sin(angle_rad);
+                            float new_z = -tx * sin(angle_rad) + tz * cos(angle_rad);
+                            tx = new_x;
+                            tz = new_z;
+                        }
+                        else if (axis == "z") {
+                            // 绕Z轴旋转
+                            float new_x = tx * cos(angle_rad) - ty * sin(angle_rad);
+                            float new_y = tx * sin(angle_rad) + ty * cos(angle_rad);
+                            tx = new_x;
+                            ty = new_y;
+                        }
+
+                        // 平移回原坐标系
+                        vx = tx + ox;
+                        vy = ty + oy;
+                        vz = tz + oz;
                     }
                 }
 
-                // 处理元素旋转
-                if (element.contains("rotation")) {
-                    auto rotation = element["rotation"];
-                    std::string axis = rotation["axis"].get<std::string>();
-                    float angle_deg = rotation["angle"].get<float>();
-                    auto origin = rotation["origin"];
+                // 处理rescale参数
+                // 在旋转处理部分的缩放逻辑修改如下：
+                bool rescale = rotation.value("rescale", false);
+                if (rescale) {
+                    float angle_deg = angle_rad * 180.0f / M_PI;
+                    bool applyScaling = false;
+                    float scale = 1.0f;
 
-                    // 转换旋转中心到 OBJ 坐标系
-                    float ox = origin[0].get<float>() / 16.0f;
-                    float oy = origin[1].get<float>() / 16.0f;
-                    float oz = origin[2].get<float>() / 16.0f;
-                    float angle_rad = angle_deg * (M_PI / 180.0f); // 转换为弧度
-
-                    // 对每个面的顶点应用旋转
-                    for (auto& faceEntry : elementVertices) {
-                        auto& vertices = faceEntry.second;
-                        for (auto& vertex : vertices) {
-                            float& vx = vertex[0];
-                            float& vy = vertex[1];
-                            float& vz = vertex[2];
-
-                            // 平移至旋转中心相对坐标
-                            float tx = vx - ox;
-                            float ty = vy - oy;
-                            float tz = vz - oz;
-
-                            // 根据轴类型进行旋转
-                            if (axis == "x") {
-                                // 绕X轴旋转
-                                float new_y = ty * cos(angle_rad) - tz * sin(angle_rad);
-                                float new_z = ty * sin(angle_rad) + tz * cos(angle_rad);
-                                ty = new_y;
-                                tz = new_z;
-                            }
-                            else if (axis == "y") {
-                                // 绕Y轴旋转
-                                float new_x = tx * cos(angle_rad) + tz * sin(angle_rad);
-                                float new_z = -tx * sin(angle_rad) + tz * cos(angle_rad);
-                                tx = new_x;
-                                tz = new_z;
-                            }
-                            else if (axis == "z") {
-                                // 绕Z轴旋转
-                                float new_x = tx * cos(angle_rad) - ty * sin(angle_rad);
-                                float new_y = tx * sin(angle_rad) + ty * cos(angle_rad);
-                                tx = new_x;
-                                ty = new_y;
-                            }
-
-                            // 平移回原坐标系
-                            vx = tx + ox;
-                            vy = ty + oy;
-                            vz = tz + oz;
-                        }
+                    // 检查是否为22.5°或45°的整数倍（考虑浮点精度）
+                    if (std::fabs(angle_deg - 22.5f) < 1e-6 || std::fabs(angle_deg + 22.5f) < 1e-6) {
+                        applyScaling = true;
+                        scale = std::sqrt(2.0f - std::sqrt(2.0f)); // 22.5°对应的缩放因子
+                    }
+                    else if (std::fabs(angle_deg - 45.0f) < 1e-6 || std::fabs(angle_deg + 45.0f) < 1e-6) {
+                        applyScaling = true;
+                        scale = std::sqrt(2.0f);           // 45°对应的缩放因子
                     }
 
-                    // 处理rescale参数
-                    bool rescale = rotation.value("rescale", false);
-                    if (rescale) {
-                        // 计算缩放因子（根据旋转轴）
-                        float scale = 1.0f / std::cos(angle_rad);
+                    if (applyScaling) {
+                        // 根据旋转轴应用缩放，保留原有旋转中心偏移逻辑
                         for (auto& faceEntry : elementVertices) {
                             auto& vertices = faceEntry.second;
                             for (auto& vertex : vertices) {
@@ -613,325 +688,367 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                                 float& vy = vertex[1];
                                 float& vz = vertex[2];
 
-                                // 根据轴应用缩放
+                                // 平移至旋转中心相对坐标系
+                                float tx = vx - ox;
+                                float ty = vy - oy;
+                                float tz = vz - oz;
+
+                                // 根据轴类型应用缩放
                                 if (axis == "x") {
-                                    vy = (vy - oy) * scale + oy;
-                                    vz = (vz - oz) * scale + oz;
+                                    ty *= scale;
+                                    tz *= scale;
                                 }
                                 else if (axis == "y") {
-                                    vx = (vx - ox) * scale + ox;
-                                    vz = (vz - oz) * scale + oz;
+                                    tx *= scale;
+                                    tz *= scale;
                                 }
                                 else if (axis == "z") {
-                                    vx = (vx - ox) * scale + ox;
-                                    vy = (vy - oy) * scale + oy;
+                                    tx *= scale;
+                                    ty *= scale;
                                 }
+
+                                // 平移回原坐标系
+                                vx = tx + ox;
+                                vy = ty + oy;
+                                vz = tz + oz;
                             }
                         }
                     }
                 }
+            }
 
-                // --- 新增：检测并移除相反方向的重叠面 ---
-                auto getOppositeFace = [](const std::string& faceName) -> std::string {
-                    if (faceName == "north") return "south";
-                    if (faceName == "south") return "north";
-                    if (faceName == "east") return "west";
-                    if (faceName == "west") return "east";
-                    if (faceName == "up") return "down";
-                    if (faceName == "down") return "up";
-                    return "";
-                    };
+            // --- 新增：检测并移除相反方向的重叠面 ---
+            auto getOppositeFace = [](const std::string& faceName) -> std::string {
+                if (faceName == "north") return "south";
+                if (faceName == "south") return "north";
+                if (faceName == "east") return "west";
+                if (faceName == "west") return "east";
+                if (faceName == "up") return "down";
+                if (faceName == "down") return "up";
+                return "";
+                };
 
-                auto areFacesCoinciding = [](const std::vector<std::vector<float>>& face1,
-                    const std::vector<std::vector<float>>& face2) -> bool {
-                        if (face1.size() != face2.size()) return false;
+            auto areFacesCoinciding = [](const std::vector<std::vector<float>>& face1,
+                const std::vector<std::vector<float>>& face2) -> bool {
+                    if (face1.size() != face2.size()) return false;
 
-                        auto toKey = [](const std::vector<float>& v) {
-                            char buffer[64];
-                            snprintf(buffer, sizeof(buffer), "%.4f,%.4f,%.4f", v[0], v[1], v[2]);
-                            return std::string(buffer);
-                            };
+                    auto toKey = [](const std::vector<float>& v) {
+                        char buffer[64];
+                        snprintf(buffer, sizeof(buffer), "%.4f,%.4f,%.4f", v[0], v[1], v[2]);
+                        return std::string(buffer);
+                        };
 
-                        std::unordered_set<std::string> set1;
-                        for (const auto& v : face1) set1.insert(toKey(v));
-                        for (const auto& v : face2) {
-                            if (!set1.count(toKey(v))) return false;
-                        }
-                        return true;
-                    };
-
-                std::vector<std::string> facesToRemove;
-                for (const auto& faceEntry : elementVertices) {
-                    const std::string& faceName = faceEntry.first;
-                    std::string opposite = getOppositeFace(faceName);
-                    auto oppositeIt = elementVertices.find(opposite);
-
-                    // 反向面存在且重叠时才移除
-                    if (oppositeIt != elementVertices.end()) {
-                        if (areFacesCoinciding(faceEntry.second, oppositeIt->second)) {
-                            if (faceName == "south" || faceName == "west" || faceName == "down") {
-                                facesToRemove.push_back(faceName);
-                            }
-                            else {
-                                facesToRemove.push_back(opposite);
-                            }
-                        }
+                    std::unordered_set<std::string> set1;
+                    for (const auto& v : face1) set1.insert(toKey(v));
+                    for (const auto& v : face2) {
+                        if (!set1.count(toKey(v))) return false;
                     }
-                }
+                    return true;
+                };
 
-                // 去重并移除面
-                std::sort(facesToRemove.begin(), facesToRemove.end());
-                auto last = std::unique(facesToRemove.begin(), facesToRemove.end());
-                facesToRemove.erase(last, facesToRemove.end());
-                for (const auto& face : facesToRemove) {
-                    elementVertices.erase(face);
-                }
+            std::vector<std::string> facesToRemove;
+            for (const auto& faceEntry : elementVertices) {
+                const std::string& faceName = faceEntry.first;
+                std::string opposite = getOppositeFace(faceName);
+                auto oppositeIt = elementVertices.find(opposite);
 
-
-
-                // 遍历每个面的数据，判断面是否存在，如果存在则处理
-                for (auto& face : faces.items()) {
-                    std::string faceName = face.key();
-                    if (elementVertices.find(faceName) != elementVertices.end()) {
-                        auto faceVertices = elementVertices[faceName];
-
-                        // ======== 面重叠处理逻辑 ========
-                        if (faceVertices.size() >= 3) {
-                            // 计算法线方向
-                            const auto& v0 = faceVertices[0];
-                            const auto& v1 = faceVertices[1];
-                            const auto& v2 = faceVertices[2];
-
-                            // 计算向量差
-                            float vec1x = v1[0] - v0[0];
-                            float vec1y = v1[1] - v0[1];
-                            float vec1z = v1[2] - v0[2];
-                            float vec2x = v2[0] - v0[0];
-                            float vec2y = v2[1] - v0[1];
-                            float vec2z = v2[2] - v0[2];
-
-                            // 计算法线向量
-                            float crossX = vec1y * vec2z - vec1z * vec2y;
-                            float crossY = vec1z * vec2x - vec1x * vec2z;
-                            float crossZ = vec1x * vec2y - vec1y * vec2x;
-
-                            // 归一化处理
-                            float length = std::sqrt(crossX * crossX + crossY * crossY + crossZ * crossZ);
-                            if (length > 0) {
-                                crossX /= length;
-                                crossY /= length;
-                                crossZ /= length;
-                            }
-
-                            // 四舍五入法线向量到小数点后两位
-                            crossX = std::round(crossX * 100.0f) / 100.0f;
-                            crossY = std::round(crossY * 100.0f) / 100.0f;
-                            crossZ = std::round(crossZ * 100.0f) / 100.0f;
-
-                            // 计算面中心点
-                            float centerX = 0.0f, centerY = 0.0f, centerZ = 0.0f;
-                            for (const auto& v : faceVertices) {
-                                centerX += v[0];
-                                centerY += v[1];
-                                centerZ += v[2];
-                            }
-                            centerX /= faceVertices.size();
-                            centerY /= faceVertices.size();
-                            centerZ /= faceVertices.size();
-
-                            // 四舍五入中心点到小数点后四位
-                            centerX = std::round(centerX * 10000.0f) / 10000.0f;
-                            centerY = std::round(centerY * 10000.0f) / 10000.0f;
-                            centerZ = std::round(centerZ * 10000.0f) / 10000.0f;
-
-                            // 生成唯一标识键
-                            std::stringstream keyStream;
-                            keyStream << std::fixed << std::setprecision(2)
-                                << crossX << "," << crossY << "," << crossZ << "_"
-                                << std::setprecision(4)
-                                << centerX << "," << centerY << "," << centerZ;
-                            std::string key = keyStream.str();
-
-                            // 根据标志位处理面重叠
-                            bool skipFace = false;
-                            if (false) {
-                                // 启用重叠处理：计算偏移量并调整顶点
-                                int count = ++faceCountMap[key];
-                                float offset = (count - 1) * 0.001f;
-                                for (auto& v : faceVertices) {
-                                    v[0] += crossX * offset;
-                                    v[1] += crossY * offset;
-                                    v[2] += crossZ * offset;
-                                }
-                            }
-                            else {
-                                // 禁用重叠处理：仅保留第一个面
-                                if (faceCountMap[key]++ >= 1) {
-                                    skipFace = true; // 标记跳过该面
-                                }
-                            }
-
-                            // 如果需要跳过则终止当前面处理
-                            if (skipFace) {
-                                continue; // 确保在循环中使用continue跳过后续处理
-                            }
-
-                            // 更新当前面的顶点数据
-                            elementVertices[faceName] = faceVertices;
-                        }
-
-                        // ======== 顶点处理逻辑 ========
-                        std::array<int, 4> vertexIndices;
-                        for (int i = 0; i < 4; ++i) {
-                            const auto& vertex = faceVertices[i];
-                            std::string vertexKey =
-                                std::to_string(vertex[0]) + "," +
-                                std::to_string(vertex[1]) + "," +
-                                std::to_string(vertex[2]);
-
-                            // 检查顶点缓存
-                            if (vertexCache.find(vertexKey) == vertexCache.end()) {
-                                // 插入新顶点并记录索引
-                                vertexCache[vertexKey] = data.vertices.size() / 3; // 新索引计算方式
-                                data.vertices.insert(data.vertices.end(),
-                                    { vertex[0], vertex[1], vertex[2] });
-                            }
-                            vertexIndices[i] = vertexCache[vertexKey];
-                        }
-
-                        // 插入面数据（四个顶点索引）
-                        data.faces.insert(data.faces.end(),
-                            { vertexIndices[0], vertexIndices[1],
-                             vertexIndices[2], vertexIndices[3] });
-
-                        // 初始化materialIndices（假设faceId是连续递增的）
-                        data.materialIndices.resize(faceId + 1, -1); // -1表示未分配材质
-                        // 在处理每个面的材质时
-                        if (face.value().contains("texture")) {
-                            std::string texture = face.value()["texture"];
-                            if (texture.front() == '#') texture.erase(0, 1);
-
-                            // 通过映射获取材质索引
-                            auto it = textureKeyToMaterialIndex.find(texture);
-                            if (it != textureKeyToMaterialIndex.end()) {
-                                data.materialIndices[faceId] = it->second;
-                            }
-
-
-                            // 处理 UV 区域，如果没有指定，自动根据当前面的坐标设置
-                            std::vector<float> uvRegion = { 0, 0, 16, 16 }; // 默认 UV 区域
-
-                            std::array<int, 4> uvIndices;
-                            if (face.value().contains("uv")) {
-                                auto uv = face.value()["uv"];
-                                uvRegion = {
-                                    uv[0].get<float>(),
-                                    uv[1].get<float>(),
-                                    uv[2].get<float>(),
-                                    uv[3].get<float>()
-                                };
-                            }
-
-                            // 获取旋转角度，默认为0
-                            int rotation = face.value().value("rotation", 0);
-
-                            
-
-                            // 计算四个 UV 坐标点
-                            std::vector<std::vector<float>> uvCoords = {
-                                {uvRegion[2] / 16.0f, 1 - uvRegion[3] / 16.0f},   
-                                {uvRegion[2] / 16.0f, 1 - uvRegion[1] / 16.0f},
-                                {uvRegion[0] / 16.0f, 1 - uvRegion[1] / 16.0f},
-                                {uvRegion[0] / 16.0f, 1 - uvRegion[3] / 16.0f}
-                                
-                            };
-
-                            // 根据旋转角度调整 UV 坐标
-                            switch (rotation) {
-                            case 90:
-                                std::swap(uvCoords[0], uvCoords[3]);
-                                std::swap(uvCoords[0], uvCoords[2]);
-                                std::swap(uvCoords[0], uvCoords[1]);
-                                break;
-                            case 180:  
-                                std::swap(uvCoords[0], uvCoords[2]);
-                                std::swap(uvCoords[1], uvCoords[3]);
-                                break;
-                            case 270:
-                                std::swap(uvCoords[0], uvCoords[3]);
-                                std::swap(uvCoords[1], uvCoords[3]);
-                                std::swap(uvCoords[2], uvCoords[3]);
-                                break;
-                            default:
-                                break;
-                            }
-
-                            // 插入UV数据并记录索引
-                            for (int i = 0; i < 4; ++i) {
-                                const auto& uv = uvCoords[i];
-                                std::string uvKey =
-                                    std::to_string(uv[0]) + "," +
-                                    std::to_string(uv[1]);
-
-                                if (uvCache.find(uvKey) == uvCache.end()) {
-                                    uvCache[uvKey] = data.uvCoordinates.size() / 2; // 新索引计算方式
-                                    data.uvCoordinates.insert(data.uvCoordinates.end(),
-                                        { uv[0], uv[1] });
-                                }
-                                uvIndices[i] = uvCache[uvKey];
-                            }
-
-                            // 插入UV面数据
-                            data.uvFaces.insert(data.uvFaces.end(),
-                                { uvIndices[0], uvIndices[1],
-                                 uvIndices[2], uvIndices[3] });
-                        }
-
-                        // 处理faceDirections
-                        std::string faceDirection;
-
-                        if (face.value().contains("cullface")) {
-                            faceDirection = face.value()["cullface"].get<std::string>();
+                // 反向面存在且重叠时才移除
+                if (oppositeIt != elementVertices.end()) {
+                    if (areFacesCoinciding(faceEntry.second, oppositeIt->second)) {
+                        if (faceName == "south" || faceName == "west" || faceName == "down") {
+                            facesToRemove.push_back(faceName);
                         }
                         else {
-                            faceDirection = "DO_NOT_CULL";
+                            facesToRemove.push_back(opposite);
+                        }
+                    }
+                }
+            }
+
+            // 去重并移除面
+            std::sort(facesToRemove.begin(), facesToRemove.end());
+            auto last = std::unique(facesToRemove.begin(), facesToRemove.end());
+            facesToRemove.erase(last, facesToRemove.end());
+            for (const auto& face : facesToRemove) {
+                elementVertices.erase(face);
+            }
+
+
+
+            // 遍历每个面的数据，判断面是否存在，如果存在则处理
+            for (auto& face : faces.items()) {
+                std::string faceName = face.key();
+                if (elementVertices.find(faceName) != elementVertices.end()) {
+                    auto faceVertices = elementVertices[faceName];
+
+                    // ======== 面重叠处理逻辑 ========
+                    if (faceVertices.size() >= 3) {
+                        // 计算法线方向
+                        const auto& v0 = faceVertices[0];
+                        const auto& v1 = faceVertices[1];
+                        const auto& v2 = faceVertices[2];
+
+                        // 计算向量差
+                        float vec1x = v1[0] - v0[0];
+                        float vec1y = v1[1] - v0[1];
+                        float vec1z = v1[2] - v0[2];
+                        float vec2x = v2[0] - v0[0];
+                        float vec2y = v2[1] - v0[1];
+                        float vec2z = v2[2] - v0[2];
+
+                        // 计算法线向量
+                        float crossX = vec1y * vec2z - vec1z * vec2y;
+                        float crossY = vec1z * vec2x - vec1x * vec2z;
+                        float crossZ = vec1x * vec2y - vec1y * vec2x;
+
+                        // 归一化处理
+                        float length = std::sqrt(crossX * crossX + crossY * crossY + crossZ * crossZ);
+                        if (length > 0) {
+                            crossX /= length;
+                            crossY /= length;
+                            crossZ /= length;
                         }
 
-                        // 将面的方向信息添加到faceDirections
-                        for (int i = 0; i < 4; ++i) {
-                            data.faceDirections.push_back(faceDirection);
+                        // 四舍五入法线向量到小数点后两位
+                        crossX = std::round(crossX * 100.0f) / 100.0f;
+                        crossY = std::round(crossY * 100.0f) / 100.0f;
+                        crossZ = std::round(crossZ * 100.0f) / 100.0f;
+
+                        // 计算面中心点
+                        float centerX = 0.0f, centerY = 0.0f, centerZ = 0.0f;
+                        for (const auto& v : faceVertices) {
+                            centerX += v[0];
+                            centerY += v[1];
+                            centerZ += v[2];
                         }
-                        data.faceNames.push_back(faceName);
-                        // 增加面ID
-                        faceId++;
+                        centerX /= faceVertices.size();
+                        centerY /= faceVertices.size();
+                        centerZ /= faceVertices.size();
+
+                        // 四舍五入中心点到小数点后四位
+                        centerX = std::round(centerX * 10000.0f) / 10000.0f;
+                        centerY = std::round(centerY * 10000.0f) / 10000.0f;
+                        centerZ = std::round(centerZ * 10000.0f) / 10000.0f;
+
+                        // 生成唯一标识键
+                        std::stringstream keyStream;
+                        keyStream << std::fixed << std::setprecision(2)
+                            << crossX << "," << crossY << "," << crossZ << "_"
+                            << std::setprecision(4)
+                            << centerX << "," << centerY << "," << centerZ;
+                        std::string key = keyStream.str();
+
+                        // 根据标志位处理面重叠
+                        bool skipFace = false;
+                        if (true) {
+                            // 启用重叠处理：计算偏移量并调整顶点
+                            int count = ++faceCountMap[key];
+                            float offset = (count - 1) * 0.001f;
+                            for (auto& v : faceVertices) {
+                                v[0] += crossX * offset;
+                                v[1] += crossY * offset;
+                                v[2] += crossZ * offset;
+                            }
+                        }
+                        else {
+                            // 禁用重叠处理：仅保留第一个面
+                            if (faceCountMap[key]++ >= 1) {
+                                skipFace = true; // 标记跳过该面
+                            }
+                        }
+
+                        // 如果需要跳过则终止当前面处理
+                        if (skipFace) {
+                            continue; // 确保在循环中使用continue跳过后续处理
+                        }
+
+                        // 更新当前面的顶点数据
+                        elementVertices[faceName] = faceVertices;
                     }
-                    
-}
+
+                    // ======== 顶点处理逻辑 ========
+                    std::array<int, 4> vertexIndices;
+                    for (int i = 0; i < 4; ++i) {
+                        const auto& vertex = faceVertices[i];
+                        std::string vertexKey =
+                            std::to_string(vertex[0]) + "," +
+                            std::to_string(vertex[1]) + "," +
+                            std::to_string(vertex[2]);
+
+                        // 检查顶点缓存
+                        if (vertexCache.find(vertexKey) == vertexCache.end()) {
+                            // 插入新顶点并记录索引
+                            vertexCache[vertexKey] = data.vertices.size() / 3; // 新索引计算方式
+                            data.vertices.insert(data.vertices.end(),
+                                { vertex[0], vertex[1], vertex[2] });
+                        }
+                        vertexIndices[i] = vertexCache[vertexKey];
+                    }
+
+                    // 插入面数据（四个顶点索引）
+                    data.faces.insert(data.faces.end(),
+                        { vertexIndices[0], vertexIndices[1],
+                            vertexIndices[2], vertexIndices[3] });
+
+                    // 初始化materialIndices（假设faceId是连续递增的）
+                    data.materialIndices.resize(faceId + 1, -1); // -1表示未分配材质
+                    // 在处理每个面的材质时
+                    if (face.value().contains("texture")) {
+                        std::string texture = face.value()["texture"];
+                        if (texture.front() == '#') texture.erase(0, 1);
+
+                        // 通过映射获取材质索引
+                        auto it = textureKeyToMaterialIndex.find(texture);
+                        if (it != textureKeyToMaterialIndex.end()) {
+                            data.materialIndices[faceId] = it->second;
+                        }
+                        std::vector<float> uvRegion = { 0,0,16,16 };
+
+                        if (faceName == "down")
+                        {
+                            uvRegion = { x1 * 16, (1 - z2) * 16, x2 * 16, (1 - z1) * 16 }; // 默认 UV 区域
+                        }
+                        else if (faceName == "up")
+                        {
+                            uvRegion = { x1 * 16, z1 * 16, x2 * 16, z2 * 16 }; // 默认 UV 区域
+                        }
+                        else if (faceName == "north")
+                        {
+                            uvRegion = { (1 - x2) * 16, (1 - y2) * 16, (1 - x1) * 16, (1 - y1) * 16 }; // 默认 UV 区域
+                        }
+                        else if (faceName == "south")
+                        {
+                            uvRegion = { x1 * 16, (1 - y2) * 16, x2 * 16, (1 - y1) * 16 }; // 默认 UV 区域
+                        }
+                        else if (faceName == "west")
+                        {
+                            uvRegion = { z1 * 16, (1 - y2) * 16, z2 * 16, (1 - y1) * 16 }; // 默认 UV 区域
+                        }
+                        else if (faceName == "east")
+                        {
+                            uvRegion = { (1 - z2) * 16, (1 - y2) * 16, (1 - z1) * 16, (1 - y1) * 16 }; // 默认 UV 区域
+                        }
+
+                        std::array<int, 4> uvIndices;
+                        if (face.value().contains("uv")) {
+                            auto uv = face.value()["uv"];
+                            uvRegion = {
+                                uv[0].get<float>(),
+                                uv[1].get<float>(),
+                                uv[2].get<float>(),
+                                uv[3].get<float>()
+                            };
+                        }
+
+                        // 获取旋转角度，默认为0
+                        int rotation = face.value().value("rotation", 0);
+
+
+
+                        // 计算四个 UV 坐标点
+                        std::vector<std::vector<float>> uvCoords = {
+                            {uvRegion[2] / 16.0f, 1 - uvRegion[3] / 16.0f},
+                            {uvRegion[2] / 16.0f, 1 - uvRegion[1] / 16.0f},
+                            {uvRegion[0] / 16.0f, 1 - uvRegion[1] / 16.0f},
+                            {uvRegion[0] / 16.0f, 1 - uvRegion[3] / 16.0f}
+
+                        };
+
+                        // 根据旋转角度调整 UV 坐标
+                        switch (rotation) {
+                        case 90:
+                            std::swap(uvCoords[0], uvCoords[3]);
+                            std::swap(uvCoords[0], uvCoords[2]);
+                            std::swap(uvCoords[0], uvCoords[1]);
+                            break;
+                        case 180:
+                            std::swap(uvCoords[0], uvCoords[2]);
+                            std::swap(uvCoords[1], uvCoords[3]);
+                            break;
+                        case 270:
+                            std::swap(uvCoords[0], uvCoords[3]);
+                            std::swap(uvCoords[1], uvCoords[3]);
+                            std::swap(uvCoords[2], uvCoords[3]);
+                            break;
+                        default:
+                            break;
+                        }
+
+                        // 插入UV数据并记录索引
+                        for (int i = 0; i < 4; ++i) {
+                            const auto& uv = uvCoords[i];
+                            std::string uvKey =
+                                std::to_string(uv[0]) + "," +
+                                std::to_string(uv[1]);
+
+                            if (uvCache.find(uvKey) == uvCache.end()) {
+                                uvCache[uvKey] = data.uvCoordinates.size() / 2;
+                                data.uvCoordinates.insert(data.uvCoordinates.end(),
+                                    { uv[0], uv[1] });
+                            }
+                            uvIndices[i] = uvCache[uvKey];
+                        }
+
+                        // 插入UV面数据
+                        data.uvFaces.insert(data.uvFaces.end(),
+                            { uvIndices[0], uvIndices[1],
+                                uvIndices[2], uvIndices[3] });
+                    }
+
+                    // 处理faceDirections
+                    std::string faceDirection;
+
+                    if (face.value().contains("cullface")) {
+                        faceDirection = face.value()["cullface"].get<std::string>();
+                    }
+                    else {
+                        faceDirection = "DO_NOT_CULL";
+                    }
+
+                    // 将面的方向信息添加到faceDirections
+                    for (int i = 0; i < 4; ++i) {
+                        data.faceDirections.push_back(faceDirection);
+                    }
+                    data.faceNames.push_back(faceName);
+                    // 增加面ID
+                    faceId++;
+                }
+
             }
         }
     }
+    
 }
 
 // 处理模型数据的方法
-ModelData ProcessModelData(const nlohmann::json& modelJson) {
+ModelData ProcessModelData(const nlohmann::json& modelJson, const std::string& blockName) {
     ModelData data;
 
     // 处理纹理和材质
     std::unordered_map<std::string, int> textureKeyToMaterialIndex;
 
-    // 处理元素生成材质数据
-    processTextures(modelJson, data, textureKeyToMaterialIndex);
+    if (modelJson.contains("elements")) {
+        // 处理元素生成材质数据
+        processTextures(modelJson, data, textureKeyToMaterialIndex);
 
-    // 处理元素生成几何数据
-    processElements(modelJson, data, textureKeyToMaterialIndex);
+        // 处理元素生成几何数据
+        processElements(modelJson, data, textureKeyToMaterialIndex);
+    }
+    else {
+        // 当模型中没有 "elements" 字段时，生成实体方块模型
+        data = EntityBlock::GenerateEntityBlockModel(blockName);
+    }
+    
 
     return data;
 }
 
 // 将model类型的json文件变为网格数据
-ModelData ProcessModelJson(const std::string& namespaceName, const std::string& blockId, int rotationX, int rotationY, bool uvlock) {
-    // 生成唯一缓存键
-    std::string cacheKey = namespaceName + ":" + blockId;
+ModelData ProcessModelJson(const std::string& namespaceName, const std::string& blockId,
+    int rotationX, int rotationY, bool uvlock, int randomIndex,const std::string& blockstateName) {
+    // 生成唯一缓存键（添加模型索引）
+    std::string cacheKey = namespaceName + ":" + blockId + ":" + std::to_string(randomIndex);
+
     // 在访问缓存前加锁
     std::lock_guard<std::mutex> lock(cacheMutex);
     // 检查缓存是否存在
@@ -959,7 +1076,7 @@ ModelData ProcessModelJson(const std::string& namespaceName, const std::string& 
     modelJson = LoadParentModel(namespaceName, blockId, modelJson);
     
     // 处理模型数据（不包含旋转）
-    modelData = ProcessModelData(modelJson);
+    modelData = ProcessModelData(modelJson,blockstateName);
 
 
     // 将原始数据存入缓存（不包含旋转）

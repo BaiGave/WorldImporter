@@ -10,6 +10,20 @@
 #include <windows.h>
 #endif
 
+namespace {
+    std::vector<std::string> splitPath(const std::string& path) {
+        std::vector<std::string> parts;
+        std::stringstream ss(path);
+        std::string part;
+        while (std::getline(ss, part, '/')) {
+            if (!part.empty()) {
+                parts.push_back(part);
+            }
+        }
+        return parts;
+    }
+}
+
 std::string JarReader::convertWStrToStr(const std::wstring& wstr) {
 #ifdef _WIN32
     int buffer_size = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
@@ -228,8 +242,12 @@ void JarReader::cacheAllResources(
                 }
             }
         }
+
+        //cacheAllBiomes(blockstateCache); // 或者新建biomeCache参数
+        //cacheAllColormaps(textureCache); // 色图作为特殊纹理处理
     }
 }
+
 void JarReader::cacheAllBlockstates(std::unordered_map<std::string, nlohmann::json>& cache) {
     if (!zipFile) {
         std::cerr << "Zip file is not open." << std::endl;
@@ -389,7 +407,93 @@ void JarReader::cacheAllTextures(std::unordered_map<std::string, std::vector<uns
     }
 }
 
+void JarReader::cacheAllBiomes(std::unordered_map<std::string, nlohmann::json>& cache) {
+    if (!zipFile) return;
 
+    zip_int64_t numEntries = zip_get_num_entries(zipFile, 0);
+    for (zip_int64_t i = 0; i < numEntries; ++i) {
+        const char* name = zip_get_name(zipFile, i, 0);
+        if (!name) continue;
+
+        std::string path(name);
+        auto parts = splitPath(path);
+
+        // 验证路径结构：data/<namespace>/worldgen/biome/[...]/<name>.json
+        if (parts.size() < 5) continue; // 至少包含 data/ns/worldgen/biome + 文件名
+        if (parts[0] != "data" || parts[2] != "worldgen" || parts[3] != "biome")
+            continue;
+
+        // 提取命名空间
+        std::string namespaceName = parts[1];
+
+        // 提取子路径并构建biomeId (例如：cave/andesite_caves)
+        std::vector<std::string> biomeParts;
+        for (auto it = parts.begin() + 4; it != parts.end(); ++it) {
+            if (it == parts.end() - 1) { // 处理文件名
+                if ((*it).size() < 5 || (*it).substr((*it).size() - 5) != ".json")
+                    break;
+                biomeParts.push_back((*it).substr(0, (*it).size() - 5));
+            }
+            else {
+                biomeParts.push_back(*it);
+            }
+        }
+        if (biomeParts.empty()) continue;
+
+        std::string biomeId;
+        for (size_t idx = 0; idx < biomeParts.size(); ++idx) {
+            if (idx != 0) biomeId += "/";
+            biomeId += biomeParts[idx];
+        }
+
+        std::string cacheKey = namespaceName + ":" + biomeId;
+
+        if (cache.find(cacheKey) != cache.end()) continue;
+
+        // 读取并解析JSON
+        std::string content = getFileContent(path);
+        if (!content.empty()) {
+            try {
+                cache.emplace(cacheKey, nlohmann::json::parse(content));
+            }
+            catch (...) {
+                std::cerr << "Invalid biome JSON: " << path << std::endl;
+            }
+        }
+    }
+}
+void JarReader::cacheAllColormaps(std::unordered_map<std::string, std::vector<unsigned char>>& cache) {
+    if (!zipFile) return;
+
+    zip_int64_t numEntries = zip_get_num_entries(zipFile, 0);
+    for (zip_int64_t i = 0; i < numEntries; ++i) {
+        const char* name = zip_get_name(zipFile, i, 0);
+        if (!name) continue;
+
+        std::string path(name);
+        auto parts = splitPath(path);
+
+        // 验证路径结构：assets/<namespace>/textures/colormap/<name>.png
+        if (parts.size() != 5) continue;
+        if (parts[0] != "assets") continue;
+        if (parts[2] != "textures" || parts[3] != "colormap") continue;
+        if (parts[4].size() < 4 || parts[4].substr(parts[4].size() - 4) != ".png") continue;
+
+        std::string namespaceName = parts[1];
+        std::string mapName = parts[4].substr(0, parts[4].size() - 4); // 移除.png后缀
+
+        std::string cacheKey = namespaceName + ":" + mapName;
+
+        // 防止重复处理
+        if (cache.find(cacheKey) != cache.end()) continue;
+
+        // 读取二进制数据
+        auto data = getBinaryFileContent(path);
+        if (!data.empty()) {
+            cache.emplace(cacheKey, std::move(data));
+        }
+    }
+}
 std::vector<std::string> JarReader::getFilesInSubDirectory(const std::string& subDir) {
     std::vector<std::string> filesInSubDir;
 

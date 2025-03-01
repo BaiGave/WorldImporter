@@ -20,18 +20,62 @@ struct pair_hash;
 struct triple_hash;
 
 extern std::unordered_set<std::string> solidBlocks; // 改为哈希表
+extern std::unordered_set<std::string> fluidBlocks;
+
 
 struct Block {
     std::string name;
     bool air;
+    int level;
 
-    Block(const std::string& name) : name(name), air(true) {
+    Block(const std::string& name) : name(name), air(true), level(-1) {
         size_t bracketPos = name.find('[');
-        std::string a = (bracketPos != std::string::npos) ?
+        std::string baseName = (bracketPos != std::string::npos) ?
             name.substr(0, bracketPos) : name;
 
-        // 检查哈希表
-        air = (solidBlocks.find(a) == solidBlocks.end());
+        // 提取基础名称（去掉命名空间）
+        size_t colonPos = baseName.find(':');
+        std::string shortName = (colonPos != std::string::npos) ?
+            baseName.substr(colonPos + 1) : baseName;
+
+        // 解析方块状态属性
+        std::unordered_map<std::string, std::string> states;
+        if (bracketPos != std::string::npos) {
+            std::string stateStr = name.substr(bracketPos + 1, name.find(']') - bracketPos - 1);
+            // 分割状态属性
+            size_t start = 0;
+            while (true) {
+                size_t end = stateStr.find(',', start);
+                std::string pair = (end == std::string::npos) ?
+                    stateStr.substr(start) : stateStr.substr(start, end - start);
+
+                // 分割键值对
+                size_t eqPos = pair.find(':');
+                if (eqPos != std::string::npos) {
+                    states[pair.substr(0, eqPos)] = pair.substr(eqPos + 1);
+                }
+
+                if (end == std::string::npos) break;
+                start = end + 1;
+            }
+        }
+
+        // 优先处理waterlogged属性
+        if (states.count("waterlogged") && states["waterlogged"] == "true") {
+            level = 0;
+        }
+        // 其次处理流体方块
+        else if (fluidBlocks.count(shortName)) {
+            try {
+                level = states.count("level") ? std::stoi(states["level"]) : 0;
+            }
+            catch (...) {
+                level = 0; // 解析失败时的默认值
+            }
+        }
+
+        // 原有的空气判断逻辑
+        air = (solidBlocks.find(baseName) == solidBlocks.end());
     }
     Block(const std::string& name, bool air) : name(name), air(air) {}
 
@@ -316,20 +360,32 @@ struct Block {
         }
     }
 };
+
+struct SectionCacheEntry {
+    std::vector<int> skyLight;      // 天空光照数据
+    std::vector<int> blockLight;    // 方块光照数据
+    std::vector<std::string> blockPalette; // 方块调色板
+    std::vector<int> blockData;     // 方块数据
+    std::vector<int> biomeData;     // 生物群系数据
+};
+
+
 extern std::vector<Block> globalBlockPalette;
-extern std::unordered_map<std::tuple<int, int, int>, std::vector<int>, triple_hash> biomeDataCache;
+extern std::unordered_map<std::tuple<int, int, int>, SectionCacheEntry, triple_hash> sectionCache;
+
 
 // 获取区块NBT数据的函数
 std::vector<char> GetChunkNBTData(const std::vector<char>& fileData, int x, int z);
-
-void LoadCacheBlockDataAutomatically(int chunkX, int chunkZ, int sectionY);
-
-void LoadAndCacheBlockData(int chunkX, int chunkZ, int sectionY, const std::tuple<int, int, int>& blockKey);
-
-// 声明 getRegionFromCache 和 getChunkFromCache 函数
 std::vector<char> getRegionFromCache(int regionX, int regionZ);
-std::shared_ptr<NbtTag> getChunkFromCache(int chunkX, int chunkZ, std::vector<char>& regionData);// 通过x, y, z坐标获取方块ID
+
+
+void LoadAndCacheBlockData(int chunkX, int chunkZ);
+void UpdateSkyLightNeighborFlags();
 int GetBlockId(int blockX, int blockY, int blockZ);
+
+int GetSkyLight(int blockX, int blockY, int blockZ);
+
+int GetBlockLight(int blockX, int blockY, int blockZ);
 
 // 获取方块名称转换为Block对象
 Block GetBlockById(int blockId);
@@ -344,8 +400,6 @@ int GetBlockIdWithNeighbors(int blockX, int blockY, int blockZ, bool* neighborIs
 
 int GetHeightMapY(int blockX, int blockZ, const std::string& heightMapType);
 
-std::string PrintHeightMapCache(bool verbose = false, bool showAllChunks = false);
-
 // 返回全局的block对照表(Block对象)
 std::vector<Block> GetGlobalBlockPalette();
 
@@ -353,7 +407,6 @@ std::vector<Block> GetGlobalBlockPalette();
 // 初始化，注册"minecraft:air"为ID0
 void InitializeGlobalBlockPalette();
 
-void loadSolidBlocks(const std::string& filepath);
 
 
 #endif  // BLOCK_H

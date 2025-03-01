@@ -27,11 +27,9 @@ std::vector<unsigned char> GetTextureData(const std::string& namespaceName, cons
 bool SaveTextureToFile(const std::string& namespaceName, const std::string& blockId, std::string& savePath) {
     // 获取纹理数据
     std::vector<unsigned char> textureData = GetTextureData(namespaceName, blockId);
-    
+
     // 检查是否找到了纹理数据
     if (!textureData.empty()) {
-        /*std::cout << "Texture data successfully retrieved for " << blockId << std::endl;*/
-
         // 获取当前工作目录（即 exe 所在的目录）
         char buffer[MAX_PATH];
         GetModuleFileNameA(NULL, buffer, MAX_PATH);
@@ -64,6 +62,15 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
 
         // 构建保存路径，使用处理后的 blockId 作为文件名
         std::string filePath = savePath + "\\" + fileName + ".png";
+
+        // 检查目标路径是否已有文件存在
+        //if (GetFileAttributesA(filePath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        //    // 文件已经存在，输出消息
+        //    std::cout << "Texture file already exists at " << filePath << std::endl;
+        //    return false;
+        //}
+
+        // 保存纹理文件
         std::ofstream outputFile(filePath, std::ios::binary);
 
         //返回savePath，作为value
@@ -71,7 +78,6 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
 
         if (outputFile.is_open()) {
             outputFile.write(reinterpret_cast<const char*>(textureData.data()), textureData.size());
-            //std::cout << "Texture saved as '" << filePath << "'" << std::endl;
         }
         else {
             std::cerr << "Failed to open output file!" << std::endl;
@@ -85,6 +91,7 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
 
     return true;
 }
+
 
 // 打印 textureCache 的内容
 void PrintTextureCache(const std::unordered_map<std::string, std::vector<unsigned char>>& textureCache) {

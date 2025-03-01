@@ -83,27 +83,9 @@ std::string readUtf8String(const std::vector<char>& data, size_t& index) {
     index += length;
     return str;
 }
+NbtTagPtr readTagPayload(const std::vector<char>& data, size_t& index, TagType type) {
+    auto tag = std::make_shared<NbtTag>(type, "");
 
-// 从索引开始的数据中读取单个标签
-NbtTagPtr readTag(const std::vector<char>& data, size_t& index) {
-    if (index >= data.size()) {
-        throw std::out_of_range("Index out of bounds while reading tag type");
-    }
-
-    TagType type = static_cast<TagType>(static_cast<uint8_t>(data[index]));
-    index++;
-
-    if (type == TagType::END) {
-        return nullptr; // TAG_End has no name or payload
-    }
-    
-    // 读取名字
-    std::string name = readUtf8String(data, index);
-
-    // 创建 NbtTag
-    auto tag = std::make_shared<NbtTag>(type, name);
-
-    // 根据类型读取有效载荷
     switch (type) {
     case TagType::BYTE: {
         if (index + 1 > data.size()) throw std::out_of_range("Not enough data for TAG_Byte");
@@ -118,6 +100,7 @@ NbtTagPtr readTag(const std::vector<char>& data, size_t& index) {
         index += 2;
         break;
     }
+
     case TagType::INT: {
         if (index + 4 > data.size()) throw std::out_of_range("Not enough data for TAG_Int");
         for (int i = 0; i < 4; ++i) {
@@ -150,6 +133,7 @@ NbtTagPtr readTag(const std::vector<char>& data, size_t& index) {
         index += 8;
         break;
     }
+
     case TagType::BYTE_ARRAY: {
         if (index + 4 > data.size()) throw std::out_of_range("Not enough data for TAG_Byte_Array length");
         int32_t length = (static_cast<uint8_t>(data[index]) << 24) |
@@ -167,14 +151,33 @@ NbtTagPtr readTag(const std::vector<char>& data, size_t& index) {
         tag->payload.assign(str.begin(), str.end());
         break;
     }
+
     case TagType::LIST: {
-        tag->children = readListTag(data, index)->children;
+        // 读取元素类型和长度
+        TagType listType = static_cast<TagType>(data[index++]);
+        int32_t length = 0;
+        for (int i = 0; i < 4; ++i) {
+            length = (length << 8) | static_cast<uint8_t>(data[index++]);
+        }
+
+        // 递归读取列表元素
+        for (int32_t i = 0; i < length; ++i) {
+            auto elem = readTagPayload(data, index, listType); // 需要实现该辅助函数
+            tag->children.push_back(elem);
+        }
         break;
     }
+
     case TagType::COMPOUND: {
-        tag->children = readCompoundTag(data, index)->children;
+        // 递归读取直到遇到TAG_End
+        while (true) {
+            auto child = readTag(data, index);
+            if (!child) break; // 遇到TAG_End
+            tag->children.push_back(child);
+        }
         break;
     }
+
     case TagType::INT_ARRAY: {
         if (index + 4 > data.size()) throw std::out_of_range("Not enough data for TAG_Int_Array length");
         int32_t length = (static_cast<uint8_t>(data[index]) << 24) |
@@ -205,9 +208,161 @@ NbtTagPtr readTag(const std::vector<char>& data, size_t& index) {
         }
         break;
     }
+
     default:
+        throw std::runtime_error("Unsupported tag type: " + std::to_string(static_cast<int>(type)));
+    }
+
+    return tag;
+}
+
+// 从索引开始的数据中读取单个标签
+NbtTagPtr readTag(const std::vector<char>& data, size_t& index) {
+    if (index >= data.size()) {
+        throw std::out_of_range("Index out of bounds while reading tag type");
+    }
+
+    TagType type = static_cast<TagType>(static_cast<uint8_t>(data[index]));
+    index++;
+
+    // TAG_End没有名称和有效负载
+    if (type == TagType::END) {
+        return nullptr;
+    }
+
+    // 读取标签名称（大端序16位无符号长度）
+    uint16_t nameLength = (static_cast<uint8_t>(data[index]) << 8) | static_cast<uint8_t>(data[index + 1]);
+    index += 2;
+    std::string name(data.begin() + index, data.begin() + index + nameLength);
+    index += nameLength;
+
+    auto tag = std::make_shared<NbtTag>(type, name);
+
+    switch (type) {
+    case TagType::BYTE: {
+        if (index + 1 > data.size()) throw std::out_of_range("Not enough data for TAG_Byte");
+        tag->payload.push_back(data[index]);
+        index += 1;
         break;
-        throw std::runtime_error("Unsupported tag type encountered while reading payload");
+    }
+    case TagType::SHORT: {
+        if (index + 2 > data.size()) throw std::out_of_range("Not enough data for TAG_Short");
+        tag->payload.push_back(data[index]);
+        tag->payload.push_back(data[index + 1]);
+        index += 2;
+        break;
+    }
+
+    case TagType::INT: {
+        if (index + 4 > data.size()) throw std::out_of_range("Not enough data for TAG_Int");
+        for (int i = 0; i < 4; ++i) {
+            tag->payload.push_back(data[index + i]);
+        }
+        index += 4;
+        break;
+    }
+    case TagType::LONG: {
+        if (index + 8 > data.size()) throw std::out_of_range("Not enough data for TAG_Long");
+        for (int i = 0; i < 8; ++i) {
+            tag->payload.push_back(data[index + i]);
+        }
+        index += 8;
+        break;
+    }
+    case TagType::FLOAT: {
+        if (index + 4 > data.size()) throw std::out_of_range("Not enough data for TAG_Float");
+        for (int i = 0; i < 4; ++i) {
+            tag->payload.push_back(data[index + i]);
+        }
+        index += 4;
+        break;
+    }
+    case TagType::DOUBLE: {
+        if (index + 8 > data.size()) throw std::out_of_range("Not enough data for TAG_Double");
+        for (int i = 0; i < 8; ++i) {
+            tag->payload.push_back(data[index + i]);
+        }
+        index += 8;
+        break;
+    }
+
+    case TagType::BYTE_ARRAY: {
+        if (index + 4 > data.size()) throw std::out_of_range("Not enough data for TAG_Byte_Array length");
+        int32_t length = (static_cast<uint8_t>(data[index]) << 24) |
+            (static_cast<uint8_t>(data[index + 1]) << 16) |
+            (static_cast<uint8_t>(data[index + 2]) << 8) |
+            static_cast<uint8_t>(data[index + 3]);
+        index += 4;
+        if (index + length > data.size()) throw std::out_of_range("Not enough data for TAG_Byte_Array payload");
+        tag->payload.insert(tag->payload.end(), data.begin() + index, data.begin() + index + length);
+        index += length;
+        break;
+    }
+    case TagType::STRING: {
+        std::string str = readUtf8String(data, index);
+        tag->payload.assign(str.begin(), str.end());
+        break;
+    }
+
+    case TagType::LIST: {
+        // 读取元素类型和长度
+        TagType listType = static_cast<TagType>(data[index++]);
+        int32_t length = 0;
+        for (int i = 0; i < 4; ++i) {
+            length = (length << 8) | static_cast<uint8_t>(data[index++]);
+        }
+
+        // 递归读取列表元素
+        for (int32_t i = 0; i < length; ++i) {
+            auto elem = readTagPayload(data, index, listType); // 需要实现该辅助函数
+            tag->children.push_back(elem);
+        }
+        break;
+    }
+
+    case TagType::COMPOUND: {
+        // 递归读取直到遇到TAG_End
+        while (true) {
+            auto child = readTag(data, index);
+            if (!child) break; // 遇到TAG_End
+            tag->children.push_back(child);
+        }
+        break;
+    }
+
+    case TagType::INT_ARRAY: {
+        if (index + 4 > data.size()) throw std::out_of_range("Not enough data for TAG_Int_Array length");
+        int32_t length = (static_cast<uint8_t>(data[index]) << 24) |
+            (static_cast<uint8_t>(data[index + 1]) << 16) |
+            (static_cast<uint8_t>(data[index + 2]) << 8) |
+            static_cast<uint8_t>(data[index + 3]);
+        index += 4;
+        if (index + (4 * length) > data.size()) throw std::out_of_range("Not enough data for TAG_Int_Array payload");
+        for (int i = 0; i < length; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                tag->payload.push_back(data[index++]);
+            }
+        }
+        break;
+    }
+    case TagType::LONG_ARRAY: {
+        if (index + 4 > data.size()) throw std::out_of_range("Not enough data for TAG_Long_Array length");
+        int32_t length = (static_cast<uint8_t>(data[index]) << 24) |
+            (static_cast<uint8_t>(data[index + 1]) << 16) |
+            (static_cast<uint8_t>(data[index + 2]) << 8) |
+            static_cast<uint8_t>(data[index + 3]);
+        index += 4;
+        if (index + (8 * length) > data.size()) throw std::out_of_range("Not enough data for TAG_Long_Array payload");
+        for (int i = 0; i < length; ++i) {
+            for (int j = 0; j < 8; ++j) {
+                tag->payload.push_back(data[index++]);
+            }
+        }
+        break;
+    }
+
+    default:
+        throw std::runtime_error("Unsupported tag type: " + std::to_string(static_cast<int>(type)));
     }
 
     return tag;
@@ -339,7 +494,7 @@ NbtTagPtr readCompoundTag(const std::vector<char>& data, size_t& index) {
 NbtTagPtr getChildByName(const NbtTagPtr& tag, const std::string& childName) {
     // 确保 tag 不为空
     if (!tag) {
-        std::cerr << "Error: tag is nullptr." << std::endl;
+        //std::cerr << "Error: tag is nullptr." << std::endl;
         return nullptr;
     }
 

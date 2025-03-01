@@ -134,7 +134,7 @@ void loadAndUpdateConfig() {
 void init() {
     SetGlobalLocale();
     loadAndUpdateConfig();
-    loadSolidBlocks(config.solidBlocksFile);
+    LoadSolidBlocks(config.solidBlocksFile);
     InitializeGlobalBlockPalette();
     InitializeAllCaches();
 }
@@ -168,56 +168,25 @@ int main() {
     
     // 测量执行时间
     auto start_time = high_resolution_clock::now();
-    //std::vector<std::string> blockList = {
-    //"grass_block[snowy=false]",
-    //"wheat[age=0]",
-    //"wheat[age=1]",
-    //"wheat[age=2]",
-    //"wheat[age=3]",
-    //"wheat[age=4]",
-    //"oak_sapling",
-    //"bamboo_stairs[facing=east,half=bottom,shape=inner_left]",
-    //"acacia_button[face=ceiling,facing=east,powered=false]",
-    //"anvil[facing=south]",
-    //"acacia_fence[east=true,north=true,south=true,west=false]",
-    //"redstone_wire[east=up,north=side,south=side,west=none,power=0]",
-    //"activator_rail[powered=false,shape=north_south]"
-    //};
-
-    //const auto& modelCache = ProcessBlockstateJson("minecraft", blockList);
-
-    //for (const auto& entry : modelCache) {  // 先获取整个条目
-    //    const std::string& blockId = entry.first;
-    //    const ModelData& currentModel = entry.second;
-    //    if (!currentModel.vertices.empty()) {
-    //        CreateModelFiles(currentModel, blockId);
-    //    }
-
-    //}
     // 生成包含所有使用 cube 模型的方块
     //GenerateSolidsJson("solids.json", {"block/cube_mirrored_all", "block/cube_all","block/cube_column"});
-    //RegionModelExporter::ExportRegionModels(
-    //    config.minX, config.maxX,
-    //    config.minY, config.maxY,
-    //    config.minZ, config.maxZ,
-    //    "region_models"
-    //);
-    ////exportPointCloud();
-    // 生成从(0,0)到(15,15)区域的群系图，基于地面高度
-    auto biomeMap = Biome::GenerateBiomeMap(-50, -50, 150, 150, -1);
-
+    RegionModelExporter::ExportRegionModels(
+        config.minX, config.maxX,
+        config.minY, config.maxY,
+        config.minZ, config.maxZ,
+        "region_models"
+    );
+    ////exportPointCloud();    
+    //ProcessAllBlockstateVariants();
     auto end_time = high_resolution_clock::now();
     auto duration = duration_cast<milliseconds>(end_time - start_time);
     cout << "Total time: " << duration.count() << " milliseconds" << endl;
+    
+    //auto biomeMap = Biome::GenerateBiomeMap(-237, -335, 460, 269, 64);
+    // 导出图片
+    //Biome::ExportToPNG(biomeMap, "biome_map.png",BiomeColorType::DryFoliage);
     Biome::PrintAllRegisteredBiomes();
 
-    /*int biomeId = GetBiomeId(20, 2, 50);
-    std::cout << "生物群系ID: " << biomeId << std::endl;
-    int y = GetHeightMapY(1, 1, "MOTION_BLOCKING_NO_LEAVES");
-    std::cout << "地形阻挡高度：" << y << std::endl;*/
-
-    //PrintTextureCache(textureCache);
-    //PrintModListCache();
 
     // while (true) {  
         //status： 

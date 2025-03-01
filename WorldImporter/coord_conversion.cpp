@@ -49,3 +49,11 @@ int AdjustSectionY(int SectionY) {
     const int OFFSET = 64;
     return SectionY + OFFSET;
 }
+
+inline void worldToBiomeUnit(int worldX, int worldY, int worldZ,
+    int& biomeX, int& biomeY, int& biomeZ) {
+    biomeX = (worldX % 16) / 4;
+    biomeZ = (worldZ % 16) / 4;
+    biomeY = (worldY % 16) / 4;
+}
+

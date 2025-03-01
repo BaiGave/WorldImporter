@@ -53,6 +53,10 @@ public:
 
     void cacheAllTextures(std::unordered_map<std::string, std::vector<unsigned char>>& textureCache);
 
+    void cacheAllBiomes(std::unordered_map<std::string, nlohmann::json>& cache);
+
+    void cacheAllColormaps(std::unordered_map<std::string, std::vector<unsigned char>>& cache);
+
     // 获取 .jar 文件中指定子目录下的所有文件
     std::vector<std::string> getFilesInSubDirectory(const std::string& subDir);
 

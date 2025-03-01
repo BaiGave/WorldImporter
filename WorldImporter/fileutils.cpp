@@ -222,6 +222,38 @@ void SetGlobalLocale() {
     std::setlocale(LC_ALL, "zh_CN.UTF-8");  // 使用 UTF-8 编码
 }
 
+void LoadSolidBlocks(const std::string& filepath) {
+    std::ifstream file(filepath);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to open air blocks file: " + filepath);
+    }
+
+    nlohmann::json j;
+    file >> j;
+
+    if (j.contains("solid_blocks")) {
+        for (auto& block : j["solid_blocks"]) {
+            solidBlocks.insert(block.get<std::string>());
+        }
+    }
+    else {
+        throw std::runtime_error("Air blocks file missing 'solid_blocks' array");
+    }
+}
+
+// 打印字节数据
+void printBytes(const std::vector<char>& data) {
+    std::cout << "文件字节数据: " << std::endl;
+    for (size_t i = 0; i < data.size(); ++i) {
+        // 打印每个字节的十六进制表示
+        printf("%02X ", static_cast<unsigned char>(data[i]));
+        if ((i + 1) % 16 == 0) {
+            std::cout << std::endl;
+        }
+    }
+    std::cout << std::endl;
+}
+
 // 将 wstring 转换为 UTF-8 编码的 string
 std::string wstring_to_string(const std::wstring& wstr) {
     std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
@@ -251,15 +283,3 @@ std::wstring GetFolderNameFromPath(const std::wstring& folderPath) {
     return folderPath;
 }
 
-// 打印字节数据
-void printBytes(const std::vector<char>& data) {
-    std::cout << "文件字节数据: " << std::endl;
-    for (size_t i = 0; i < data.size(); ++i) {
-        // 打印每个字节的十六进制表示
-        printf("%02X ", static_cast<unsigned char>(data[i]));
-        if ((i + 1) % 16 == 0) {
-            std::cout << std::endl;
-        }
-    }
-    std::cout << std::endl;
-}
