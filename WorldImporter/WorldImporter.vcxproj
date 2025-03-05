@@ -150,7 +150,6 @@
     <ClCompile Include="RegionModelExporter.cpp" />
     <ClCompile Include="texture.cpp" />
     <ClCompile Include="version.cpp" />
-    <ClCompile Include="源.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="biome.h" />
