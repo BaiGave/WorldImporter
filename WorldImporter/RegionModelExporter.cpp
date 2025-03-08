@@ -674,6 +674,7 @@ void AssignFluidMaterials(ModelData& model, const std::string& fluidId) {
     };
 }
 
+
 ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int chunkZ) {
     ModelData chunkModel;
     // 计算区块内的方块范围
@@ -711,7 +712,7 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
                 ModelData liquidModel;
                 if (currentBlock.level > -1) {
                     blockModel = GetRandomModelFromCache(ns, blockName);
-                    
+
                     if (blockModel.vertices.empty()) {
                         // 如果是流体方块，生成流体模型
                         liquidModel = GenerateFluidModel(fluidLevels);
@@ -723,7 +724,7 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
                         // 如果是流体方块，生成流体模型
                         liquidModel = GenerateFluidModel(fluidLevels);
                         AssignFluidMaterials(liquidModel, currentBlock.name);
-                        ScaleModel(liquidModel,1.01f);
+                        
                         if (!blockModel.faceDirections.empty())
                         {
                             for (size_t i = 0; i < blockModel.faceDirections.size(); i += 4)
@@ -737,7 +738,7 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
 
                         blockModel = MergeModelData(blockModel, liquidModel);
                     }
-                   
+
                 }
                 else
                 {

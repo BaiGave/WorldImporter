@@ -136,6 +136,8 @@ void init() {
     SetGlobalLocale();
     loadAndUpdateConfig();
     LoadSolidBlocks(config.solidBlocksFile);
+    LoadFluidBlocks(config.fluidsFile);
+    RegisterFluidTextures();
     InitializeGlobalBlockPalette();
     InitializeAllCaches();
 }
@@ -186,7 +188,7 @@ int main() {
     //auto biomeMap = Biome::GenerateBiomeMap(-237, -335, 460, 269, 64);
     // 导出图片
     //Biome::ExportToPNG(biomeMap, "biome_map.png",BiomeColorType::DryFoliage);
-    Biome::PrintAllRegisteredBiomes();
+    //Biome::PrintAllRegisteredBiomes();
 
 
     loadAndUpdateConfig();  // 重新加载和更新配置

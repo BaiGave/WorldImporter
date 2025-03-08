@@ -617,14 +617,18 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                     elementVertices[faceName] = { {x2, y1, z2}, {x2, y1, z1}, {x1, y1, z1}, {x1, y1, z2} };
                 }
             }
+            bool flipV = false;
 
             // 处理元素旋转
             if (element.contains("rotation")) {
                 auto rotation = element["rotation"];
                 std::string axis = rotation["axis"].get<std::string>();
+
                 float angle_deg = rotation["angle"].get<float>();
                 auto origin = rotation["origin"];
-
+                if (angle_deg < 0) {
+                    flipV = true;
+                }
                 // 转换旋转中心到 OBJ 坐标系
                 float ox = origin[0].get<float>() / 16.0f;
                 float oy = origin[1].get<float>() / 16.0f;
@@ -853,7 +857,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
 
                         // 根据标志位处理面重叠
                         bool skipFace = false;
-                        if (true) {
+                        if (false) {
                             // 启用重叠处理：计算偏移量并调整顶点
                             int count = ++faceCountMap[key];
                             float offset = (count - 1) * 0.001f;
@@ -941,6 +945,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                         {
                             uvRegion = { (1 - z2) * 16, (1 - y2) * 16, (1 - z1) * 16, (1 - y1) * 16 }; // 默认 UV 区域
                         }
+                        
 
                         std::array<int, 4> uvIndices;
                         if (face.value().contains("uv")) {
@@ -952,18 +957,31 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                                 uv[3].get<float>()
                             };
                         }
-
+                        
                         // 获取旋转角度，默认为0
                         int rotation = face.value().value("rotation", 0);
 
                         
                         // 计算四个 UV 坐标点
-                        std::vector<std::vector<float>> uvCoords = {
+
+                        std::vector<std::vector<float>> uvCoords;
+                        if (flipV) {
+                            uvCoords = {
+                                {uvRegion[2] / 16.0f, uvRegion[3] / 16.0f},
+                                {uvRegion[2] / 16.0f, uvRegion[1] / 16.0f},
+                                {uvRegion[0] / 16.0f, uvRegion[1] / 16.0f},
+                                {uvRegion[0] / 16.0f, uvRegion[3] / 16.0f}
+                            };
+                        }
+                        else {
+                            uvCoords = {
                             {uvRegion[2] / 16.0f, 1 - uvRegion[3] / 16.0f},
                             {uvRegion[2] / 16.0f, 1 - uvRegion[1] / 16.0f},
                             {uvRegion[0] / 16.0f, 1 - uvRegion[1] / 16.0f},
                             {uvRegion[0] / 16.0f, 1 - uvRegion[3] / 16.0f}
-                        };
+                            };
+                        }
+
 
                         // 计算旋转步数，确保rotation值为0, 90, 180, 270中的一个
                         int steps = ((rotation % 360) + 360) % 360 / 90;
@@ -975,10 +993,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                             }
                             uvCoords = rotatedUV;
                         }
-                        // 如果起点和终点被对调（任一分量发生对调），则认为纹理被镜像翻转，旋转角度自动加180°
-                        if (uvRegion[0] > uvRegion[2] || uvRegion[1] > uvRegion[3]) {
-                            rotation += 180;
-                        }
+                        
 
                         // 插入UV数据并记录索引
                         for (int i = 0; i < 4; ++i) {
