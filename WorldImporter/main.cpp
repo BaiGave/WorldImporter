@@ -18,6 +18,7 @@
 #include "fileutils.h"
 #include "GlobalCache.h"
 #include "RegionModelExporter.h"
+#include <nlohmann/json.hpp>
 
 Config config;  // 定义全局变量
 
@@ -135,10 +136,8 @@ void init() {
     SetGlobalLocale();
     loadAndUpdateConfig();
     LoadSolidBlocks(config.solidBlocksFile);
-    LoadFluidBlocks(config.fluidsFile);
     InitializeGlobalBlockPalette();
     InitializeAllCaches();
-    
 }
 
 void exportPointCloud() {
@@ -199,10 +198,10 @@ int main() {
             config.minZ, config.maxZ,
             "region_models"
         );
-
+        
         // 保存更新后的配置文件
         WriteConfig(config, "config\\config.json");
-
+        
         LoadConfig("config\\config.json");
     }
     else if (config.status == 2) {
