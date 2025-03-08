@@ -21,7 +21,17 @@ struct triple_hash;
 
 extern std::unordered_set<std::string> solidBlocks; // 改为哈希表
 extern std::unordered_set<std::string> fluidBlocks;
+extern std::unordered_set<std::string> alwaysWaterlogged;
 
+struct FluidInfo {
+    std::string folder;
+    std::string property;          // 流体特殊属性（如waterlogged）
+    std::string level_property;    // level属性名称（默认为"level"）
+    std::unordered_set<std::string> liquid_blocks; // 强制含水方块
+    std::string still_texture;     // 静止材质路径（如"_still"）
+    std::string flow_texture;      // 流动材质路径（如"_flow"）
+};
+extern std::unordered_map<std::string, FluidInfo> fluidDefinitions;
 
 struct Block {
     std::string name;
@@ -33,23 +43,16 @@ struct Block {
         std::string baseName = (bracketPos != std::string::npos) ?
             name.substr(0, bracketPos) : name;
 
-        // 提取基础名称（去掉命名空间）
-        size_t colonPos = baseName.find(':');
-        std::string shortName = (colonPos != std::string::npos) ?
-            baseName.substr(colonPos + 1) : baseName;
-
         // 解析方块状态属性
         std::unordered_map<std::string, std::string> states;
         if (bracketPos != std::string::npos) {
             std::string stateStr = name.substr(bracketPos + 1, name.find(']') - bracketPos - 1);
-            // 分割状态属性
             size_t start = 0;
             while (true) {
                 size_t end = stateStr.find(',', start);
                 std::string pair = (end == std::string::npos) ?
                     stateStr.substr(start) : stateStr.substr(start, end - start);
 
-                // 分割键值对
                 size_t eqPos = pair.find(':');
                 if (eqPos != std::string::npos) {
                     states[pair.substr(0, eqPos)] = pair.substr(eqPos + 1);
@@ -60,22 +63,59 @@ struct Block {
             }
         }
 
-        // 优先处理waterlogged属性
-        if (states.count("waterlogged") && states["waterlogged"] == "true") {
-            level = 0;
-        }
-        // 其次处理流体方块
-        else if (fluidBlocks.count(shortName)) {
-            try {
-                level = states.count("level") ? std::stoi(states["level"]) : 0;
+        /* 新版流体处理逻辑 */
+        bool fluidProcessed = false;
+
+        // 阶段1：检查强制含水方块
+        if (!fluidProcessed) {
+            for (const auto& fluidEntry : fluidDefinitions) {
+                const FluidInfo& info = fluidEntry.second;
+                if (info.liquid_blocks.count(baseName)) {
+                    level = 0;
+                    fluidProcessed = true;
+                    break;
+                }
             }
-            catch (...) {
-                level = 0; // 解析失败时的默认值
+        }
+        // 阶段2：检查流体属性（如waterlogged）
+        for (const auto& fluidEntry : fluidDefinitions) {
+            const std::string& fluidName = fluidEntry.first;
+            const FluidInfo& info = fluidEntry.second;
+
+            if (!info.property.empty() &&
+                states.count(info.property) &&
+                states[info.property] == "true") {
+                level = 0;
+                fluidProcessed = true;
+                break;
             }
         }
 
-        // 原有的空气判断逻辑
+        
+
+        // 阶段3：处理流体自身level属性
+        if (!fluidProcessed) {
+            const auto& it = fluidDefinitions.find(baseName);
+            if (it != fluidDefinitions.end()) {
+                const FluidInfo& info = it->second;
+                std::string levelProp = info.level_property.empty() ?
+                    "level" : info.level_property;
+
+                try {
+                    level = states.count(levelProp) ?
+                        std::stoi(states[levelProp]) : 0;
+                }
+                catch (...) {
+                    level = 0;
+                }
+                fluidProcessed = true;
+            }
+        }
+
+        // 原有空气判断逻辑
         air = (solidBlocks.find(baseName) == solidBlocks.end());
+
+
     }
     Block(const std::string& name, bool air) : name(name), air(air) {}
 
@@ -122,6 +162,18 @@ struct Block {
 
         // 否则返回空
         return "";
+    }
+
+    std::string GetNameAndNameSpaceWithoutState() const {
+        size_t bracketPos = name.find('[');  // 查找第一个方括号的位置
+
+        // 如果没有方括号，返回完整的字符串
+        if (bracketPos == std::string::npos) {
+            return name;
+        }
+
+        // 如果有方括号，返回方括号之前的部分
+        return name.substr(0, bracketPos);
     }
     // 保留命名空间和基础名字，只处理状态键值对
     std::string GetModifiedNameWithNamespace() const {
@@ -396,7 +448,11 @@ std::string GetBlockNameById(int blockId);
 std::string GetBlockNamespaceById(int blockId);
 
 // 获取方块ID时同时获取相邻方块的air状态，返回当前方块ID
-int GetBlockIdWithNeighbors(int blockX, int blockY, int blockZ, bool* neighborIsAir);
+int GetBlockIdWithNeighbors(
+    int blockX, int blockY, int blockZ,
+    bool* neighborIsAir = nullptr,
+    int* fluidLevels = nullptr
+);
 
 int GetHeightMapY(int blockX, int blockZ, const std::string& heightMapType);
 

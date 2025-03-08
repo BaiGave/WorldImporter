@@ -30,13 +30,13 @@ public:
     void cacheAllResources(
         std::unordered_map<std::string, std::vector<unsigned char>>& textureCache,
         std::unordered_map<std::string, nlohmann::json>& blockstateCache,
-        std::unordered_map<std::string, nlohmann::json>& modelCache);
+        std::unordered_map<std::string, nlohmann::json>& modelCache,
+        std::unordered_map<std::string, nlohmann::json>& mcmetaCache);
     // 构造函数，接受 .jar 文件路径
     JarReader(const std::wstring& jarFilePath);
 
     // 析构函数，关闭 .jar 文件
     ~JarReader();
-
 
     // 去除注释
     std::string cleanUpContent(const std::string& content);
@@ -46,12 +46,6 @@ public:
 
     // 获取 .jar 文件中指定路径的文件内容（二进制）
     std::vector<unsigned char> getBinaryFileContent(const std::string& filePathInJar);
-
-    void cacheAllBlockstates(std::unordered_map<std::string, nlohmann::json>& cache);
-
-    void cacheAllModels(std::unordered_map<std::string, nlohmann::json>& cache);
-
-    void cacheAllTextures(std::unordered_map<std::string, std::vector<unsigned char>>& textureCache);
 
     void cacheAllBiomes(std::unordered_map<std::string, nlohmann::json>& cache);
 

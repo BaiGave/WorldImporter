@@ -46,12 +46,10 @@ enum FaceType { UP, DOWN, NORTH, SOUTH, WEST, EAST, UNKNOWN };
 //---------------- 缓存管理 ----------------
 static std::mutex cacheMutex;
 static std::recursive_mutex parentModelCacheMutex;
-static std::mutex texturePathCacheMutex; 
 
 // 静态缓存
 static std::unordered_map<std::string, ModelData> modelCache; // Key: "namespace:blockId"
 static std::unordered_map<std::string, nlohmann::json> parentModelCache;
-static std::unordered_map<std::string, std::string> texturePathCache; // Key: "namespace:pathPart", Value: 保存的材质路径
 
 //---------------- 核心功能声明 ----------------
 // 模型处理

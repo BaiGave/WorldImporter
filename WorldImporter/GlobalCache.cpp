@@ -13,6 +13,7 @@
 namespace GlobalCache {
     // 缓存数据
     std::unordered_map<std::string, std::vector<unsigned char>> textures;
+    std::unordered_map<std::string, nlohmann::json> mcmetaCache;
     std::unordered_map<std::string, nlohmann::json> blockstates;
     std::unordered_map<std::string, nlohmann::json> models;
     std::unordered_map<std::string, nlohmann::json> biomes;
@@ -26,15 +27,9 @@ namespace GlobalCache {
     // 线程控制
     std::atomic<bool> stopFlag{ false };
     std::queue<std::wstring> jarQueue;
-
-
+    std::vector<std::string> jarOrder; // 记录 JAR 文件的加载顺序和对应的模组 ID
 }
 
-// ========= 外部依赖定义 =========
-//std::string currentSelectedGameVersion; // 需在版本模块初始化
-//std::unordered_map<std::string, std::vector<FolderData>> VersionCache;
-//std::unordered_map<std::string, std::vector<FolderData>> resourcePacksCache;
-//std::unordered_map<std::string, std::vector<FolderData>> modListCache;
 
 // ========= 初始化实现 =========
 void InitializeAllCaches() {
@@ -50,31 +45,41 @@ void InitializeAllCaches() {
                 GlobalCache::jarQueue.pop();
             }
 
-            // 添加原版JAR
-            if (VersionCache.count(currentSelectedGameVersion)) {
-                for (const auto& fd : VersionCache[currentSelectedGameVersion]) {
-                    GlobalCache::jarQueue.push(string_to_wstring(fd.path));
-                }
-            }
-
-            // 添加资源包
-            if (resourcePacksCache.count(currentSelectedGameVersion)) {
-                for (const auto& fd : resourcePacksCache[currentSelectedGameVersion]) {
-                    GlobalCache::jarQueue.push(string_to_wstring(fd.path));
-                }
-            }
-
             // 添加模组
             if (modListCache.count(currentSelectedGameVersion)) {
                 for (const auto& fd : modListCache[currentSelectedGameVersion]) {
-                    if (fd.namespaceName == "vanilla" || fd.namespaceName == "resourcePack") continue;
-                    GlobalCache::jarQueue.push(string_to_wstring(fd.path));
+                    if (fd.namespaceName == "resourcePack") {
+                        // 添加资源包
+                        if (resourcePacksCache.count(currentSelectedGameVersion)) {
+                            for (const auto& fd : resourcePacksCache[currentSelectedGameVersion]) {
+                                GlobalCache::jarQueue.push(string_to_wstring(fd.path));
+                                // 使用命名空间作为模组 ID
+                                GlobalCache::jarOrder.push_back(fd.namespaceName);
+                            }
+                        }
+                    }
+                    else if (fd.namespaceName == "vanilla") {
+                        // 添加原版JAR
+                        if (VersionCache.count(currentSelectedGameVersion)) {
+                            for (const auto& fd : VersionCache[currentSelectedGameVersion]) {
+                                GlobalCache::jarQueue.push(string_to_wstring(fd.path));
+                                // 使用命名空间作为模组 ID
+                                GlobalCache::jarOrder.push_back(fd.namespaceName);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        GlobalCache::jarQueue.push(string_to_wstring(fd.path));
+                        // 使用命名空间作为模组 ID
+                        GlobalCache::jarOrder.push_back(fd.namespaceName);
+                    }
+
                 }
             }
             };
 
         prepareQueue();
-
         // 工作线程函数
         auto worker = []() {
             while (!GlobalCache::stopFlag.load()) {
@@ -91,16 +96,28 @@ void InitializeAllCaches() {
                 // 处理JAR
                 JarReader reader(jarPath);
                 if (reader.open()) {
+
+                    // 获取当前 JAR 文件的模组 ID（从 jarOrder 中获取）
+                    static std::atomic<size_t> jarOrderIndex{ 0 }; // 用于记录当前处理到的 jarOrder 索引
+                    std::string currentModId;
+                    {
+                        std::lock_guard<std::mutex> lock(GlobalCache::queueMutex);
+                        // 根据 jarOrderIndex 获取对应的模组 ID
+                        if (jarOrderIndex < GlobalCache::jarOrder.size()) {
+                            currentModId = GlobalCache::jarOrder[jarOrderIndex];
+                            jarOrderIndex++;
+                        }
+                    }
+
                     // 局部缓存临时存储
                     std::unordered_map<std::string, std::vector<unsigned char>> localTextures;
                     std::unordered_map<std::string, nlohmann::json> localBlockstates;
                     std::unordered_map<std::string, nlohmann::json> localModels;
                     std::unordered_map<std::string, nlohmann::json> localBiomes;
+                    std::unordered_map<std::string, nlohmann::json> localMcmetas;
                     std::unordered_map<std::string, std::vector<unsigned char>> localColormaps;
 
-                    
-
-                    reader.cacheAllResources(localTextures, localBlockstates, localModels);
+                    reader.cacheAllResources(localTextures, localBlockstates, localModels, localMcmetas);
                     reader.cacheAllBiomes(localBiomes);
                     reader.cacheAllColormaps(localColormaps);
                     // 合并到全局缓存
@@ -110,31 +127,50 @@ void InitializeAllCaches() {
                         // 手动合并 textures
                         for (auto& pair : localTextures) {
                             // 使用 insert 的提示版本提升性能
-                            auto hint = GlobalCache::textures.end();
-                            GlobalCache::textures.insert(hint, std::move(pair));
+                            std::string cacheKey = currentModId + ":" + pair.first;
+                            if (GlobalCache::textures.find(cacheKey) == GlobalCache::textures.end()) {
+                                GlobalCache::textures.insert({ cacheKey, pair.second });
+                            }
                         }
 
                         // 合并 blockstates
                         for (auto& pair : localBlockstates) {
                             // 检测键是否已存在
-                            if (GlobalCache::blockstates.find(pair.first) == GlobalCache::blockstates.end()) {
-                                GlobalCache::blockstates.insert(std::move(pair));
+                            std::string cacheKey = currentModId + ":" + pair.first;
+                            if (GlobalCache::blockstates.find(cacheKey) == GlobalCache::blockstates.end()) {
+                                GlobalCache::blockstates.insert({ cacheKey, pair.second });
                             }
                         }
 
                         // 合并 models（带冲突检测）
                         for (auto& pair : localModels) {
-                            GlobalCache::models.emplace(pair.first, std::move(pair.second));
+                            std::string cacheKey = currentModId + ":" + pair.first;
+                            if (GlobalCache::models.find(cacheKey) == GlobalCache::models.end()) {
+                                GlobalCache::models.insert({ cacheKey, pair.second });
+                            }
+                            
                         }
 
                         // 合并生物群系
                         for (auto& pair : localBiomes) {
-                            GlobalCache::biomes.insert(pair);
+                            std::string cacheKey = currentModId + ":" + pair.first;
+                            if (GlobalCache::biomes.find(cacheKey) == GlobalCache::biomes.end()) {
+                                GlobalCache::biomes.insert({ cacheKey, pair.second });
+                            }
                         }
 
                         // 合并色图
                         for (auto& pair : localColormaps) {
-                            GlobalCache::colormaps.insert(pair);
+                            std::string cacheKey = currentModId + ":" + pair.first;
+                            if (GlobalCache::colormaps.find(cacheKey) == GlobalCache::colormaps.end()) {
+                                GlobalCache::colormaps.insert({ cacheKey, pair.second });
+                            }
+                        }
+                        for (auto& pair : localMcmetas) {
+                            std::string cacheKey = currentModId + ":" + pair.first;
+                            if (GlobalCache::mcmetaCache.find(cacheKey) == GlobalCache::mcmetaCache.end()) {
+                                GlobalCache::mcmetaCache.insert({ cacheKey, pair.second });
+                            }
                         }
                     }
                 }
@@ -170,35 +206,11 @@ void InitializeAllCaches() {
         std::cout << "Parallel Cache Initialization Complete\n"
             << " - Used threads: " << numThreads << "\n"
             << " - Textures: " << GlobalCache::textures.size() << "\n"
+            << " - Mcmetas: " << GlobalCache::mcmetaCache.size() << "\n"
             << " - Blockstates: " << GlobalCache::blockstates.size() << "\n"
             << " - Models: " << GlobalCache::models.size() << "\n"
             << " - Biomes: " << GlobalCache::biomes.size() << "\n"
             << " - Colormaps: " << GlobalCache::colormaps.size() << "\n"
             << " - Time: " << ms << "ms" << std::endl;
         });
-}
-
-// ========= 工具方法实现 =========
-bool ValidateCacheIntegrity() {
-    std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
-    return !GlobalCache::textures.empty()
-        && !GlobalCache::blockstates.empty()
-        && !GlobalCache::models.empty();
-}
-
-void HotReloadJar(const std::wstring& jarPath) {
-    std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
-
-    JarReader reader(jarPath);
-    if (reader.open()) {
-        reader.cacheAllResources(
-            GlobalCache::textures,
-            GlobalCache::blockstates,
-            GlobalCache::models
-        );
-        std::cout << "Hot Reloaded: " << wstring_to_string(jarPath) << "\n"
-            << " - Current Textures: " << GlobalCache::textures.size() << "\n"
-            << " - Current Blockstates: " << GlobalCache::blockstates.size() << "\n"
-            << " - Current Models: " << GlobalCache::models.size() << std::endl;
-    }
 }

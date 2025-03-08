@@ -24,8 +24,8 @@ struct VersionConfig {
 struct Config {
     std::string worldPath;  // Minecraft 世界路径
     std::string packagePath;  // 游戏整合包路径
-    std::string biomeMappingFile; // 生物群系映射文件路径
     std::string solidBlocksFile;  // 固体方块列表文件路径
+    std::string fluidsFile; //流体列表文件路径
     int minX, minY, minZ, maxX, maxY, maxZ; // 坐标范围
     int status; // 运行状态
     bool importByChunk;  // 是否按区块导入
@@ -37,7 +37,7 @@ struct Config {
     std::map<std::string, VersionConfig> versionConfigs;  // 按版本存储不同的配置
 
     Config()
-        : worldPath(""), packagePath(""), biomeMappingFile("config\\jsons\\biomes.json"),solidBlocksFile("config\\jsons\\solids.json"),
+        : worldPath(""), packagePath(""),solidBlocksFile("config\\jsons\\solids.json"), fluidsFile("config\\jsons\\fluids.json"),
         minX(0), minY(0), minZ(0), maxX(0), maxY(0), maxZ(0), status(0), importByChunk(false),
         importByBlockType(false), pointCloudType(0), lodLevel(0), selectedGameVersion(""),
         versionConfigs() {

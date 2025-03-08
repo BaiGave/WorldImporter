@@ -138,37 +138,45 @@ int GetBiomeId(int blockX, int blockY, int blockZ) {
 
 
 nlohmann::json Biome::GetBiomeJson(const std::string& namespaceName, const std::string& biomeId) {
-    std::string cacheKey = namespaceName + ":" + biomeId;
     std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
-    auto it = GlobalCache::biomes.find(cacheKey);
-    if (it != GlobalCache::biomes.end()) {
-        return it->second;
+
+    // 按照 JAR 文件的加载顺序逐个查找
+    for (size_t i = 0; i < GlobalCache::jarOrder.size(); ++i) {
+        const std::string& modId = GlobalCache::jarOrder[i];
+        std::string cacheKey = modId + ":" + namespaceName + ":" + biomeId;
+        auto it = GlobalCache::biomes.find(cacheKey);
+        if (it != GlobalCache::biomes.end()) {
+            return it->second;
+        }
     }
 
-    std::cerr << "Biome JSON not found: " << cacheKey << std::endl;
+    std::cerr << "Biome JSON not found: " << namespaceName << ":" << biomeId << std::endl;
     return nlohmann::json();
 }
 
 std::string Biome::GetColormapData(const std::string& namespaceName, const std::string& colormapName) {
-    std::string cacheKey = namespaceName + ":" + colormapName;
     std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
 
-    auto it = GlobalCache::colormaps.find(cacheKey);
-    if (it != GlobalCache::colormaps.end()) {
-        std::string filePath;
-        if (SaveColormapToFile(it->second, namespaceName, colormapName, filePath)) {
-            return filePath;
-        }
-        else {
-            std::cerr << "Failed to save colormap: " << cacheKey << std::endl;
-            return "";
+    // 按照 JAR 文件的加载顺序逐个查找
+    for (size_t i = 0; i < GlobalCache::jarOrder.size(); ++i) {
+        const std::string& modId = GlobalCache::jarOrder[i];
+        std::string cacheKey = modId + ":" + namespaceName + ":" + colormapName;
+        auto it = GlobalCache::colormaps.find(cacheKey);
+        if (it != GlobalCache::colormaps.end()) {
+            std::string filePath;
+            if (SaveColormapToFile(it->second, namespaceName, colormapName, filePath)) {
+                return filePath;
+            }
+            else {
+                std::cerr << "Failed to save colormap: " << cacheKey << std::endl;
+                return "";
+            }
         }
     }
 
-    std::cerr << "Colormap not found: " << cacheKey << std::endl;
+    std::cerr << "Colormap not found: " << namespaceName << ":" << colormapName << std::endl;
     return "";
 }
-
 std::vector<std::vector<int>> Biome::GenerateBiomeMap(int minX, int minZ, int maxX, int maxZ, int y) {
     std::vector<std::vector<int>> biomeMap;
     int width = maxX - minX + 1;

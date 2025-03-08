@@ -7,64 +7,6 @@ float centerX = 0.5f;
 float centerY = 0.5f;
 float centerZ = 0.5f;
 
-// 水面高度计算函数
-float EntityBlock::CalculateWaterHeight(int level) {
-    level = min(max(level, 0), 7); // 限制在0-7范围内
-    return 0.375f - 0.12f * level;
-}
-
-bool EntityBlock::IsWaterBlock(const string& blockName, int& outLevel, bool& outFalling) {
-    string processed = blockName;
-    size_t colonPos = processed.find(':');
-    string ns = "minecraft";
-
-    if (colonPos != string::npos) {
-        ns = processed.substr(0, colonPos);
-        processed = processed.substr(colonPos + 1);
-    }
-
-    if (ns != "minecraft") return false;
-
-    size_t bracketPos = processed.find('[');
-    string blockID = processed.substr(0, bracketPos);
-
-    if (blockID != "water" && blockID != "flowing_water") return false;
-
-    // 默认值设置
-    outLevel = 0;
-    outFalling = false;
-
-    if (bracketPos != string::npos) {
-        string stateStr = processed.substr(bracketPos + 1, processed.find(']') - bracketPos - 1);
-        size_t levelPos = stateStr.find("level=");
-
-        if (levelPos != string::npos) {
-            string levelStr = stateStr.substr(levelPos + 6);
-            try {
-                int rawLevel = stoi(levelStr);
-                outFalling = (rawLevel & 8) != 0;  // 检测第八位是否设置
-                outLevel = rawLevel & 7;           // 取低三位
-            }
-            catch (...) {
-                // 解析失败保持默认值
-            }
-        }
-    }
-
-    return true;
-}
-
-ModelData EntityBlock::GenerateWaterBlockModel(int level, bool falling) {
-    ModelData waterModel;
-    float baseHeight = CalculateWaterHeight(level);
-
-    if (level > 0 && level < 8) {
-        std::cout << level;
-    }
-
-    return waterModel;
-}
-
 ModelData EntityBlock::GenerateEntityBlockModel(const string& blockName) {
     string texturePath;
     int waterLevel;
@@ -73,10 +15,6 @@ ModelData EntityBlock::GenerateEntityBlockModel(const string& blockName) {
     if (IsLightBlock(blockName, texturePath)) {
         return GenerateLightBlockModel(texturePath);
     }
-    else if (IsWaterBlock(blockName, waterLevel, waterFalling)) {
-        return GenerateWaterBlockModel(waterLevel, waterFalling);
-    }
-
     // 其他类型方块的生成逻辑
     ModelData defaultModel;
     return defaultModel;

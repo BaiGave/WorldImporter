@@ -11,12 +11,9 @@ public:
 
 private:
     static ModelData GenerateLightBlockModel(const std::string& texturePath);
-    static ModelData GenerateWaterBlockModel(int level, bool falling);
 
     static bool IsLightBlock(const std::string& blockName, std::string& outTexturePath);
-    static bool IsWaterBlock(const std::string& blockName, int& outLevel, bool& outFalling);
 
-    static float CalculateWaterHeight(int level);
 };
 
 #endif // ENTITY_BLOCK_H

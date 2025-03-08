@@ -51,6 +51,7 @@ JarReader::JarReader(const std::wstring& jarFilePath)
         std::cerr << "Failed to open .jar file: " << utf8Path << std::endl;
         return;
     }
+    
 
     // 检查是否为原版
     if (isVanilla()) {
@@ -114,6 +115,7 @@ std::string JarReader::getFileContent(const std::string& filePathInJar) {
 
     // 读取文件内容
     std::string fileContent;
+
     fileContent.resize(fileStat.size);
     zip_fread(fileInJar, &fileContent[0], fileStat.size);
 
@@ -155,12 +157,14 @@ std::vector<unsigned char> JarReader::getBinaryFileContent(const std::string& fi
 void JarReader::cacheAllResources(
     std::unordered_map<std::string, std::vector<unsigned char>>& textureCache,
     std::unordered_map<std::string, nlohmann::json>& blockstateCache,
-    std::unordered_map<std::string, nlohmann::json>& modelCache)
+    std::unordered_map<std::string, nlohmann::json>& modelCache,
+    std::unordered_map<std::string, nlohmann::json>& mcmetaCache)  // 新增参数
 {
     if (!zipFile) {
         std::cerr << "Zip file is not open." << std::endl;
         return;
     }
+
 
     zip_int64_t numEntries = zip_get_num_entries(zipFile, 0);
     for (zip_int64_t i = 0; i < numEntries; ++i) {
@@ -199,6 +203,7 @@ void JarReader::cacheAllResources(
                     zip_fclose(file);
                 }
             }
+            
         }
         // 处理 blockstate
         else if (filePath.find("/blockstates/") != std::string::npos &&
@@ -227,6 +232,7 @@ void JarReader::cacheAllResources(
             filePath.substr(filePath.size() - 5) == ".json")
         {
             size_t resStart = filePath.find("/models/", nsEnd) + 8;
+            
             std::string modelPath = filePath.substr(resStart, filePath.size() - resStart - 5);
             std::string cacheKey = namespaceName + ":" + modelPath;
 
@@ -242,170 +248,53 @@ void JarReader::cacheAllResources(
                 }
             }
         }
-
-        //cacheAllBiomes(blockstateCache); // 或者新建biomeCache参数
-        //cacheAllColormaps(textureCache); // 色图作为特殊纹理处理
-    }
-}
-
-void JarReader::cacheAllBlockstates(std::unordered_map<std::string, nlohmann::json>& cache) {
-    if (!zipFile) {
-        std::cerr << "Zip file is not open." << std::endl;
-        return;
-    }
-
-    zip_int64_t numEntries = zip_get_num_entries(zipFile, 0);
-    for (zip_int64_t i = 0; i < numEntries; ++i) {
-        const char* name = zip_get_name(zipFile, i, 0);
-        if (!name) continue;
-
-        std::string filePath(name);
-        // 匹配 blockstate 文件路径模式：assets/*/blockstates/*.json
-        if (filePath.find("assets/") == 0 &&
-            filePath.find("/blockstates/") != std::string::npos &&
-            filePath.size() > 5 &&
-            filePath.substr(filePath.size() - 5) == ".json")
+        // 处理 .mcmeta 文件（新增）
+        else if (filePath.find("/textures/") != std::string::npos &&
+            filePath.size() > 7 &&
+            filePath.substr(filePath.size() - 7) == ".mcmeta")
         {
-            // 解析命名空间和资源路径
-            size_t nsStart = 7;  // "assets/" 长度
-            size_t nsEnd = filePath.find('/', nsStart);
-            if (nsEnd == std::string::npos) continue;
+            size_t metaStart = filePath.find("/textures/", nsEnd) + 10;
+            std::string metaPathWithExtension = filePath.substr(metaStart, filePath.size() - metaStart - 7);
 
-            std::string namespaceName = filePath.substr(nsStart, nsEnd - nsStart);
+            // 去掉 .png 后缀
+            size_t pngPos = metaPathWithExtension.find(".png");
+            if (pngPos != std::string::npos) {
+                std::string metaPath = metaPathWithExtension.substr(0, pngPos);
+                std::string cacheKey = namespaceName + ":" + metaPath;
 
-            size_t resStart = filePath.find("/blockstates/", nsEnd) + 13;
-            std::string resourcePath = filePath.substr(resStart, filePath.size() - resStart - 5);
-
-            // 构造缓存键：命名空间:资源路径
-            std::string cacheKey = namespaceName + ":" + resourcePath;
-
-            // 跳过已存在的缓存项
-            if (cache.find(cacheKey) != cache.end()) continue;
-
-            // 读取并解析文件内容
-            std::string fileContent = this->getFileContent(filePath);
-            if (!fileContent.empty()) {
-                try {
-                    nlohmann::json jsonData = nlohmann::json::parse(fileContent);
-                    cache.emplace(cacheKey, jsonData);
+                if (mcmetaCache.find(cacheKey) == mcmetaCache.end()) {
+                    std::string content = this->getFileContent(filePath);
+                    if (!content.empty()) {
+                        try {
+                            mcmetaCache.emplace(cacheKey, nlohmann::json::parse(content));
+                        }
+                        catch (const std::exception& e) {
+                            std::cerr << ".mcmeta JSON Error: " << filePath << " - " << e.what() << std::endl;
+                        }
+                    }
                 }
-                catch (const std::exception& e) {
-                    std::cerr << "JSON Parse Error [" << filePath << "]: " << e.what() << std::endl;
+            }
+            else {
+                std::string metaPath = metaPathWithExtension;
+                std::string cacheKey = namespaceName + ":" + metaPath;
+
+                if (mcmetaCache.find(cacheKey) == mcmetaCache.end()) {
+                    std::string content = this->getFileContent(filePath);
+                    if (!content.empty()) {
+                        try {
+                            mcmetaCache.emplace(cacheKey, nlohmann::json::parse(content));
+                        }
+                        catch (const std::exception& e) {
+                            std::cerr << ".mcmeta JSON Error: " << filePath << " - " << e.what() << std::endl;
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-void JarReader::cacheAllModels(std::unordered_map<std::string, nlohmann::json>& cache) {
-    if (!zipFile) {
-        std::cerr << "Zip file is not open." << std::endl;
-        return;
-    }
 
-    zip_int64_t numEntries = zip_get_num_entries(zipFile, 0);
-    for (zip_int64_t i = 0; i < numEntries; ++i) {
-        const char* name = zip_get_name(zipFile, i, 0);
-        if (!name) continue;
-
-        std::string filePath(name);
-        // 匹配模型文件路径模式：assets/*/models/*.json
-        if (filePath.find("assets/") == 0 &&
-            filePath.find("/models/") != std::string::npos &&
-            filePath.size() > 5 &&
-            filePath.substr(filePath.size() - 5) == ".json")
-        {
-            // 解析命名空间和模型路径
-            size_t nsStart = 7;  // "assets/" 长度
-            size_t nsEnd = filePath.find('/', nsStart);
-            if (nsEnd == std::string::npos) continue;
-
-            std::string namespaceName = filePath.substr(nsStart, nsEnd - nsStart);
-
-            size_t resStart = filePath.find("/models/", nsEnd) + 8;
-            std::string modelPath = filePath.substr(resStart, filePath.size() - resStart - 5);
-
-            // 构造缓存键：命名空间:模型路径
-            std::string cacheKey = namespaceName + ":" + modelPath;
-
-            // 跳过已存在的缓存项
-            if (cache.find(cacheKey) != cache.end()) continue;
-
-            // 读取并解析文件内容
-            std::string fileContent = this->getFileContent(filePath);
-            if (!fileContent.empty()) {
-                try {
-                    nlohmann::json modelJson = nlohmann::json::parse(fileContent);
-                    cache.emplace(cacheKey, modelJson);
-                }
-                catch (const std::exception& e) {
-                    // 新增：输出错误文件路径、Mod来源和具体错误位置
-                    std::cerr << "[MOD JSON ERROR] File: " << filePath
-                        << "\n  - Error Detail: " << e.what()
-                        << std::endl;
-                }
-            }
-        }
-    }
-}
-
-void JarReader::cacheAllTextures(std::unordered_map<std::string, std::vector<unsigned char>>& textureCache) {
-    if (!zipFile) {
-        std::cerr << "Zip file is not open." << std::endl;
-        return;
-    }
-
-    zip_int64_t numEntries = zip_get_num_entries(zipFile, 0);
-    for (zip_int64_t i = 0; i < numEntries; ++i) {
-        const char* name = zip_get_name(zipFile, i, 0);
-        if (!name) continue;
-
-        std::string filePath(name);
-        // 匹配纹理文件路径模式：assets/*/textures/*.png
-        if (filePath.find("assets/") == 0 &&
-            filePath.find("/textures/") != std::string::npos &&
-            filePath.size() > 4 &&
-            filePath.substr(filePath.size() - 4) == ".png")
-        {
-            // 解析命名空间和资源路径
-            size_t nsStart = 7;  // "assets/"长度
-            size_t nsEnd = filePath.find('/', nsStart);
-            if (nsEnd == std::string::npos) continue;
-
-            std::string namespaceName = filePath.substr(nsStart, nsEnd - nsStart);
-
-            size_t resStart = filePath.find("/textures/", nsEnd) + 10;
-            std::string resourcePath = filePath.substr(resStart, filePath.size() - resStart - 4);
-
-            // 构造缓存键：命名空间:资源路径
-            std::string cacheKey = namespaceName + ":" + resourcePath;
-
-            // 跳过已存在的缓存项
-            if (textureCache.find(cacheKey) != textureCache.end()) continue;
-
-            // 读取文件内容
-            zip_file_t* file = zip_fopen_index(zipFile, i, 0);
-            if (!file) {
-                std::cerr << "Failed to open texture: " << filePath << std::endl;
-                continue;
-            }
-
-            zip_stat_t fileStat;
-            if (zip_stat_index(zipFile, i, 0, &fileStat) != 0) {
-                zip_fclose(file);
-                continue;
-            }
-
-            std::vector<unsigned char> fileContent(fileStat.size);
-            zip_int64_t readSize = zip_fread(file, fileContent.data(), fileStat.size);
-            zip_fclose(file);
-
-            if (readSize == fileStat.size) {
-                textureCache.emplace(cacheKey, std::move(fileContent));
-            }
-        }
-    }
-}
 
 void JarReader::cacheAllBiomes(std::unordered_map<std::string, nlohmann::json>& cache) {
     if (!zipFile) return;

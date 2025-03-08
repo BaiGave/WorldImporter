@@ -225,7 +225,7 @@ void SetGlobalLocale() {
 void LoadSolidBlocks(const std::string& filepath) {
     std::ifstream file(filepath);
     if (!file.is_open()) {
-        throw std::runtime_error("Failed to open air blocks file: " + filepath);
+        throw std::runtime_error("Failed to open solid_blocks file: " + filepath);
     }
 
     nlohmann::json j;
@@ -237,10 +237,106 @@ void LoadSolidBlocks(const std::string& filepath) {
         }
     }
     else {
-        throw std::runtime_error("Air blocks file missing 'solid_blocks' array");
+        throw std::runtime_error("solid_blocks file missing 'solid_blocks' array");
     }
 }
 
+void LoadFluidBlocks(const std::string& filepath) {
+    std::ifstream file(filepath);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to load fluid config: " + filepath);
+    }
+
+    nlohmann::json j;
+    file >> j;
+
+    fluidDefinitions.clear();
+
+    if (j.contains("fluids")) {
+        for (auto& entry : j["fluids"]) {
+            // 简写格式处理
+            if (entry.is_string()) {
+                std::string name = entry.get<std::string>();
+                fluidDefinitions[name] = {
+                    "block"
+                    "",       // 默认无属性
+                    "level",  // 默认level属性
+                    {},      // 空列表
+                    
+                };
+                continue;
+            }
+
+            // 完整对象格式
+            FluidInfo info;
+            info.level_property = "level"; // 设置默认值
+            info.still_texture = "_still";
+            info.flow_texture = "_flow";
+            info.folder = "block";
+            // 解析必填字段
+            if (!entry.contains("name")) {
+                throw std::runtime_error("Fluid entry missing 'name' field");
+            }
+            std::string name = entry["name"].get<std::string>();
+
+            // 解析可选字段
+            if (entry.contains("property")) {
+                info.property = entry["property"].get<std::string>();
+            }
+            if (entry.contains("folder")) {
+                info.folder = entry["folder"].get<std::string>();
+            }
+            if (entry.contains("flow_texture")) {
+                info.flow_texture = entry["flow_texture"].get<std::string>();
+            }
+            if (entry.contains("still_texture")) {
+                info.still_texture = entry["still_texture"].get<std::string>();
+            }
+            if (entry.contains("level_property")) {
+                info.level_property = entry["level_property"].get<std::string>();
+            }
+            if (entry.contains("liquid_blocks")) {
+                for (auto& block : entry["liquid_blocks"]) {
+                    info.liquid_blocks.insert(block.get<std::string>());
+                }
+            }
+            fluidDefinitions[name] = info;
+        }
+    }
+    else {
+        throw std::runtime_error("Config missing 'fluids' array");
+    }
+}
+
+void RegisterFluidTextures() {
+    for (const auto& entry : fluidDefinitions) {
+        const std::string& fluidName = entry.first; // 完整流体名（如"minecraft:water"）
+        const FluidInfo& info = entry.second;
+
+        // 解析命名空间和基础名称
+        size_t colonPos = fluidName.find(':');
+        std::string ns = (colonPos != std::string::npos) ?
+            fluidName.substr(0, colonPos) : "minecraft";
+        std::string baseName = (colonPos != std::string::npos) ?
+            fluidName.substr(colonPos + 1) : fluidName;
+        // 自动生成默认材质路径（如果未指定）
+        std::string stillPath =baseName + info.still_texture;
+        std::string flowPath = baseName + info.flow_texture;
+
+        std::string pathPart1 =info.folder + "/" + stillPath;
+        std::string pathPart2 = info.folder + "/" + flowPath;
+
+        std::string textureSavePath1 = "textures/" + ns + "/" + pathPart1 + ".png";
+        std::string textureSavePath2 = "textures/" + ns + "/" + pathPart2 + ".png";
+        // 注册材质（带命名空间）
+        std::string Dir = "textures";
+        std::string Dir2 = "textures";
+        SaveTextureToFile(ns, pathPart1, Dir);
+        RegisterTexture(ns, pathPart1, textureSavePath1);
+        SaveTextureToFile(ns, pathPart2, Dir2);
+        RegisterTexture(ns, pathPart2, textureSavePath2);
+    }
+}
 // 打印字节数据
 void printBytes(const std::vector<char>& data) {
     std::cout << "文件字节数据: " << std::endl;

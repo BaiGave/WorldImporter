@@ -27,6 +27,9 @@ namespace GlobalCache {
     // 纹理缓存 [namespace:resource_path -> PNG数据]
     extern std::unordered_map<std::string, std::vector<unsigned char>> textures;
 
+    //动态材质缓存 [namespace:resource_path -> JSON]
+    extern std::unordered_map<std::string, nlohmann::json> mcmetaCache;
+
     // 方块状态缓存 [namespace:block_id -> JSON]
     extern std::unordered_map<std::string, nlohmann::json> blockstates;
 
@@ -42,11 +45,9 @@ namespace GlobalCache {
     // 同步原语
     extern std::once_flag initFlag;
     extern std::mutex cacheMutex;
+    extern std::vector<std::string> jarOrder;
 }
 
 // ========= 初始化方法 =========
 void InitializeAllCaches();
 
-// ========= 工具方法 =========
-bool ValidateCacheIntegrity();
-void HotReloadJar(const std::wstring& jarPath);

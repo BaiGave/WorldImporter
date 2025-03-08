@@ -36,52 +36,67 @@ void ApplyRotationToVertices(std::vector<float>& vertices, int rotationX, int ro
     if (vertices.size() % 3 != 0) {
         throw std::invalid_argument("Invalid vertex data size");
     }
+
     // 绕 X 轴旋转（90度增量）
     for (size_t i = 0; i < vertices.size(); i += 3) {
         float& x = vertices[i];
         float& y = vertices[i + 1];
         float& z = vertices[i + 2];
 
+        // 将坐标平移到以 (0.5, 0.5) 为中心
+        y -= 0.5f;
+        z -= 0.5f;
+
         switch (rotationX) {
-        case 270:
-            std::tie(y, z) = std::make_pair(1.0f - z, y);
+        case 90:
+            std::tie(y, z) = std::make_pair(z, -y);
             break;
         case 180:
-            y = 1.0f - y;
-            z = 1.0f - z;
+            y = -y;
+            z = -z;
             break;
-        case 90:
-            std::tie(y, z) = std::make_pair(z, 1.0f - y);
+        case 270:
+            std::tie(y, z) = std::make_pair(-z, y);
             break;
         default:
             break;
         }
+
+        // 将坐标平移回原位置
+        y += 0.5f;
+        z += 0.5f;
     }
+
     // 绕 Y 轴旋转（90度增量）
     for (size_t i = 0; i < vertices.size(); i += 3) {
         float& x = vertices[i];
         float& y = vertices[i + 1];
         float& z = vertices[i + 2];
 
+        // 将坐标平移到以 (0.5, 0.5) 为中心
+        x -= 0.5f;
+        z -= 0.5f;
+
         switch (rotationY) {
         case 90:
-            std::tie(x, z) = std::make_pair(1.0f - abs(-z) , x);
+            std::tie(x, z) = std::make_pair(-z, x);
             break;
         case 180:
-            x = 1.0f -x;
-            z = 1.0f - z;
+            x = -x;
+            z = -z;
             break;
         case 270:
-            std::tie(x, z) = std::make_pair(z, 1.0f-abs( - x));
+            std::tie(x, z) = std::make_pair(z, -x);
             break;
         default:
             break;
         }
+
+        // 将坐标平移回原位置
+        x += 0.5f;
+        z += 0.5f;
     }
-
-    
 }
-
 // 带旋转中心的UV旋转（内联优化）
 static inline void fastRotateUV(float& u, float& v, float cosA, float sinA) {
     constexpr float centerU = 0.5f;
@@ -477,22 +492,20 @@ nlohmann::json MergeModelJson(const nlohmann::json& parentModelJson, const nlohm
     return mergedModelJson;
 }
 
-nlohmann::json GetModelJson(const std::string& namespaceName,
-    const std::string& modelPath) {
-
-    // 构造缓存键
-    std::string cacheKey = namespaceName + ":" + modelPath;
-
-    // 加锁保护缓存访问
+nlohmann::json GetModelJson(const std::string& namespaceName, const std::string& modelPath) {
     std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
 
-    auto it = GlobalCache::models.find(cacheKey);
-    if (it != GlobalCache::models.end()) {
-        return it->second;
+    // 按照 JAR 文件的加载顺序逐个查找
+    for (size_t i = 0; i < GlobalCache::jarOrder.size(); ++i) {
+        const std::string& modId = GlobalCache::jarOrder[i];
+        std::string cacheKey = modId + ":" + namespaceName + ":" + modelPath;
+        auto it = GlobalCache::models.find(cacheKey);
+        if (it != GlobalCache::models.end()) {
+            return it->second;
+        }
     }
 
-    // 未找到时的处理（可选）
-    std::cerr << "Model not found: " << cacheKey << std::endl;
+    std::cerr << "Model not found: " << namespaceName << ":" << modelPath << std::endl;
     return nlohmann::json();
 }
 
@@ -537,8 +550,9 @@ void processTextures(const nlohmann::json& modelJson, ModelData& data,
                     else {
                         std::string saveDir = "textures";
                         SaveTextureToFile(namespaceName, pathPart, saveDir);
-                        textureSavePath = "textures/" + pathPart.substr(pathPart.find_last_of('/') + 1) + ".png";
-                        texturePathCache[cacheKey] = textureSavePath;
+                        textureSavePath = "textures/" + namespaceName+"/"+pathPart + ".png";
+                        // 调用注册材质的方法
+                        RegisterTexture(namespaceName, pathPart, textureSavePath);
                     }
                 }
 
@@ -554,7 +568,6 @@ void processTextures(const nlohmann::json& modelJson, ModelData& data,
         }
     }
 }
-
 //---------------- 几何数据处理 ----------------
 void processElements(const nlohmann::json& modelJson, ModelData& data,
     const std::unordered_map<std::string, int>& textureKeyToMaterialIndex)
@@ -902,7 +915,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                         if (it != textureKeyToMaterialIndex.end()) {
                             data.materialIndices[faceId] = it->second;
                         }
-                        std::vector<float> uvRegion = { 0,0,16,16 };
+                        std::vector<float> uvRegion;
 
                         if (faceName == "down")
                         {
@@ -943,35 +956,28 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                         // 获取旋转角度，默认为0
                         int rotation = face.value().value("rotation", 0);
 
-
-
+                        
                         // 计算四个 UV 坐标点
                         std::vector<std::vector<float>> uvCoords = {
                             {uvRegion[2] / 16.0f, 1 - uvRegion[3] / 16.0f},
                             {uvRegion[2] / 16.0f, 1 - uvRegion[1] / 16.0f},
                             {uvRegion[0] / 16.0f, 1 - uvRegion[1] / 16.0f},
                             {uvRegion[0] / 16.0f, 1 - uvRegion[3] / 16.0f}
-
                         };
 
-                        // 根据旋转角度调整 UV 坐标
-                        switch (rotation) {
-                        case 90:
-                            std::swap(uvCoords[0], uvCoords[3]);
-                            std::swap(uvCoords[0], uvCoords[2]);
-                            std::swap(uvCoords[0], uvCoords[1]);
-                            break;
-                        case 180:
-                            std::swap(uvCoords[0], uvCoords[2]);
-                            std::swap(uvCoords[1], uvCoords[3]);
-                            break;
-                        case 270:
-                            std::swap(uvCoords[0], uvCoords[3]);
-                            std::swap(uvCoords[1], uvCoords[3]);
-                            std::swap(uvCoords[2], uvCoords[3]);
-                            break;
-                        default:
-                            break;
+                        // 计算旋转步数，确保rotation值为0, 90, 180, 270中的一个
+                        int steps = ((rotation % 360) + 360) % 360 / 90;
+
+                        if (steps != 0) {
+                            std::vector<std::vector<float>> rotatedUV(4);
+                            for (int i = 0; i < 4; i++) {
+                                rotatedUV[(i + steps) % 4] = uvCoords[i];
+                            }
+                            uvCoords = rotatedUV;
+                        }
+                        // 如果起点和终点被对调（任一分量发生对调），则认为纹理被镜像翻转，旋转角度自动加180°
+                        if (uvRegion[0] > uvRegion[2] || uvRegion[1] > uvRegion[3]) {
+                            rotation += 180;
                         }
 
                         // 插入UV数据并记录索引

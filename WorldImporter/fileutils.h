@@ -20,6 +20,9 @@ void printBytes(const std::vector<char>& data);
 
 void LoadSolidBlocks(const std::string& filepath);
 
+void LoadFluidBlocks(const std::string& filepath);
+
+void RegisterFluidTextures();
 // 将 wstring 转换为 UTF-8 编码的 string
 std::string wstring_to_string(const std::wstring& wstr);
 
