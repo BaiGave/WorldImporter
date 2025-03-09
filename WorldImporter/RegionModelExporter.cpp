@@ -365,9 +365,9 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
 
         // 南面 (south) - 偏移方向：Z轴正方向 (向前)
         0.0f, 0.0f, 1.0f,
-        0.0f, h_sw, 1.0f,
-        1.0f, h_se, 1.0f,
         1.0f, 0.0f, 1.0f,
+        1.0f, h_se, 1.0f,
+        0.0f, h_sw, 1.0f,
 
         // 西面 (west) - 偏移方向：X轴负方向 (向左)
         0.0f, 0.0f, 0.0f,

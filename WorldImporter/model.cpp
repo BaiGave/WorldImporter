@@ -614,10 +614,9 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                     elementVertices[faceName] = { {x1, y2, z1}, {x1, y2, z2}, {x2, y2, z2}, {x2, y2, z1} };
                 }
                 else if (faceName == "down") {
-                    elementVertices[faceName] = { {x2, y1, z2}, {x2, y1, z1}, {x1, y1, z1}, {x1, y1, z2} };
+                    elementVertices[faceName] = { {x2, y1, z2}, {x1, y1, z2}, {x1, y1, z1}, {x2, y1, z1} };
                 }
             }
-            bool flipV = false;
 
             // 处理元素旋转
             if (element.contains("rotation")) {
@@ -626,9 +625,6 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
 
                 float angle_deg = rotation["angle"].get<float>();
                 auto origin = rotation["origin"];
-                if (angle_deg < 0) {
-                    flipV = true;
-                }
                 // 转换旋转中心到 OBJ 坐标系
                 float ox = origin[0].get<float>() / 16.0f;
                 float oy = origin[1].get<float>() / 16.0f;
@@ -964,23 +960,12 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                         
                         // 计算四个 UV 坐标点
 
-                        std::vector<std::vector<float>> uvCoords;
-                        if (flipV) {
-                            uvCoords = {
-                                {uvRegion[2] / 16.0f, uvRegion[3] / 16.0f},
-                                {uvRegion[2] / 16.0f, uvRegion[1] / 16.0f},
-                                {uvRegion[0] / 16.0f, uvRegion[1] / 16.0f},
-                                {uvRegion[0] / 16.0f, uvRegion[3] / 16.0f}
-                            };
-                        }
-                        else {
-                            uvCoords = {
+                        std::vector<std::vector<float>> uvCoords = {
                             {uvRegion[2] / 16.0f, 1 - uvRegion[3] / 16.0f},
                             {uvRegion[2] / 16.0f, 1 - uvRegion[1] / 16.0f},
                             {uvRegion[0] / 16.0f, 1 - uvRegion[1] / 16.0f},
                             {uvRegion[0] / 16.0f, 1 - uvRegion[3] / 16.0f}
-                            };
-                        }
+                        };
 
 
                         // 计算旋转步数，确保rotation值为0, 90, 180, 270中的一个
