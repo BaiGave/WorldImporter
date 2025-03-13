@@ -8,7 +8,7 @@
 #include <iostream>
 #include <fstream>
 #include "block.h"
-#include <nlohmann/json.hpp>  // 导入 nlohmann::json
+#include "include/json.hpp"
 
 class PointCloudExporter {
 public:

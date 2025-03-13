@@ -4,10 +4,9 @@
 #include "dat.h"
 #include <fstream>
 #include <iostream>
-#include <nlohmann/json.hpp>
+#include "include/json.hpp"
 
 using json = nlohmann::json;
-
 // 获取 Minecraft 版本 id
 std::string GetMinecraftVersion(const std::wstring& gameFolderPath, std::string& modLoaderType) {
     // 获取整合包的文件夹名作为版本名称
@@ -107,11 +106,10 @@ void GetModList(const std::wstring& gameFolderPath, std::vector<std::string>& mo
 
     // 获取 mods 文件夹路径
     std::wstring modsFolderPath = gameFolderPath + L"\\mods\\";
-
+    
     // 获取 mods 文件夹中的所有文件，匹配 .jar 文件
     WIN32_FIND_DATA findFileData;
     HANDLE hFind = INVALID_HANDLE_VALUE;
-
     std::wstring searchPath = modsFolderPath + L"*.jar";  // 搜索路径，查找所有 .jar 文件
 
     hFind = FindFirstFile(searchPath.c_str(), &findFileData);
@@ -121,7 +119,6 @@ void GetModList(const std::wstring& gameFolderPath, std::vector<std::string>& mo
 
     // 临时存储当前扫描到的 mod
     std::unordered_map<std::string, FolderData> newMods;
-
     // 遍历文件夹中的所有 .jar 文件
     do {
         if ((findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
@@ -129,20 +126,27 @@ void GetModList(const std::wstring& gameFolderPath, std::vector<std::string>& mo
 
             // 确保文件名以 .jar 结尾
             if (fileName.find(L".jar") != std::wstring::npos) {
-                // 使用 JarReader 处理 .jar 文件
-                JarReader jarReader(modsFolderPath + fileName);
-
                 std::string modId;
+                try
+                {
+                     // 使用 JarReader 处理 .jar 文件
+                    JarReader jarReader(modsFolderPath + fileName);
 
-                if (modLoaderType == "Fabric") {
-                    modId = jarReader.getFabricModId();
+                    if (modLoaderType == "Fabric") {
+                        modId = jarReader.getFabricModId();
+                    }
+                    else if (modLoaderType == "Forge") {
+                        modId = jarReader.getForgeModId();
+                    }
+                    else if (modLoaderType == "NeoForge") {
+                        modId = jarReader.getNeoForgeModId();
+                    }
                 }
-                else if (modLoaderType == "Forge") {
-                    modId = jarReader.getForgeModId();
+                catch (const std::exception& e)
+                {
+                    std::cerr << "Error occurred: " << e.what() << std::endl;
                 }
-                else if (modLoaderType == "NeoForge") {
-                    modId = jarReader.getNeoForgeModId();
-                }
+                
 
                 if (!modId.empty()) {
                     FolderData modInfo = { modId, wstring_to_string(modsFolderPath + fileName) };
@@ -151,12 +155,14 @@ void GetModList(const std::wstring& gameFolderPath, std::vector<std::string>& mo
             }
         }
     } while (FindNextFile(hFind, &findFileData) != 0);
-
+    
+    
+    
     FindClose(hFind);
 
     // 临时存储一个新的 modList
     std::unordered_map<std::string, FolderData> updatedModListMap;
-
+    
     // 先复制原 modList 中已有的元素到 updatedModListMap 中
     for (const auto& mod : modList) {
         if (newMods.find(mod) != newMods.end()) {
@@ -209,7 +215,6 @@ void GetModList(const std::wstring& gameFolderPath, std::vector<std::string>& mo
 
     // 更新 modListCache 和 modList
     modListCache[folderNameStr] = finalModList;
-
     // 更新 modList（与 modListCache 保持一致的顺序）
     modList.clear();
     for (const auto& modData : finalModList) {

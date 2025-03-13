@@ -6,7 +6,7 @@
 #include <string>
 #include <fstream>
 #include <iostream>
-#include <nlohmann/json.hpp>
+#include "include/json.hpp"
 #include "version.h"
 #include "model.h"
 #include "block.h"

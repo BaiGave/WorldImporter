@@ -123,27 +123,26 @@ inline char* fast_ftoa(float value, char* ptr) {
 
 //——————————————导出.obj/.mtl方法—————————————
 
-// 主函数：通过内存映射高效导出.obj文件
 void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objName) {
     std::string exeDir = getExecutableDir();
     std::string objFilePath = exeDir + objName + ".obj";
     std::string mtlFilePath = objName + ".mtl";
 
-    //--- 步骤1：优化后的总大小计算 ---
     size_t totalSize = 0;
     // 文件头部分
     totalSize += snprintf(nullptr, 0, "mtllib %s\n", mtlFilePath.c_str());
     std::string modelName = objName.substr(objName.find_last_of("//") + 1);
     totalSize += snprintf(nullptr, 0, "o %s\n\n", modelName.c_str());
 
+    //【新增】预计算顶点注释行的长度
+    totalSize += snprintf(nullptr, 0, "# Vertices (%zu)\n", data.vertices.size() / 3);
 
-    // 预计算所有浮点数的字符串长度
+    // 预计算所有浮点数的字符串长度（顶点数据）
     std::vector<int> vertexLengths(data.vertices.size());
     for (size_t i = 0; i < data.vertices.size(); ++i) {
         vertexLengths[i] = calculateFloatStringLength(data.vertices[i]);
     }
 
-    // 顶点数据大小计算（并行优化）
     const size_t vertexCount = data.vertices.size() / 3;
 #pragma omp parallel for reduction(+:totalSize)
     for (size_t i = 0; i < vertexCount; ++i) {
@@ -151,9 +150,13 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         const int lenX = vertexLengths[base];
         const int lenY = vertexLengths[base + 1];
         const int lenZ = vertexLengths[base + 2];
-        totalSize += 2 + lenX + 1 + lenY + 1 + lenZ + 1; // "v " x y z "\n"
+        totalSize += 2 + lenX + 1 + lenY + 1 + lenZ + 1; // "v " + x + " " + y + " " + z + "\n"
     }
-    // UV数据大小计算（同理优化）
+
+    //预计算UV注释行的长度
+    totalSize += snprintf(nullptr, 0, "\n# UVs (%zu)\n", data.uvCoordinates.size() / 2);
+
+    // 预计算UV数据长度
     std::vector<int> uvLengths(data.uvCoordinates.size());
     for (size_t i = 0; i < data.uvCoordinates.size(); ++i) {
         uvLengths[i] = calculateFloatStringLength(data.uvCoordinates[i]);
@@ -165,9 +168,8 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         const size_t base = i * 2;
         const int lenU = uvLengths[base];
         const int lenV = uvLengths[base + 1];
-        totalSize += 3 + lenU + 1 + lenV + 1; // "vt " u v "\n"
+        totalSize += 3 + lenU + 1 + lenV + 1; // "vt " + u + " " + v + "\n"
     }
-
 
     // 面数据分组计算
     std::vector<std::vector<size_t>> materialGroups(data.materialNames.size());
@@ -179,53 +181,42 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         }
     }
 
+    //预计算面注释行的长度
+    totalSize += snprintf(nullptr, 0, "\n# Faces (%zu)\n", totalFaces);
 
-    // 预计算材质名称的usemtl行长度
+    // 预计算材质组内每个材质对应的usemtl行以及各个面的长度
     std::vector<size_t> usemtlLengths(data.materialNames.size());
 #pragma omp parallel for
     for (int matIndex = 0; matIndex < data.materialNames.size(); ++matIndex) {
         usemtlLengths[matIndex] = 8 + data.materialNames[matIndex].size() + 1; // "usemtl " + name + "\n"
     }
 
-    // 并行处理材质组
 #pragma omp parallel for reduction(+:totalSize)
     for (int matIndex = 0; matIndex < materialGroups.size(); ++matIndex) {
         const auto& faces = materialGroups[matIndex];
         if (faces.empty()) continue;
-
         size_t localSize = usemtlLengths[matIndex];
-
         for (const size_t faceIdx : faces) {
-            // 计算每个面的基础长度："f " + 4个顶点 + 换行
             size_t faceLength = 3; // "f " + '\n'
-
-            // 预取顶点和UV索引
             const int* faceV = &data.faces[faceIdx * 4];
             const int* faceUV = &data.uvFaces[faceIdx * 4];
-
-            // 展开循环处理4个顶点
             for (int i = 0; i < 4; ++i) {
                 const int vIdx = faceV[i] + 1;
                 const int uvIdx = faceUV[i] + 1;
-
-                // 累加每个顶点的长度：v/uv + 空格
-                faceLength += calculateIntLength(vIdx) +
-                    calculateIntLength(uvIdx) + 2; // +2 对应 '/' 和空格
+                faceLength += calculateIntLength(vIdx) + calculateIntLength(uvIdx) + 2; // 对应 '/' 和空格
             }
             localSize += faceLength;
         }
         totalSize += localSize;
     }
 
-    //--- 步骤2：分配内存缓冲区 ---
-    std::vector<char> buffer(totalSize + 1); // +1为安全冗余
+    // 分配缓冲区（+1为安全冗余）
+    std::vector<char> buffer(totalSize + 1);
     char* ptr = buffer.data();
-    //--- 步骤3：优化后的缓冲区填充 ---
-    // 文件头（保持原有逻辑）
+
+    // 开始填充缓冲区
     ptr += sprintf_s(ptr, buffer.size() - (ptr - buffer.data()), "mtllib %s\n", mtlFilePath.c_str());
     ptr += sprintf_s(ptr, buffer.size() - (ptr - buffer.data()), "o %s\n\n", modelName.c_str());
-
-    // 顶点数据（优化后）
     ptr += sprintf_s(ptr, buffer.size() - (ptr - buffer.data()), "# Vertices (%zu)\n", data.vertices.size() / 3);
     for (size_t i = 0; i < data.vertices.size(); i += 3) {
         memcpy(ptr, "v ", 2);
@@ -238,7 +229,6 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         *ptr++ = '\n';
     }
 
-    // UV数据（优化后）
     ptr += sprintf_s(ptr, buffer.size() - (ptr - buffer.data()), "\n# UVs (%zu)\n", data.uvCoordinates.size() / 2);
     for (size_t i = 0; i < data.uvCoordinates.size(); i += 2) {
         memcpy(ptr, "vt ", 3);
@@ -249,12 +239,10 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         *ptr++ = '\n';
     }
 
-    // 面数据（优化后）
     ptr += sprintf_s(ptr, buffer.size() - (ptr - buffer.data()), "\n# Faces (%zu)\n", totalFaces);
     for (size_t matIndex = 0; matIndex < materialGroups.size(); ++matIndex) {
         const auto& faces = materialGroups[matIndex];
         if (faces.empty()) continue;
-
         ptr += sprintf_s(ptr, buffer.size() - (ptr - buffer.data()), "usemtl %s\n", data.materialNames[matIndex].c_str());
         for (const size_t faceIdx : faces) {
             memcpy(ptr, "f ", 2);
@@ -262,12 +250,9 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
             for (int i = 0; i < 4; ++i) {
                 const int vIdx = data.faces[faceIdx * 4 + i] + 1;
                 const int uvIdx = data.uvFaces[faceIdx * 4 + i] + 1;
-
-                // 检查是否为负数
                 if (vIdx <= 0 || uvIdx <= 0) {
                     throw std::invalid_argument("Invalid vertex or UV index");
                 }
-
                 ptr = fast_itoa(vIdx, ptr);
                 *ptr++ = '/';
                 ptr = fast_itoa(uvIdx, ptr);
@@ -277,7 +262,7 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         }
     }
 
-    //--- 步骤4：内存映射写入 ---
+    // 后续的内存映射写入逻辑不变…
     HANDLE hFile = CreateFileA(
         objFilePath.c_str(),
         GENERIC_READ | GENERIC_WRITE,
@@ -287,20 +272,15 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         FILE_ATTRIBUTE_NORMAL,
         nullptr
     );
-
     if (hFile == INVALID_HANDLE_VALUE) {
         throw std::system_error(GetLastError(), std::system_category(), "CreateFile failed");
     }
-
-    // 设置文件大小
     LARGE_INTEGER fileSize;
     fileSize.QuadPart = totalSize;
     if (!SetFilePointerEx(hFile, fileSize, nullptr, FILE_BEGIN) || !SetEndOfFile(hFile)) {
         CloseHandle(hFile);
         throw std::system_error(GetLastError(), std::system_category(), "SetFileSize failed");
     }
-
-    // 创建内存映射
     HANDLE hMapping = CreateFileMapping(
         hFile,
         nullptr,
@@ -309,13 +289,10 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         fileSize.LowPart,
         nullptr
     );
-
     if (!hMapping) {
         CloseHandle(hFile);
         throw std::system_error(GetLastError(), std::system_category(), "CreateFileMapping failed");
     }
-
-    // 映射视图
     char* mappedData = static_cast<char*>(MapViewOfFile(
         hMapping,
         FILE_MAP_WRITE,
@@ -323,17 +300,12 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         0,
         totalSize
     ));
-
     if (!mappedData) {
         CloseHandle(hMapping);
         CloseHandle(hFile);
         throw std::system_error(GetLastError(), std::system_category(), "MapViewOfFile failed");
     }
-
-    // 拷贝数据
     memcpy(mappedData, buffer.data(), totalSize);
-
-    // 清理资源
     UnmapViewOfFile(mappedData);
     CloseHandle(hMapping);
     CloseHandle(hFile);
@@ -426,68 +398,95 @@ void createMtlFile(const ModelData& data, const std::string& mtlFileName) {
             const std::string& textureName = data.materialNames[i];
             std::string texturePath = data.texturePaths[i];
 
-            // 处理材质名称为 LIGHT 的情况
-            if (texturePath== "None") {
+            mtlFile << "newmtl " << textureName << "\n";
 
-                // 写入材质名称
-                mtlFile << "newmtl " << textureName << "\n";
-
-                // 设置更高的光泽度和亮度属性
-                mtlFile << "Ns 200.000000\n"; // 高光泽度
-                mtlFile << "Ka 1.000000 1.000000 1.000000\n"; // 高环境光
-                mtlFile << "Ks 0.900000 0.900000 0.900000\n"; // 高镜面反射
-                mtlFile << "Ke 0.900000 0.900000 0.900000\n"; // 高自发光
-                mtlFile << "Ni 1.500000\n"; // 折射率
-                mtlFile << "illum 2\n"; // 使用高反射光照模型
-
+            // 处理材质类型
+            if (texturePath == "None") {
+                // LIGHT材质处理
+                mtlFile << "Ns 200.000000\n";
+                mtlFile << "Kd 1.000000 1.000000 1.000000\n";
+                mtlFile << "Ka 1.000000 1.000000 1.000000\n";
+                mtlFile << "Ks 0.900000 0.900000 0.900000\n";
+                mtlFile << "Ke 0.900000 0.900000 0.900000\n";
+                mtlFile << "Ni 1.500000\n";
+                mtlFile << "illum 2\n";
+            }
+            else if (texturePath.find("color#") == 0) { // 纯颜色材质处理
+                // 解析RGB颜色值（格式："color:r g b"）
+                std::string colorStr = texturePath.substr(6);
+                std::istringstream iss(colorStr);
+                float r, g, b;
+                
+                if (iss >> r >> g >> b) {
+                    mtlFile << "Kd " << std::fixed << std::setprecision(6)
+                        << r << " " << g << " " << b << "\n";
+                }
+                else {
+                    mtlFile << "Kd 1.000000 1.000000 1.000000\n";
+                    std::cerr << "Error: Invalid color format in '" << texturePath << "'\n";
+                }
+                // 共用普通材质参数
+                mtlFile << "Ns 90.000000\n";
+                mtlFile << "Ks 0.000000 0.000000 0.000000\n";
+                mtlFile << "Ke 0.000000 0.000000 0.000000\n";
+                mtlFile << "Ni 1.500000\n";
+                mtlFile << "illum 1\n";
             }
             else {
-                // 处理其他材质
-                // 写入材质名称
-                mtlFile << "newmtl " << textureName << "\n";
+                // 普通纹理材质处理
+                mtlFile << "Ns 90.000000\n";
+                mtlFile << "Kd 1.000000 1.000000 1.000000\n";
+                mtlFile << "Ks 0.000000 0.000000 0.000000\n";
+                mtlFile << "Ke 0.000000 0.000000 0.000000\n";
+                mtlFile << "Ni 1.500000\n";
+                mtlFile << "illum 1\n";
 
-                // 保持原有固定材质属性
-                mtlFile << "Ns 90.000000\n"; // 光泽度
-                mtlFile << "Ka 1.000000 1.000000 1.000000\n"; // 环境光颜色
-                mtlFile << "Ks 0.000000 0.000000 0.000000\n"; // 镜面反射
-                mtlFile << "Ke 0.000000 0.000000 0.000000\n"; // 自发光
-                mtlFile << "Ni 1.500000\n"; // 折射率
-                mtlFile << "illum 1\n"; // 照明模型
-
-                // 写入纹理信息，注意这里是相对路径
+                // 处理纹理路径
                 if (mtlFileName.find("//") != std::string::npos) {
-                    // 在 texturePath 前面添加 "../"
                     texturePath = "../" + texturePath;
                 }
-
-                // 确保路径以 ".png" 结尾，如果没有则加上
                 if (texturePath.find(".png") == std::string::npos) {
                     texturePath += ".png";
                 }
-
-                mtlFile << "map_Kd " << texturePath << "\n"; // 颜色纹理
-                mtlFile << "map_d " << texturePath << "\n"; // 透明度纹理
+                mtlFile << "map_Kd " << texturePath << "\n";
+                mtlFile << "map_d " << texturePath << "\n";
             }
 
-            mtlFile << "\n"; // 添加空行，以便分隔不同材质
+            mtlFile << "\n";
         }
-
         mtlFile.close();
     }
     else {
         std::cerr << "Failed to create .mtl file: " << mtlFileName << std::endl;
     }
 }
-
 // 单独的文件创建方法
 void CreateModelFiles(const ModelData& data, const std::string& filename) {
     auto start = high_resolution_clock::now();  // 新增：开始时间点
-    // 创建OBJ文件
-    createObjFileViaMemoryMapped(data, filename);
-
+    // 创建MTL文件
+    try
+    {
+        createMtlFile(data, filename);
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "Error occurred: " << e.what() << std::endl;
+    }
+    if (data.vertices.size()>8000)
+    {
+        // 创建OBJ文件
+        createObjFileViaMemoryMapped(data, filename);
+    }
+    else
+    {
+        createObjFile(data, filename);
+    }
+    
+    
+    
     auto end = high_resolution_clock::now();  // 新增：结束时间点
     auto duration = duration_cast<milliseconds>(end - start);  // 新增：计算时间差
     std::cout << "模型导出obj耗时: " << duration.count() << " ms" << std::endl;  // 新增：输出到控制台
-    // 创建MTL文件
-    createMtlFile(data, filename);
+    
+    
 }

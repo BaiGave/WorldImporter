@@ -1,7 +1,9 @@
 #include "RegionModelExporter.h"
 #include "coord_conversion.h"
 #include "objExporter.h"
+#include "include/stb_image.h"
 #include "biome.h"
+#include "fluid.h"
 #include "texture.h"
 #include <iomanip>  // 用于 std::setw 和 std::setfill
 #include <sstream>  // 用于 std::ostringstream
@@ -12,34 +14,153 @@
 
 using namespace std;
 using namespace std::chrono;  // 新增：方便使用 chrono
-// 模型缓存（假设有一个全局缓存 Map）
-static std::unordered_map<int, ModelData> fluidModelCache;
+
+
+
+
+// 缓存方块ID到颜色的映射
+std::unordered_map<int, std::string> blockColorCache;
+
+std::string GetBlockAverageColor(int blockId, Block currentBlock,int x, int y, int z) {
+    std::string ns = GetBlockNamespaceById(blockId);
+    std::string blockName = GetBlockNameById(blockId);
+    // 标准化方块名称（去掉命名空间，处理状态）
+    size_t colonPos = blockName.find(':');
+    if (colonPos != std::string::npos) {
+        blockName = blockName.substr(colonPos + 1);
+    }
+    ModelData blockModel;
+    if (currentBlock.level > -1) {
+        AssignFluidMaterials(blockModel, currentBlock.name);
+       
+
+    }
+    else
+    {
+        // 处理其他方块
+        blockModel = GetRandomModelFromCache(ns, blockName);
+    }
+
+    // 先获取纹理图片的平均颜色（格式："r g b"）
+    std::string textureAverage;
+    if (blockColorCache.find(blockId) != blockColorCache.end()) {
+        textureAverage = blockColorCache[blockId];
+    }
+    else {
+        std::string texturePath;
+        if (!blockModel.texturePaths.empty()) {
+            texturePath = blockModel.texturePaths[0];
+        }
+        // 默认值：当纹理加载失败或无纹理路径时使用
+        float r = 0.5f, g = 0.5f, b = 0.5f;
+        if (!texturePath.empty()) {
+            char buffer[MAX_PATH];
+            GetModuleFileNameA(NULL, buffer, MAX_PATH);
+            std::string exePath(buffer);
+            size_t pos = exePath.find_last_of("\\/");
+            std::string exeDir = exePath.substr(0, pos);
+            texturePath = exeDir + "//" + texturePath;
+
+            int width, height, channels;
+            unsigned char* data = stbi_load(texturePath.c_str(), &width, &height, &channels, 0);
+            if (data) {
+                float sumR = 0, sumG = 0, sumB = 0;
+                int validPixelCount = 0;
+                int totalPixelCount = width * height;
+                for (int i = 0; i < totalPixelCount; ++i) {
+                    // 若有 alpha 通道且该像素 alpha 为 0，则跳过
+                    if (channels >= 4 && data[i * channels + 3] == 0)
+                        continue;
+                    sumR += data[i * channels];
+                    sumG += data[i * channels + 1];
+                    sumB += data[i * channels + 2];
+                    validPixelCount++;
+                }
+                if (validPixelCount > 0) {
+                    r = sumR / (validPixelCount * 255.0f);
+                    g = sumG / (validPixelCount * 255.0f);
+                    b = sumB / (validPixelCount * 255.0f);
+                }
+                stbi_image_free(data);
+            }
+        }
+        char avgColorStr[64];
+        snprintf(avgColorStr, sizeof(avgColorStr), "%.3f %.3f %.3f", r, g, b);
+        textureAverage = avgColorStr;
+        // 仅缓存图片的平均颜色
+        blockColorCache[blockId] = textureAverage;
+    }
+
+    // 如果需要群系颜色混合，则每次都进行混合计算，不缓存混合后的结果
+    if (blockModel.tintindex != -1) {
+        // 解析缓存的图片平均颜色
+        float textureR, textureG, textureB;
+        sscanf(textureAverage.c_str(), "%f %f %f", &textureR, &textureG, &textureB);
+        uint32_t hexColor;
+        // 获取当前坐标的群系颜色（十六进制），转换为 0-1 范围的 RGB
+        if (blockModel.tintindex==2)
+        {
+            hexColor = Biome::GetColor(GetBiomeId(x, y, z), BiomeColorType::Water);
+        }
+        else {
+            hexColor = Biome::GetColor(GetBiomeId(x, y, z), BiomeColorType::Grass);
+        }
+        
+        float biomeR = ((hexColor >> 16) & 0xFF) / 255.0f;
+        float biomeG = ((hexColor >> 8) & 0xFF) / 255.0f;
+        float biomeB = (hexColor & 0xFF) / 255.0f;
+
+        // 正片叠底混合（乘法混合）：各通道相乘
+        float finalR = biomeR * textureR;
+        float finalG = biomeG * textureG;
+        float finalB = biomeB * textureB;
+
+        char blendedColorStr[128];
+        snprintf(blendedColorStr, sizeof(blendedColorStr), "color#%.3f %.3f %.3f", finalR, finalG, finalB);
+        return std::string(blendedColorStr);
+    }
+    else {
+        // 不需要群系混合，直接返回并缓存纹理图片的平均颜色
+        char finalColorStr[128];
+        snprintf(finalColorStr, sizeof(finalColorStr), "color#%s", textureAverage.c_str());
+        return std::string(finalColorStr);
+    }
+}
+
 
 void deduplicateVertices(ModelData& data) {
-    std::unordered_map<std::string, int> vertexMap;
+    std::unordered_map<VertexKey, int> vertexMap;
+    // 预先分配容量，避免多次rehash
+    vertexMap.reserve(data.vertices.size() / 3);
     std::vector<float> newVertices;
-    std::vector<int> indexMap;
+    newVertices.reserve(data.vertices.size());
+    std::vector<int> indexMap(data.vertices.size() / 3);
 
     for (size_t i = 0; i < data.vertices.size(); i += 3) {
-        float x = data.vertices[i + 0];
+        float x = data.vertices[i];
         float y = data.vertices[i + 1];
         float z = data.vertices[i + 2];
-        int roundedX = static_cast<int>(x * 10000 + 0.5);
-        int roundedY = static_cast<int>(y * 10000 + 0.5);
-        int roundedZ = static_cast<int>(z * 10000 + 0.5);
-        std::string key = std::to_string(roundedX) + "," + std::to_string(roundedY) + "," + std::to_string(roundedZ);
+        // 保留四位小数（转为整数后再比较）
+        int rx = static_cast<int>(x * 10000 + 0.5f);
+        int ry = static_cast<int>(y * 10000 + 0.5f);
+        int rz = static_cast<int>(z * 10000 + 0.5f);
+        VertexKey key{ rx, ry, rz };
 
-        if (vertexMap.find(key) != vertexMap.end()) {
-            indexMap.push_back(vertexMap[key]);
-        } else {
+        auto it = vertexMap.find(key);
+        if (it != vertexMap.end()) {
+            indexMap[i / 3] = it->second;
+        }
+        else {
             int newIndex = newVertices.size() / 3;
             vertexMap[key] = newIndex;
-            newVertices.insert(newVertices.end(), {x, y, z});
-            indexMap.push_back(newIndex);
+            newVertices.push_back(x);
+            newVertices.push_back(y);
+            newVertices.push_back(z);
+            indexMap[i / 3] = newIndex;
         }
     }
 
-    data.vertices = newVertices;
+    data.vertices = std::move(newVertices);
 
     // 更新面数据中的顶点索引
     for (auto& idx : data.faces) {
@@ -47,78 +168,99 @@ void deduplicateVertices(ModelData& data) {
     }
 }
 
-void deduplicateFaces(ModelData& data, bool checkMaterial = true) {
-    // 键结构需要包含完整信息
-    struct FaceKey {
-        std::array<int, 4> sortedVerts;
-        int materialIndex;
-    };
-
-    // 自定义相等比较谓词
-    struct KeyEqual {
-        bool checkMode;
-        explicit KeyEqual(bool mode) : checkMode(mode) {}
-
-        bool operator()(const FaceKey& a, const FaceKey& b) const {
-            if (a.sortedVerts != b.sortedVerts) return false;
-            return !checkMode || (a.materialIndex == b.materialIndex);
-        }
-    };
-
-    // 自定义哈希器
-    struct KeyHasher {
-        bool checkMode;
-        explicit KeyHasher(bool mode) : checkMode(mode) {}
-
-        size_t operator()(const FaceKey& k) const {
-            size_t seed = 0;
-            if (checkMode) {
-                seed ^= std::hash<int>()(k.materialIndex) + 0x9e3779b9;
-            }
-            for (int v : k.sortedVerts) {
-                seed ^= std::hash<int>()(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            }
-            return seed;
-        }
-    };
-
-    // 初始化容器时注入检查模式和比较逻辑
-    using FaceMap = std::unordered_map<FaceKey, int, KeyHasher, KeyEqual>;
-    FaceMap faceCount(10, KeyHasher(checkMaterial), KeyEqual(checkMaterial));
-
-    // 第一次遍历：生成统计
-    for (size_t i = 0; i < data.faces.size(); i += 4) {
-        std::array<int, 4> face = {
-            data.faces[i], data.faces[i + 1],
-            data.faces[i + 2], data.faces[i + 3]
-        };
-
-        std::array<int, 4> sorted = face;
-        std::sort(sorted.begin(), sorted.end());
-
-        FaceKey key{ sorted, checkMaterial ? data.materialIndices[i / 4] : -1 };
-        faceCount[key]++;
+void deduplicateUV(ModelData& model) {
+    // 如果没有 UV 坐标，则直接返回
+    if (model.uvCoordinates.empty()) {
+        return;
     }
 
-    // 第二次遍历：过滤数据
-    std::vector<int> newFaces, newUvFaces, newMaterials;
+    // 使用哈希表记录每个唯一 UV 对应的新索引
+    std::unordered_map<UVKey, int> uvMap;
+    std::vector<float> newUV;  // 存储去重后的 UV 坐标（每两个元素构成一组）
+    // 原始 UV 数组中组的数量（每组有2个元素：u,v）
+    int uvCount = model.uvCoordinates.size() / 2;
+    // 建立一个映射表，从旧的 UV 索引到新的 UV 索引
+    std::vector<int> indexMapping(uvCount, -1);
+
+    for (int i = 0; i < uvCount; i++) {
+        float u = model.uvCoordinates[i * 2];
+        float v = model.uvCoordinates[i * 2 + 1];
+        // 将浮点数转换为整数，保留小数点后6位的精度
+        int iu = static_cast<int>(std::round(u * 1000000));
+        int iv = static_cast<int>(std::round(v * 1000000));
+        UVKey key = { iu, iv };
+
+        auto it = uvMap.find(key);
+        if (it == uvMap.end()) {
+            // 如果没有找到，则是新 UV，记录新的索引
+            int newIndex = newUV.size() / 2;
+            uvMap[key] = newIndex;
+            newUV.push_back(u);
+            newUV.push_back(v);
+            indexMapping[i] = newIndex;
+        }
+        else {
+            // 如果已存在，则记录已有的新索引
+            indexMapping[i] = it->second;
+        }
+    }
+
+    // 如果 uvFaces 不为空，则更新 uvFaces 中的索引
+    if (!model.uvFaces.empty()) {
+        for (int& idx : model.uvFaces) {
+            // 注意：这里假设 uvFaces 中的索引都在有效范围内
+            idx = indexMapping[idx];
+        }
+    }
+
+    // 替换掉原有的 uvCoordinates
+    model.uvCoordinates = std::move(newUV);
+}
+
+
+
+void deduplicateFaces(ModelData& data) {
+    size_t faceCountNum = data.faces.size() / 4;
+    std::vector<FaceKey> keys;
+    keys.reserve(faceCountNum);
+
+    // 第一次遍历：计算每个面的规范化键并存入数组（避免重复排序）
     for (size_t i = 0; i < data.faces.size(); i += 4) {
         std::array<int, 4> face = {
             data.faces[i], data.faces[i + 1],
             data.faces[i + 2], data.faces[i + 3]
         };
-
         std::array<int, 4> sorted = face;
         std::sort(sorted.begin(), sorted.end());
+        int matIndex = config.strictDeduplication ? data.materialIndices[i / 4] : -1;
+        keys.push_back(FaceKey{ sorted, matIndex });
+    }
 
-        FaceKey key{ sorted, checkMaterial ? data.materialIndices[i / 4] : -1 };
+    // 使用预分配容量的 unordered_map 来统计每个 FaceKey 的出现次数
+    std::unordered_map<FaceKey, int, FaceKeyHasher> freq;
+    freq.reserve(faceCountNum);
+    for (const auto& key : keys) {
+        freq[key]++;
+    }
 
-        if (faceCount[key] == 1) {
-            newFaces.insert(newFaces.end(), face.begin(), face.end());
+    // 第二次遍历：过滤只出现一次的面
+    std::vector<int> newFaces;
+    newFaces.reserve(data.faces.size());
+    std::vector<int> newUvFaces;
+    newUvFaces.reserve(data.uvFaces.size());
+    std::vector<int> newMaterials;
+    newMaterials.reserve(data.materialIndices.size());
+
+    for (size_t i = 0; i < keys.size(); i++) {
+        if (freq[keys[i]] == 1) {
+            size_t base = i * 4;
+            newFaces.insert(newFaces.end(),
+                data.faces.begin() + base,
+                data.faces.begin() + base + 4);
             newUvFaces.insert(newUvFaces.end(),
-                data.uvFaces.begin() + i,
-                data.uvFaces.begin() + i + 4);
-            newMaterials.push_back(data.materialIndices[i / 4]);
+                data.uvFaces.begin() + base,
+                data.uvFaces.begin() + base + 4);
+            newMaterials.push_back(data.materialIndices[i]);
         }
     }
 
@@ -127,49 +269,94 @@ void deduplicateFaces(ModelData& data, bool checkMaterial = true) {
     data.materialIndices.swap(newMaterials);
 }
 
-void ScaleModel(ModelData& model, float scale) {
-    // 计算缩放中心（假设模型中心为 (0.5, 0.5, 0.5)）
-    float centerX = 0.5f;
-    float centerY = 0.5f;
-    float centerZ = 0.5f;
+void RegionModelExporter::ExportRegionModels(const string& outputName) {
+    int xStart = config.minX;
+    int xEnd = config.maxX;
+    int yStart = config.minY;
+    int yEnd = config.maxY;
+    int zStart = config.minZ;
+    int zEnd = config.maxZ;
 
-    // 遍历所有顶点并进行缩放
-    for (size_t i = 0; i < model.vertices.size(); i += 3) {
-        model.vertices[i] = centerX + (model.vertices[i] - centerX) * scale;    // X坐标缩放
-        model.vertices[i + 1] = centerY + (model.vertices[i + 1] - centerY) * scale;  // Y坐标缩放
-        model.vertices[i + 2] = centerZ + (model.vertices[i + 2] - centerZ) * scale;  // Z坐标缩放
+    if (config.useChunkPrecision) {
+        auto alignTo16 = [](int value) -> int {
+            if (value % 16 == 0)
+                return value;
+            if (value > 0)
+                return ((value + 15) / 16) * 16;
+            else
+                return ((value - 15) / 16) * 16;
+            };
+
+        config.minX = alignTo16(xStart);
+        config.maxX = alignTo16(xEnd);
+        config.minY = alignTo16(yStart);
+        config.maxY = alignTo16(yEnd);
+        config.minZ = alignTo16(zStart);
+        config.maxZ = alignTo16(zEnd);
     }
-}
 
-
-void RegionModelExporter::ExportRegionModels(int xStart, int xEnd, int yStart, int yEnd,
-    int zStart, int zEnd, const string& outputName) {
     RegisterFluidTextures();
-    auto start = high_resolution_clock::now();  // 新增：开始时间点
-    // 收集区域内所有唯一方块ID
-    LoadChunks(xStart, xEnd, yStart, yEnd, zStart, zEnd);
-    auto end = high_resolution_clock::now();  // 新增：结束时间点
-    auto duration = duration_cast<milliseconds>(end - start);  // 新增：计算时间差
-    std::cout << "LoadChunks耗时: " << duration.count() << " ms" << endl;  // 新增：输出到控制台
-    UpdateSkyLightNeighborFlags();
-    auto blocks = GetGlobalBlockPalette();
-    // 使用 ProcessBlockstateForBlocks 处理所有方块状态模型
-    ProcessBlockstateForBlocks(blocks);
-    
-    // 获取区域内的所有区块范围（按16x16x16划分）
+
     int chunkXStart, chunkXEnd, chunkZStart, chunkZEnd, sectionYStart, sectionYEnd;
     blockToChunk(xStart, zStart, chunkXStart, chunkZStart);
     blockToChunk(xEnd, zEnd, chunkXEnd, chunkZEnd);
     blockYToSectionY(yStart, sectionYStart);
     blockYToSectionY(yEnd, sectionYEnd);
-    start = high_resolution_clock::now();  // 新增：开始时间点
-    // 遍历每个区块
+    // 计算中心坐标
+    int centerX = 3;//(chunkXStart + chunkXEnd) / 2;
+    int centerZ = 53;//(chunkZStart + chunkZEnd) / 2;
+    auto start = high_resolution_clock::now();
+    LoadChunks();
+    auto end = high_resolution_clock::now();
+    auto duration = duration_cast<milliseconds>(end - start);
+    std::cout << "LoadChunks耗时: " << duration.count() << " ms" << std::endl;
+
+    UpdateSkyLightNeighborFlags();
+    auto blocks = GetGlobalBlockPalette();
+    ProcessBlockstateForBlocks(blocks);
+
+    
+
+    
+    // 定义半径范围（可以根据需要调整）
+    int radius = 12; // 半径为16个区块
+
     ModelData finalMergedModel;
+
+    start = high_resolution_clock::now();
     for (int chunkX = chunkXStart; chunkX <= chunkXEnd; ++chunkX) {
         for (int chunkZ = chunkZStart; chunkZ <= chunkZEnd; ++chunkZ) {
             for (int sectionY = sectionYStart; sectionY <= sectionYEnd; ++sectionY) {
-                // 生成当前区块的子模型
-                ModelData chunkModel = GenerateChunkModel(chunkX, sectionY, chunkZ);
+                // 计算当前区块的中心坐标
+                int currentCenterX = chunkX;
+                int currentCenterZ = chunkZ;
+
+                // 计算与中心点的距离
+                int distance = sqrt(
+                    (currentCenterX - centerX) * (currentCenterX - centerX) +
+                    (currentCenterZ - centerZ) * (currentCenterZ - centerZ)
+                );
+                ModelData chunkModel;
+
+                // 根据距离选择生成方法
+                if (distance <= radius) {
+                    // 距离中心在 radius 范围内，使用高精度生成
+                    chunkModel = GenerateChunkModel(chunkX, sectionY, chunkZ);
+                }
+                else if (distance <= radius * 2) {
+                    // 距离在 radius ~ 2*radius 之间，LOD参数为1.0f
+                    chunkModel = GenerateLODChunkModel(chunkX, sectionY, chunkZ, 1.0f);
+                }
+                else if (distance <= radius * 4) {
+                    // 距离在 2*radius ~ 4*radius 之间，LOD参数为2.0f
+                    chunkModel = GenerateLODChunkModel(chunkX, sectionY, chunkZ, 2.0f);
+                }
+                else {
+                    // 距离超过 4*radius，使用最低精度生成，LOD参数为4.0f
+                    chunkModel = GenerateLODChunkModel(chunkX, sectionY, chunkZ, 4.0f);
+                }
+
+
                 // 合并到总模型
                 if (finalMergedModel.vertices.empty()) {
                     finalMergedModel = chunkModel;
@@ -177,506 +364,40 @@ void RegionModelExporter::ExportRegionModels(int xStart, int xEnd, int yStart, i
                 else {
                     MergeModelsDirectly(finalMergedModel, chunkModel);
                 }
-                
-                
             }
-           
         }
     }
-    end = high_resolution_clock::now();  // 新增：结束时间点
-    duration = duration_cast<milliseconds>(end - start);  // 新增：计算时间差
-    cout << "模型合并耗时: " << duration.count() << " ms" << endl;  // 新增：输出到控制台
-    start = high_resolution_clock::now();  // 新增：开始时间点
+    end = high_resolution_clock::now();
+    duration = duration_cast<milliseconds>(end - start);
+    cout << "模型合并耗时: " << duration.count() << " ms" << endl;
+
+    start = high_resolution_clock::now();
     deduplicateVertices(finalMergedModel);
-    end = high_resolution_clock::now();  // 新增：结束时间点
-    duration = duration_cast<milliseconds>(end - start);  // 新增：计算时间差
-    cout << "deduplicateVertices: " << duration.count() << " ms" << endl;  // 新增：输出到控制台
+    deduplicateUV(finalMergedModel);
+    end = high_resolution_clock::now();
+    duration = duration_cast<milliseconds>(end - start);
+    cout << "deduplicateVertices: " << duration.count() << " ms" << endl;
 
-    start = high_resolution_clock::now();  // 新增：开始时间点
-    // 严格模式：材质+顶点都相同才剔除
-    deduplicateFaces(finalMergedModel, true);
+    start = high_resolution_clock::now();
+    deduplicateFaces(finalMergedModel);
+    end = high_resolution_clock::now();
+    duration = duration_cast<milliseconds>(end - start);
+    cout << "deduplicateFaces: " << duration.count() << " ms" << endl;
 
-    // 宽松模式：仅顶点相同即剔除
-    //deduplicateFaces(finalMergedModel, false);
-
-    end = high_resolution_clock::now();  // 新增：结束时间点
-    duration = duration_cast<milliseconds>(end - start);  // 新增：计算时间差
-    cout << "deduplicateFaces: " << duration.count() << " ms" << endl;  // 新增：输出到控制台
-    // 导出最终模型
     if (!finalMergedModel.vertices.empty()) {
         CreateModelFiles(finalMergedModel, outputName);
     }
 }
 
-
-static float getHeight(int level) {
-    if (level == 0)
-        return 14.166666f; // 水源
-
-    if (level == -1)
-        return 0.0f; // 空气
-
-    if (level == -2)
-        return -1.0f; // 一般方块
-
-    if (level ==8)
-        return 16.0f; // 流动水
-
-
-    // 中间值的线性插值计算
-    return 2.0f + (12.0f / 7.0f) * (7 - level); 
-}
-
-
-float getCornerHeight(float currentHeight, float NWHeight, float NHeight, float WHeight) {
-    float totalWeight = 0.0f;
-    float res = 0.0f;
-    bool sourceBlock = false;
-
-    if (currentHeight >= 16.0f || NWHeight >= 16.0f || NHeight >= 16.0f || WHeight >= 16.0f) {
-        return 16.0f;
-    }
-
-    if (currentHeight == 14.166666f) {
-        res += currentHeight * 11.0f;
-        totalWeight += 11.0f;
-        sourceBlock = true;
-    }
-    if (NWHeight == 14.166666f) {
-        res += NWHeight * 12.0f;
-        totalWeight += 12.0f;
-        sourceBlock = true;
-    }
-    if (NHeight == 14.166666f) {
-        res += NHeight * 12.0f;
-        totalWeight += 12.0f;
-        sourceBlock = true;
-    }
-    if (WHeight == 14.166666f) {
-        res += WHeight * 12.0f;
-        totalWeight += 12.0f;
-        sourceBlock = true;
-    }
-
-    if (sourceBlock) {
-        if (currentHeight == 0.0f) {
-            totalWeight += 1.0f;
-        }
-        if (NWHeight == 0.0f) {
-            totalWeight += 1.0f;
-        }
-        if (NHeight == 0.0f) {
-            totalWeight += 1.0f;
-        }
-        if (WHeight == 0.0f) {
-            totalWeight += 1.0f;
-        }
-    }
-    else {
-        if (currentHeight >= 0.0f) {
-            res += currentHeight;
-            totalWeight += 1.0f;
-        }
-        if (NWHeight >= 0.0f) {
-            res += NWHeight;
-            totalWeight += 1.0f;
-        }
-        if (NHeight >= 0.0f) {
-            res += NHeight;
-            totalWeight += 1.0f;
-        }
-        if (WHeight >= 0.0f) {
-            res += WHeight;
-            totalWeight += 1.0f;
-        }
-    }
-
-    return (totalWeight == 0.0f) ? 0.0f : res / totalWeight;
-}
-
-
-ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
-    ModelData model;
-
-    // 获取当前方块的液位和周围液位的高度
-    int currentLevel = fluidLevels[0];
-    int northLevel = fluidLevels[1];    // 北
-    int southLevel = fluidLevels[2];    // 南
-    int eastLevel = fluidLevels[3];     // 东
-    int westLevel = fluidLevels[4];     // 西
-    int northeastLevel = fluidLevels[5]; // 东北
-    int northwestLevel = fluidLevels[6]; // 西北
-    int southeastLevel = fluidLevels[7]; // 东南
-    int southwestLevel = fluidLevels[8]; // 西南
-    int belowLevel = fluidLevels[9];     // 下方
-
-    float currentHeight = getHeight(currentLevel);
-    float northHeight = getHeight(northLevel);
-    float southHeight = getHeight(southLevel);
-    float eastHeight = getHeight(eastLevel);
-    float westHeight = getHeight(westLevel);
-    float northeastHeight = getHeight(northeastLevel);
-    float northwestHeight = getHeight(northwestLevel);
-    float southeastHeight = getHeight(southeastLevel);
-    float southwestHeight = getHeight(southwestLevel);
-
-    // 设置 below 值
-    int below = (belowLevel == -1) ? 1 : 0;
-
-    size_t key = 0;
-    for (int level : fluidLevels) {
-        key = (key << 3) ^ (level + (level << 5));
-    }
-    // 检查缓存中是否存在该模型
-    if (fluidModelCache.find(key) != fluidModelCache.end()) {
-
-        return fluidModelCache[key]; // 返回缓存中的模型
-    }
-
-    // 如果缓存中没有该模型，则生成并存入缓存
-    // 计算四个上顶点的高度
-    float h_nw = getCornerHeight(currentHeight, northwestHeight, northHeight, westHeight)/16.0f;
-    float h_ne = getCornerHeight(currentHeight, northeastHeight, northHeight, eastHeight)/16.0f;
-    float h_se = getCornerHeight(currentHeight, southeastHeight, southHeight, eastHeight)/16.0f;
-    float h_sw = getCornerHeight(currentHeight, southwestHeight, southHeight, westHeight)/16.0f;
-    h_nw = ceil(h_nw * 10.0f) / 10.0f;
-    h_ne = ceil(h_ne * 10.0f) / 10.0f;
-    h_se = ceil(h_se * 10.0f) / 10.0f;
-    h_sw = ceil(h_sw * 10.0f) / 10.0f;
-
-    model.vertices = {
-        // 底面 (bottom) - 偏移方向：Y轴负方向 (向下)
-        0.0f, 0.0f, 0.0f,       // 0
-        0.0f, 0.0f, 1.0f,       // 3
-        1.0f, 0.0f, 1.0f,       // 2
-        1.0f, 0.0f, 0.0f,       // 1
-
-        // 顶面 (top) - 偏移方向：Y轴正方向 (向上)
-        0.0f, h_nw, 0.0f, // 西北角
-        0.0f, h_sw, 1.0f, // 西南角
-        1.0f, h_se, 1.0f, // 东南角
-        1.0f, h_ne, 0.0f, // 东北角
-
-        // 北面 (north) - 偏移方向：Z轴负方向 (向后)
-        0.0f, 0.0f, 0.0f,
-        0.0f, h_nw, 0.0f,
-        1.0f, h_ne, 0.0f,
-        1.0f, 0.0f, 0.0f,
-
-        // 南面 (south) - 偏移方向：Z轴正方向 (向前)
-        0.0f, 0.0f, 1.0f,
-        1.0f, 0.0f, 1.0f,
-        1.0f, h_se, 1.0f,
-        0.0f, h_sw, 1.0f,
-
-        // 西面 (west) - 偏移方向：X轴负方向 (向左)
-        0.0f, 0.0f, 0.0f,
-        0.0f, h_nw, 0.0f,
-        0.0f, h_sw, 1.0f,
-        0.0f, 0.0f, 1.0f,
-
-        // 东面 (east) - 偏移方向：X轴正方向 (向右)
-        1.0f, 0.0f, 0.0f,
-        1.0f, h_ne, 0.0f,
-        1.0f, h_se, 1.0f,
-        1.0f, 0.0f, 1.0f
-    };
-
-    // 面索引（每4个顶点构成一个面）
-    model.faces = {
-        // 下面 (bottom)
-        0, 1, 2, 3,
-        // 上面 (top)
-        4, 5, 6, 7,
-        // 北面 (north)
-        8, 9, 10, 11,
-        // 南面 (south)
-        12, 13, 14, 15,
-        // 西面 (west)
-        16, 17, 18, 19,
-        // 东面 (east)
-        20, 21, 22, 23
-    };
-    model.uvFaces = model.faces;
-    // 面方向（每个面四个顶点共享同一方向）
-
-    if (currentLevel==0)
-    {
-        model.faceDirections = {
-        "down", "down", "down", "down",    // 下面
-        "DO_NOT_CULL", "DO_NOT_CULL", "DO_NOT_CULL", "DO_NOT_CULL",            // 上面
-        "north", "north", "north", "north",// 北面
-        "south", "south", "south", "south",// 南面
-        "west", "west", "west", "west",    // 西面
-        "east", "east", "east", "east"     // 东面
-        };
-
-    }
-    else
-    {
-        model.faceDirections = {
-        "down", "down", "down", "down",    // 下面
-        "up", "up", "up", "up",            // 上面
-        "north", "north", "north", "north",// 北面
-        "south", "south", "south", "south",// 南面
-        "west", "west", "west", "west",    // 西面
-        "east", "east", "east", "east"     // 东面
-        };
-    }
-    
-    float v_nw = 1- (h_nw) / 32.0f;
-    float v_ne = 1- (h_ne) / 32.0f;
-    float v_se =  1-(h_se) / 32.0f;
-    float v_sw =  1-(h_sw) / 32.0f;
-    
-
-
-    model.uvCoordinates = {
-        // 下面
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f,31.0 / 32.0f , 0.0f,31.0 / 32.0f,
-        // 上面
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f , 0.0f, 0.0f,
-        // 北面
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_ne, 0.0f, v_nw,
-        // 南面
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_se, 0.0f,v_sw ,
-        // 西面
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_sw, 0.0f, v_nw,
-        // 东面
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_se, 0.0f,v_ne
-    };
-    // 材质设置
-    model.materialNames = { "minecraft:block/water_still", "minecraft:block/water_flow" };
-    model.texturePaths = { "textures/minecraft/block/water_still.png", "textures/minecraft/block/water_flow.png" };
-    
-    if (currentLevel ==0 || currentLevel == 8) {
-        model.uvCoordinates = {
-            // 下面
-            0.0f, 1.0f, 1.0f, 1.0f, 1.0f,31.0 / 32.0f , 0.0f,31.0 / 32.0f,
-            // 上面
-            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 31.0 / 32.0f , 0.0f, 31.0 / 32.0f,
-            // 北面
-            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_ne, 0.0f, v_nw,
-            // 南面
-            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_se, 0.0f,v_sw ,
-            // 西面
-            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_sw, 0.0f, v_nw,
-            // 东面
-            0.0f, 1.0f, 1.0f, 1.0f, 1.0f,v_se , 0.0f, v_ne
-        };
-        model.materialIndices = { 0, 0, 1, 1, 1, 1 };
-    }
-    else {
-        // 计算梯度和旋转角度
-        float gradientX0 = h_ne - h_nw;
-        if (h_nw < 0.0f) gradientX0 = 0.0f;
-
-        float gradientX1 = h_se - h_sw;
-        if (h_sw < 0.0f) gradientX1 = 0.0f;
-
-        float gradientZ0 = h_nw - h_sw;
-        if (h_sw < 0.0f) gradientZ0 = 0.0f;
-
-        float gradientZ1 = h_ne - h_se;
-        if (h_se < 0.0f) gradientZ1 = 0.0f;
-
-        float gradientX = (gradientX0 + gradientX1)*16;
-        float gradientZ = (gradientZ0 + gradientZ1)*16;
-
-        float gradientLength = static_cast<float>(sqrt(gradientX * gradientX + gradientZ * gradientZ));
-        float angle = 0.0f;
-
-        if (gradientLength > 0.0f) {
-            gradientX /= gradientLength;
-            gradientZ /= gradientLength;
-            angle = static_cast<float>(atan2(gradientX, -gradientZ));
-            // 将弧度转换为角度
-            angle = static_cast<float>(angle * (180.0f / M_PI));
-
-            // 确保角度在 [-180, 180] 范围内
-            if (angle < -180.0f) angle += 360.0f;
-            if (angle > 180.0f) angle -= 360.0f;
-
-            // 将角度归一化到 [0, 360] 范围内
-            angle = fmod(angle + 360.0f, 360.0f);
-
-            // 将角度量化为 22.5 度的倍数
-            angle = static_cast<float>(floor(angle / 22.5f + 0.5f) * 22.5f);
-        }
-
-
-
-        // 将角度转换为弧度
-        float angleRad = angle * (M_PI / 180.0f);
-
-        // 计算旋转矩阵
-        float cosTheta = cos(angleRad);
-        float sinTheta = sin(angleRad);
-
-        // 旋转中心点
-        constexpr float centerX = 0.5f;
-        constexpr float centerY = 0.5f;
-
-        // 遍历 UV 坐标数组
-        for (size_t i = 0; i < model.uvCoordinates.size(); i += 8) {
-            // 仅对上顶面的 UV 坐标进行旋转
-            if (i >= 8 && i < 16) { // 上顶面对应的 UV 坐标范围
-                // 提取 4 个 UV 顶点
-                float u0 = model.uvCoordinates[i];
-                float v0 = model.uvCoordinates[i + 1];
-                float u1 = model.uvCoordinates[i + 2];
-                float v1 = model.uvCoordinates[i + 3];
-                float u2 = model.uvCoordinates[i + 4];
-                float v2 = model.uvCoordinates[i + 5];
-                float u3 = model.uvCoordinates[i + 6];
-                float v3 = model.uvCoordinates[i + 7];
-
-                // 旋转 UV 坐标
-                auto rotateUV = [&](float& u, float& v) {
-                    const float relU = u - centerX;
-                    const float relV = v - centerY;
-                    const float newU = relU * cosTheta - relV * sinTheta + centerX;
-                    const float newV = relU * sinTheta + relV * cosTheta + centerY;
-                    u = newU;
-                    v = newV;
-                    };
-
-                rotateUV(u0, v0);
-                rotateUV(u1, v1);
-                rotateUV(u2, v2);
-                rotateUV(u3, v3);
-                // 将 x 值从 [1 到 0] 缩放到 [1 到 31/32]
-                auto scaleU = [](float u) {
-                    return 1.0f - (1.0f - 31.0f / 32.0f) * u;
-                    };
-
-                v0 = scaleU(v0);
-                v1 = scaleU(v1);
-                v2 = scaleU(v2);
-                v3 = scaleU(v3);
-
-                // 更新 UV 坐标
-                model.uvCoordinates[i] = u0;
-                model.uvCoordinates[i + 1] = v0;
-                model.uvCoordinates[i + 2] = u1;
-                model.uvCoordinates[i + 3] = v1;
-                model.uvCoordinates[i + 4] = u2;
-                model.uvCoordinates[i + 5] = v2;
-                model.uvCoordinates[i + 6] = u3;
-                model.uvCoordinates[i + 7] = v3;
-            }
-        }
-        model.materialIndices = { 0, 1, 1, 1, 1, 1 };
-    }
-    
-
-    // 存入缓存
-    fluidModelCache[key] = model;
-    return model;
-}
-
-std::unordered_map<std::string, std::string> ParseStateAttributes(const std::string& fluidId) {
-    std::unordered_map<std::string, std::string> attributes;
-    size_t bracketPos = fluidId.find('[');
-    if (bracketPos != std::string::npos) {
-        size_t closeBracketPos = fluidId.find(']', bracketPos);
-        if (closeBracketPos != std::string::npos) {
-            std::string statePart = fluidId.substr(bracketPos + 1, closeBracketPos - bracketPos - 1);
-            std::stringstream ss(statePart);
-            std::string attr;
-            while (std::getline(ss, attr, ',')) {
-                size_t equalPos = attr.find('=');
-                if (equalPos != std::string::npos) {
-                    std::string key = attr.substr(0, equalPos);
-                    std::string value = attr.substr(equalPos + 1);
-                    attributes[key] = value;
-                }
-            }
-        }
-    }
-    return attributes;
-}
-
-void AssignFluidMaterials(ModelData& model, const std::string& fluidId) {
-    // 提取基础 ID 和状态值（如果有多个状态值）
-    std::string baseId;
-    std::unordered_map<std::string, std::string> stateValues;
-
-    size_t bracketPos = fluidId.find('[');
-    if (bracketPos != std::string::npos) {
-        baseId = fluidId.substr(0, bracketPos);
-
-        std::string statePart = fluidId.substr(bracketPos + 1, fluidId.size() - bracketPos - 2); // Remove the closing ']'
-        std::stringstream ss(statePart);
-        std::string statePair;
-
-        while (std::getline(ss, statePair, ',')) {
-            size_t equalPos = statePair.find(':');
-            if (equalPos != std::string::npos) {
-                std::string key = statePair.substr(0, equalPos);
-                std::string value = statePair.substr(equalPos + 1);
-
-                stateValues[key] = value;
-            }
-        }
-    }
-    else {
-        baseId = fluidId;
-    }
-
-    // 尝试查找流体定义
-    auto fluidIt = fluidDefinitions.find(baseId);
-    if (fluidIt == fluidDefinitions.end()) {
-        // 尝试匹配 level_property
-        for (const auto& entry : fluidDefinitions) {
-            if (stateValues.count(entry.second.property) > 0) {
-                fluidIt = fluidDefinitions.find(entry.first);
-                break;
-            }
-        }
-
-        if (fluidIt == fluidDefinitions.end()) {
-            // 尝试匹配 liquid_blocks
-            for (const auto& entry : fluidDefinitions) {
-                if (entry.second.liquid_blocks.count(baseId) > 0) {
-                    fluidIt = fluidDefinitions.find(entry.first);
-                    break;
-                }
-            }
-        }
-
-        if (fluidIt == fluidDefinitions.end()) {
-            // 如果仍然没找到，直接返回
-            return;
-        }
-    }
-
-    const FluidInfo& fluidInfo = fluidIt->second;
-    std::string fluidName = fluidIt->first;
-    // 清空旧数据
-    model.materialNames.clear();
-    model.texturePaths.clear();
-
-    // 设置材质路径
-    model.materialNames = {
-        fluidInfo.folder + "/" + fluidName + fluidInfo.still_texture,
-        fluidInfo.folder + "/" + fluidName + fluidInfo.flow_texture
-    };
-
-    // 构建纹理路径
-    size_t colonPos = baseId.find(':');
-    std::string ns = (colonPos != std::string::npos) ? baseId.substr(0, colonPos) : "";
-    fluidName = (colonPos != std::string::npos) ? fluidName.substr(colonPos + 1) : fluidName;
-
-    model.texturePaths = {
-        "textures/" + ns + "/" + fluidInfo.folder + "/" + fluidName + fluidInfo.still_texture + ".png",
-        "textures/" + ns + "/" + fluidInfo.folder + "/" + fluidName + fluidInfo.flow_texture + ".png"
-    };
-}
-
-
 ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int chunkZ) {
     ModelData chunkModel;
+    int xStart = config.minX;
+    int xEnd = config.maxX;
+    int yStart = config.minY;
+    int yEnd = config.maxY;
+    int zStart = config.minZ;
+    int zEnd = config.maxZ;
+    
     // 计算区块内的方块范围
     int blockXStart = chunkX * 16;
     int blockZStart = chunkZ * 16;
@@ -686,6 +407,13 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
         for (int z = blockZStart; z < blockZStart + 16; ++z) {
             int currentY = GetHeightMapY(x, z, "WORLD_SURFACE")-64;
             for (int y = blockYStart; y < blockYStart + 16; ++y) {
+                
+                // 检查当前方块是否在导出区域内
+                if (x < xStart || x > xEnd || y < yStart || y > yEnd || z < zStart || z > zEnd) {
+                    continue; // 跳过不在导出区域内的方块
+                }
+                
+                
                 std::array<bool, 6> neighbors; // 邻居是否为空气
                 std::array<int, 10> fluidLevels; // 流体液位
 
@@ -696,9 +424,13 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
                 );
                 Block currentBlock = GetBlockById(id);
                 string blockName = GetBlockNameById(id);
+                if (blockName == "minecraft:air" ) continue;
+
+                if (config.cullCave)
+                {
+                    if (GetSkyLight(x, y, z) == -1)continue;
+                }
                 
-                if (blockName == "minecraft:air" || y > currentY) continue;
-                if (GetSkyLight(x,y,z) == -1)continue;
 
                 string ns = GetBlockNamespaceById(id);
 
@@ -736,7 +468,7 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
                             }
                         }
 
-                        blockModel = MergeModelData(blockModel, liquidModel);
+                        blockModel = MergeFluidModelData(blockModel, liquidModel);
                     }
 
                 }
@@ -834,8 +566,355 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
     return chunkModel;
 }
 
+ModelData RegionModelExporter::GenerateLODChunkModel(int chunkX, int sectionY, int chunkZ, float lodSize) {
+    ModelData chunkModel;
+    int xStart = config.minX;
+    int xEnd = config.maxX;
+    int yStart = config.minY;
+    int yEnd = config.maxY;
+    int zStart = config.minZ;
+    int zEnd = config.maxZ;
 
-void RegionModelExporter::LoadChunks(int xStart, int xEnd, int yStart, int yEnd, int zStart, int zEnd) {
+    // 计算区块内的方块范围
+    int blockXStart = chunkX * 16;
+    int blockZStart = chunkZ * 16;
+    int blockYStart = sectionY * 16;
+
+    // 辅助 lambda 判断坐标是否在检测范围内
+    auto inRange = [&](int cx, int cy, int cz) -> bool {
+        return (cx >= xStart && cx < xEnd &&
+            cy >= yStart && cy < yEnd &&
+            cz >= zStart && cz < zEnd);
+        };
+
+    // 辅助 lambda 判断指定位置是否为空气
+    auto isAir = [&](int cx, int cy, int cz) -> bool {
+        int id = GetBlockId(cx, cy, cz);
+        Block b = GetBlockById(id);
+        return (b.name == "minecraft:air");
+        };
+
+    // 遍历区块内每个大区域
+    for (int x = blockXStart; x < blockXStart + 16; x += lodSize) {
+        for (int z = blockZStart; z < blockZStart + 16; z += lodSize) {
+            for (int y = blockYStart; y < blockYStart + 16; y += lodSize) {
+                // 检查大区域是否在导出区域内
+                if (x < xStart || x + lodSize > xEnd ||
+                    y < yStart || y + lodSize > yEnd ||
+                    z < zStart || z + lodSize > zEnd)
+                {
+                    continue;
+                }
+                if (config.cullCave && GetSkyLight(x, y, z) == -1)
+                    continue;
+
+                // 扫描区域内所有小方块，统计空气方块数量，并获取第一个非空气块的颜色
+                int totalBlocks = lodSize * lodSize * lodSize;
+                int airCount = 0;
+                bool cubeHasNonAir = false;
+                std::string color;
+                for (int dx = 0; dx < lodSize; ++dx) {
+                    for (int dy = 0; dy < lodSize; ++dy) {
+                        for (int dz = 0; dz < lodSize; ++dz) {
+                            int currentX = x + dx;
+                            int currentY = y + dy;
+                            int currentZ = z + dz;
+                            // 超出检测范围视为空气
+                            if (!inRange(currentX, currentY, currentZ)) {
+                                airCount++;
+                                continue;
+                            }
+                            if (config.cullCave && GetSkyLight(x, y, z) == -1) {
+                                airCount++;
+                                continue;
+                            }
+                            int id = GetBlockId(currentX, currentY, currentZ);
+                            Block currentBlock = GetBlockById(id);
+                            if (currentBlock.name == "minecraft:air") {
+                                airCount++;
+                            }
+                            else {
+                                cubeHasNonAir = true;
+                                if (color.empty()) {
+                                    color = GetBlockAverageColor(id, currentBlock, currentX, currentY, currentZ);
+                                }
+                            }
+                        }
+                    }
+                }
+                // 如果区域内全为空气，或空气比例超过95%，则跳过该区域
+                if (!cubeHasNonAir || ((float)airCount / totalBlocks) > 0.95f) {
+                    continue;
+                }
+
+                // 对各个面进行检测：检测相邻的采样点是否为空气（或超出范围）
+                // 如果检测超出范围，根据 config.cullFaceOutOfRange 判断是否剔除此面
+                bool topVisible = false;
+                for (int dx = 0; dx < lodSize && !topVisible; ++dx) {
+                    for (int dz = 0; dz < lodSize && !topVisible; ++dz) {
+                        int tx = x + dx;
+                        int ty = y + (int)lodSize;
+                        int tz = z + dz;
+                        if (!inRange(tx, ty, tz)) {
+                            if (!config.keepBoundary) {
+                                topVisible = false;
+                                goto topFaceCheckEnd;
+                            }
+                            else {
+                                topVisible = true;
+                                break;
+                            }
+                        }
+                        if (isAir(tx, ty, tz)) {
+                            topVisible = true;
+                            break;
+                        }
+                    }
+                }
+            topFaceCheckEnd:
+
+                bool bottomVisible = false;
+                for (int dx = 0; dx < lodSize && !bottomVisible; ++dx) {
+                    for (int dz = 0; dz < lodSize && !bottomVisible; ++dz) {
+                        int bx = x + dx;
+                        int by = y - 1;
+                        int bz = z + dz;
+                        if (!inRange(bx, by, bz)) {
+                            if (!config.keepBoundary) {
+                                bottomVisible = false;
+                                goto bottomFaceCheckEnd;
+                            }
+                            else {
+                                bottomVisible = true;
+                                break;
+                            }
+                        }
+                        if (isAir(bx, by, bz)) {
+                            bottomVisible = true;
+                            break;
+                        }
+                    }
+                }
+            bottomFaceCheckEnd:
+
+                bool northVisible = false;
+                for (int dx = 0; dx < lodSize && !northVisible; ++dx) {
+                    for (int dy = 0; dy < lodSize && !northVisible; ++dy) {
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        int nz = z - 1;
+                        if (!inRange(nx, ny, nz)) {
+                            if (!config.keepBoundary) {
+                                northVisible = false;
+                                goto northFaceCheckEnd;
+                            }
+                            else {
+                                northVisible = true;
+                                break;
+                            }
+                        }
+                        if (isAir(nx, ny, nz)) {
+                            northVisible = true;
+                            break;
+                        }
+                    }
+                }
+            northFaceCheckEnd:
+
+                bool southVisible = false;
+                for (int dx = 0; dx < lodSize && !southVisible; ++dx) {
+                    for (int dy = 0; dy < lodSize && !southVisible; ++dy) {
+                        int sx = x + dx;
+                        int sy = y + dy;
+                        int sz = z + (int)lodSize;
+                        if (!inRange(sx, sy, sz)) {
+                            if (!config.keepBoundary) {
+                                southVisible = false;
+                                goto southFaceCheckEnd;
+                            }
+                            else {
+                                southVisible = true;
+                                break;
+                            }
+                        }
+                        if (isAir(sx, sy, sz)) {
+                            southVisible = true;
+                            break;
+                        }
+                    }
+                }
+            southFaceCheckEnd:
+
+                bool westVisible = false;
+                for (int dy = 0; dy < lodSize && !westVisible; ++dy) {
+                    for (int dz = 0; dz < lodSize && !westVisible; ++dz) {
+                        int wx = x - 1;
+                        int wy = y + dy;
+                        int wz = z + dz;
+                        if (!inRange(wx, wy, wz)) {
+                            if (!config.keepBoundary) {
+                                westVisible = false;
+                                goto westFaceCheckEnd;
+                            }
+                            else {
+                                westVisible = true;
+                                break;
+                            }
+                        }
+                        if (isAir(wx, wy, wz)) {
+                            westVisible = true;
+                            break;
+                        }
+                    }
+                }
+            westFaceCheckEnd:
+
+                bool eastVisible = false;
+                for (int dy = 0; dy < lodSize && !eastVisible; ++dy) {
+                    for (int dz = 0; dz < lodSize && !eastVisible; ++dz) {
+                        int ex = x + (int)lodSize;
+                        int ey = y + dy;
+                        int ez = z + dz;
+                        if (!inRange(ex, ey, ez)) {
+                            if (!config.keepBoundary) {
+                                eastVisible = false;
+                                goto eastFaceCheckEnd;
+                            }
+                            else {
+                                eastVisible = true;
+                                break;
+                            }
+                        }
+                        if (isAir(ex, ey, ez)) {
+                            eastVisible = true;
+                            break;
+                        }
+                    }
+                }
+            eastFaceCheckEnd:
+
+                // 如果所有面都不可见，则跳过该区域
+                if (!topVisible && !bottomVisible && !northVisible &&
+                    !southVisible && !westVisible && !eastVisible)
+                {
+                    continue;
+                }
+
+                // 根据检测结果有选择性地生成各个面
+                ModelData largeBlockModel;
+                int vertexOffset = 0;
+                std::vector<float> vertices;
+                std::vector<int> faces;
+                std::vector<int> uvFaces;
+                std::vector<std::string> materialNames;
+                std::vector<std::string> texturePaths;
+                std::vector<int> materialIndices;
+
+                // 辅助 lambda 用于添加面数据
+                auto addFace = [&](const float faceVerts[12]) {
+                    for (int i = 0; i < 12; ++i)
+                        vertices.push_back(faceVerts[i]);
+                    faces.push_back(vertexOffset);
+                    faces.push_back(vertexOffset + 1);
+                    faces.push_back(vertexOffset + 2);
+                    faces.push_back(vertexOffset + 3);
+                    uvFaces.insert(uvFaces.end(), { vertexOffset, vertexOffset + 1, vertexOffset + 2, vertexOffset + 3 });
+                    materialNames.push_back(color);
+                    texturePaths.push_back(color);
+                    materialIndices.push_back(0);
+                    vertexOffset += 4;
+                    };
+
+                // 生成各面顶点数据（修正后的面朝向）
+                if (bottomVisible) {
+                    // 底面：顺序 (0,0,0) -> (lodSize,0,0) -> (lodSize,0,lodSize) -> (0,0,lodSize)
+                    float bottomFace[12] = {
+                        0.0f, 0.0f, 0.0f,
+                        lodSize, 0.0f, 0.0f,
+                        lodSize, 0.0f, lodSize,
+                        0.0f, 0.0f, lodSize
+                    };
+                    addFace(bottomFace);
+                }
+                if (topVisible) {
+                    // 顶面：顺序 (0,lodSize,0) -> (0,lodSize,lodSize) -> (lodSize,lodSize,lodSize) -> (lodSize,lodSize,0)
+                    float topFace[12] = {
+                        0.0f, lodSize, 0.0f,
+                        0.0f, lodSize, lodSize,
+                        lodSize, lodSize, lodSize,
+                        lodSize, lodSize, 0.0f
+                    };
+                    addFace(topFace);
+                }
+                if (northVisible) {
+                    // 北面（朝 -z）： (0,0,0) -> (0,lodSize,0) -> (lodSize,lodSize,0) -> (lodSize,0,0)
+                    float northFace[12] = {
+                        0.0f, 0.0f, 0.0f,
+                        0.0f, lodSize, 0.0f,
+                        lodSize, lodSize, 0.0f,
+                        lodSize, 0.0f, 0.0f
+                    };
+                    addFace(northFace);
+                }
+                if (southVisible) {
+                    // 南面（朝 +z）： (0,0,lodSize) -> (lodSize,0,lodSize) -> (lodSize,lodSize,lodSize) -> (0,lodSize,lodSize)
+                    float southFace[12] = {
+                        0.0f, 0.0f, lodSize,
+                        lodSize, 0.0f, lodSize,
+                        lodSize, lodSize, lodSize,
+                        0.0f, lodSize, lodSize
+                    };
+                    addFace(southFace);
+                }
+                if (westVisible) {
+                    // 西面（朝 -x）： (0,0,0) -> (0,0,lodSize) -> (0,lodSize,lodSize) -> (0,lodSize,0)
+                    float westFace[12] = {
+                        0.0f, 0.0f, 0.0f,
+                        0.0f, 0.0f, lodSize,
+                        0.0f, lodSize, lodSize,
+                        0.0f, lodSize, 0.0f
+                    };
+                    addFace(westFace);
+                }
+                if (eastVisible) {
+                    // 东面（朝 +x）： (lodSize,0,0) -> (lodSize,0,lodSize) -> (lodSize,lodSize,lodSize) -> (lodSize,lodSize,0)
+                    float eastFace[12] = {
+                        lodSize, 0.0f, 0.0f,
+                        lodSize, lodSize, 0.0f,
+                        lodSize, lodSize, lodSize,
+                        lodSize, 0.0f, lodSize
+                    };
+                    addFace(eastFace);
+                }
+
+                // 整理生成的面数据到模型
+                largeBlockModel.vertices = vertices;
+                largeBlockModel.faces = faces;
+                largeBlockModel.uvFaces = uvFaces;
+                largeBlockModel.materialNames = materialNames;
+                largeBlockModel.texturePaths = texturePaths;
+                largeBlockModel.materialIndices = materialIndices;
+
+                // 应用位置偏移后合并到区块模型
+                ApplyPositionOffset(largeBlockModel, x, y, z);
+                if (chunkModel.vertices.empty())
+                    chunkModel = largeBlockModel;
+                else
+                    MergeModelsDirectly(chunkModel, largeBlockModel);
+            }
+        }
+    }
+    return chunkModel;
+}
+
+void RegionModelExporter::LoadChunks() {
+    int xStart = config.minX;
+    int xEnd = config.maxX;
+    int yStart = config.minY;
+    int yEnd = config.maxY;
+    int zStart = config.minZ;
+    int zEnd = config.maxZ;
+
     // 计算最小和最大坐标，以处理范围颠倒的情况
     int min_x = min(xStart, xEnd);
     int max_x = max(xStart, xEnd);

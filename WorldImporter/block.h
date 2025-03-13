@@ -117,7 +117,7 @@ struct Block {
 
 
     }
-    Block(const std::string& name, bool air) : name(name), air(air) {}
+    Block(const std::string& name, bool air) : name(name), air(air), level(-1) {}
 
     // 方法：获取命名空间部分
     std::string GetNamespace() const {

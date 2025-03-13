@@ -1,6 +1,7 @@
 #ifndef COORD_CONVERSION_H
 #define COORD_CONVERSION_H
 
+extern int minSectionY;
 
 // 计算 YZX 编码后的数字
 int toYZX(int x, int y, int z);

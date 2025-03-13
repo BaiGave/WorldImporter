@@ -12,7 +12,7 @@ ModelData EntityBlock::GenerateEntityBlockModel(const string& blockName) {
     int waterLevel;
     bool waterFalling;
 
-    if (IsLightBlock(blockName, texturePath)) {
+    if (IsLightBlock(blockName, texturePath)&&config.exportLightBlock) {
         return GenerateLightBlockModel(texturePath);
     }
     // 其他类型方块的生成逻辑

@@ -18,7 +18,7 @@
 #include "fileutils.h"
 #include "GlobalCache.h"
 #include "RegionModelExporter.h"
-#include <nlohmann/json.hpp>
+#include "include/json.hpp"
 
 Config config;  // 定义全局变量
 
@@ -75,6 +75,7 @@ void loadAndUpdateConfig() {
         config.versionConfigs[versionName] = versionConfig;
     }
 
+    
     // 获取 mod 列表
     std::vector<std::string> mods;
     std::vector<std::string> resourcePacks;
@@ -89,29 +90,14 @@ void loadAndUpdateConfig() {
     std::string VersionName = wstring_to_string(FolderName);
     std::string minecraftVersion = GetMinecraftVersion(gameFolderPath, modloader);
 
-    try
-    {
-        mods = config.versionConfigs[VersionName].modList;
-        
-    }
-    catch (const std::exception&)
-    {
-
-    }
-    try
-    {
-        resourcePacks = config.versionConfigs[VersionName].resourcePackList;
-
-    }
-    catch (const std::exception&)
-    {
-
-    }
-
+    // 使用 operator[] 来避免异常
+    mods = config.versionConfigs[VersionName].modList;
+    resourcePacks = config.versionConfigs[VersionName].resourcePackList;
+    
     GetModList(gameFolderPath, mods, modloader);
     GetResourcePacks(gameFolderPath, resourcePacks);
     GetSaveFiles(gameFolderPath, saves);
-
+    
     // 更新 versionConfigs 中的配置
     VersionConfig versionConfig;
     versionConfig.gameFolderPath = wstring_to_string(gameFolderPath);
@@ -122,11 +108,10 @@ void loadAndUpdateConfig() {
     versionConfig.saveGameList = saves;
 
     config.versionConfigs[VersionName] = versionConfig;
-
     // 保存更新后的配置文件
     WriteConfig(config, "config\\config.json");
 
-
+    
     // 获取当前整合包的版本
     currentSelectedGameVersion = config.selectedGameVersion;
 
@@ -166,24 +151,25 @@ void exportPointCloud() {
     LoadConfig("config\\config.json");
 }
 
+
 int main() {
     init();
-    
     // 测量执行时间
-    auto start_time = high_resolution_clock::now();
+    //auto start_time = high_resolution_clock::now();
     // 生成包含所有使用 cube 模型的方块
     //GenerateSolidsJson("solids.json", {"block/cube_mirrored_all", "block/cube_all","block/cube_column"});
-    RegionModelExporter::ExportRegionModels(
+    /*RegionModelExporter::ExportRegionModels(
         config.minX, config.maxX,
         config.minY, config.maxY,
         config.minZ, config.maxZ,
+        false,
         "region_models"
-    );
+    );*/
     ////exportPointCloud();    
     //ProcessAllBlockstateVariants();
-    auto end_time = high_resolution_clock::now();
-    auto duration = duration_cast<milliseconds>(end_time - start_time);
-    cout << "Total time: " << duration.count() << " milliseconds" << endl;
+    //auto end_time = high_resolution_clock::now();
+    //auto duration = duration_cast<milliseconds>(end_time - start_time);
+    //cout << "Total time: " << duration.count() << " milliseconds" << endl;
     
     //auto biomeMap = Biome::GenerateBiomeMap(-237, -335, 460, 269, 64);
     // 导出图片
@@ -192,14 +178,10 @@ int main() {
 
 
     loadAndUpdateConfig();  // 重新加载和更新配置
+    
     if (config.status == 1) {
         // 如果是 1，导出区域内所有方块模型
-        RegionModelExporter::ExportRegionModels(
-            config.minX, config.maxX,
-            config.minY, config.maxY,
-            config.minZ, config.maxZ,
-            "region_models"
-        );
+        RegionModelExporter::ExportRegionModels("region_models");
         
         // 保存更新后的配置文件
         WriteConfig(config, "config\\config.json");
@@ -214,6 +196,6 @@ int main() {
         // 如果是 0，执行整合包所有方块状态导出逻辑
         ProcessAllBlockstateVariants();
     }
-
+    Sleep(10000);
     return 0;
 }

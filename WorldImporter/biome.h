@@ -4,7 +4,7 @@
 #include <map>
 #include <mutex>
 #include <shared_mutex>
-#include <nlohmann/json.hpp>
+#include "include/json.hpp"
 
 enum class BiomeColorType {
     Foliage,

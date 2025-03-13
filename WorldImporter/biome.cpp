@@ -91,7 +91,6 @@ bool SaveColormapToFile(const std::vector<unsigned char>& pixelData,
 
         if (outputFile.is_open()) {
             outputFile.write(reinterpret_cast<const char*>(pixelData.data()), pixelData.size());
-            //std::cout << "Texture saved as '" << filePath << "'" << std::endl;
         }
         else {
             std::cerr << "Failed to open output file!" << std::endl;
@@ -113,10 +112,9 @@ int GetBiomeId(int blockX, int blockY, int blockZ) {
     // 将方块的Y坐标转换为子区块索引
     int sectionY;
     blockYToSectionY(blockY, sectionY);
-    int adjustedSectionY = AdjustSectionY(sectionY);
 
     // 创建缓存键
-    auto blockKey = std::make_tuple(chunkX, chunkZ, adjustedSectionY);
+    auto blockKey = std::make_tuple(chunkX, chunkZ, sectionY);
 
     // 检查 SectionCache 中是否存在对应的区块数据
     if (sectionCache.find(blockKey) == sectionCache.end()) {
@@ -345,7 +343,6 @@ int Biome::CalculateColorFromColormap(const std::string& filePath,
     if (filePath.empty()) {
         return 0x00FF00; // 错误颜色
     }
-
     // 修改1：去掉强制RGBA参数（原第5个参数4改为0）
     int width, height, channels;
     unsigned char* data = stbi_load(filePath.c_str(),

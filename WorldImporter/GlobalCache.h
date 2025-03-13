@@ -2,7 +2,10 @@
 #include <vector>
 #include <string>
 #include <mutex>
-#include <nlohmann/json.hpp>
+#include "include/json.hpp"
+#include "config.h"
+#include "version.h"
+#include "JarReader.h"
 
 // 前向声明依赖类型
 struct FolderData;
@@ -13,15 +16,10 @@ extern std::string currentSelectedGameVersion;
 extern std::unordered_map<std::string, std::vector<FolderData>> VersionCache;
 extern std::unordered_map<std::string, std::vector<FolderData>> resourcePacksCache;
 extern std::unordered_map<std::string, std::vector<FolderData>> modListCache;
-#include "config.h"
-#include "version.h"
-#include "JarReader.h"
+extern std::unordered_map<std::string, std::vector<FolderData>> saveFilesCache;
 
 // 外部声明
-extern std::unordered_map<std::string, std::vector<FolderData>> VersionCache;
-extern std::unordered_map<std::string, std::vector<FolderData>> modListCache;
-extern std::unordered_map<std::string, std::vector<FolderData>> resourcePacksCache;
-extern std::unordered_map<std::string, std::vector<FolderData>> saveFilesCache;
+
 // ========= 全局缓存声明 =========
 namespace GlobalCache {
     // 纹理缓存 [namespace:resource_path -> PNG数据]
@@ -47,6 +45,8 @@ namespace GlobalCache {
     extern std::mutex cacheMutex;
     extern std::vector<std::string> jarOrder;
 }
+
+
 
 // ========= 初始化方法 =========
 void InitializeAllCaches();

@@ -122,6 +122,9 @@
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <LanguageStandard>stdcpp14</LanguageStandard>
+      <Optimization>MaxSpeed</Optimization>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -140,6 +143,7 @@
     <ClCompile Include="decompressor.cpp" />
     <ClCompile Include="EntityBlock.cpp" />
     <ClCompile Include="fileutils.cpp" />
+    <ClCompile Include="fluid.cpp" />
     <ClCompile Include="GlobalCache.cpp" />
     <ClCompile Include="JarReader.cpp" />
     <ClCompile Include="main.cpp" />
@@ -161,6 +165,7 @@
     <ClInclude Include="decompressor.h" />
     <ClInclude Include="EntityBlock.h" />
     <ClInclude Include="fileutils.h" />
+    <ClInclude Include="fluid.h" />
     <ClInclude Include="global.h" />
     <ClInclude Include="GlobalCache.h" />
     <ClInclude Include="JarReader.h" />

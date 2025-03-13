@@ -4,12 +4,7 @@
 #include <vector>
 #include <sstream>
 #include <cstring>
-#include <nlohmann/json.hpp>  
-
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
+#include "include/json.hpp"
 namespace {
     std::vector<std::string> splitPath(const std::string& path) {
         std::vector<std::string> parts;
@@ -24,29 +19,45 @@ namespace {
     }
 }
 
+std::string preprocessJson(const std::string& jsonStr) {
+    std::string result;
+    bool inString = false;
+    for (char c : jsonStr) {
+        if (c == '\"') {
+            inString = !inString;
+            result.push_back(c);
+        }
+        else if (inString && (c == '\n' || c == '\r')) {
+            // 将换行符替换为 JSON 能够识别的转义字符
+            result.push_back('\\');
+            if (c == '\n') {
+                result.push_back('n');
+            }
+            else if (c == '\r') {
+                result.push_back('r');
+            }
+        }
+        else {
+            result.push_back(c);
+        }
+    }
+    return result;
+}
+
 std::string JarReader::convertWStrToStr(const std::wstring& wstr) {
-#ifdef _WIN32
     int buffer_size = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
     std::string str(buffer_size, 0);
     WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &str[0], buffer_size, nullptr, nullptr);
     return str;
-#else
-    return std::string(wstr.begin(), wstr.end());
-#endif
 }
 
 JarReader::JarReader(const std::wstring& jarFilePath)
     : jarFilePath(jarFilePath), zipFile(nullptr), modType(ModType::Unknown) {
-    // 在 Windows 上，需要将宽字符路径转换为 UTF-8 路径
     std::string utf8Path = convertWStrToStr(jarFilePath);
 
     // 打开 .jar 文件（本质上是 .zip 文件）
     int error = 0;
-#ifdef _WIN32
     zipFile = zip_open(utf8Path.c_str(), 0, &error);  // 使用 UTF-8 路径打开
-#else
-    zipFile = zip_open(jarFilePath.c_str(), 0, &error); // Linux/macOS 直接使用宽字符路径
-#endif
     if (!zipFile) {
         std::cerr << "Failed to open .jar file: " << utf8Path << std::endl;
         return;
@@ -426,6 +437,7 @@ std::string JarReader::getVanillaVersionId() {
     }
 
     std::string versionJsonContent = getFileContent("version.json");
+    versionJsonContent = preprocessJson(versionJsonContent);
     nlohmann::json json = nlohmann::json::parse(versionJsonContent);
     return json["id"].get<std::string>();
 }
@@ -436,6 +448,7 @@ std::string JarReader::getFabricModId() {
     }
 
     std::string modJsonContent = getFileContent("fabric.mod.json");
+    modJsonContent=preprocessJson(modJsonContent);
     nlohmann::json json = nlohmann::json::parse(modJsonContent);
     return json["id"].get<std::string>();
 }
@@ -446,6 +459,7 @@ std::string JarReader::getForgeModId() {
     }
 
     std::string modsTomlContent = getFileContent("META-INF/mods.toml");
+    modsTomlContent = preprocessJson(modsTomlContent);
     std::string modId = extractModId(modsTomlContent);
     return modId;
 }
@@ -456,6 +470,7 @@ std::string JarReader::getNeoForgeModId() {
     }
 
     std::string neoforgeTomlContent = getFileContent("META-INF/neoforge.mods.toml");
+    neoforgeTomlContent = preprocessJson(neoforgeTomlContent);
     std::string modId = extractModId(neoforgeTomlContent);
     return modId;
 }

@@ -120,6 +120,9 @@
     <ClCompile Include="EntityBlock.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="fluid.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="nbtutils.h">
@@ -177,6 +180,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="EntityBlock.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="fluid.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

@@ -6,7 +6,7 @@
 #include "blockstate.h"
 #include "model.h"
 #include <unordered_set>
-#include <nlohmann/json.hpp>
+#include "include/json.hpp"
 extern std::unordered_map<std::string, std::unordered_map<std::string, ModelData>> BlockModelCache;
 
 extern std::unordered_map<std::string,
@@ -20,15 +20,15 @@ extern std::unordered_map<std::string,
 class RegionModelExporter {
 public:
     // 导出指定区域内的所有方块模型
-    static void ExportRegionModels(int xStart, int xEnd, int yStart, int yEnd, int zStart, int zEnd,
-        const std::string& outputName = "region_model");
+    static void ExportRegionModels(const std::string& outputName = "region_model");
 
     static ModelData GenerateChunkModel(int chunkX, int sectionY, int chunkZ);
 
+    static ModelData GenerateLODChunkModel(int chunkX, int sectionY, int chunkZ, float lodSize);
+
 private:
     // 获取区域内所有唯一的方块ID（带状态）
-    static void LoadChunks(int xStart, int xEnd, int yStart,
-        int yEnd, int zStart, int zEnd);
+    static void LoadChunks();
     // 应用顶点偏移
     static void ApplyPositionOffset(ModelData& model, int x, int y, int z);
 };

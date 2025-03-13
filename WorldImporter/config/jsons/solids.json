@@ -1,6 +1,7 @@
 {
     "solid_blocks": [
 	"minecraft:podzol",
+	"minecraft:sandstone",
         "minecraft:flowering_azalea_leaves",
         "fantasyfurniture:bone/wither/wool",
         "minecraft:raw_iron_block",

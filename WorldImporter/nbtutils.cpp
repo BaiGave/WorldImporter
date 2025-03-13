@@ -785,42 +785,43 @@ long long reverseEndian(long long value) {
 
 
 std::vector<int> getBlockStatesData(const NbtTagPtr& blockStatesTag, const std::vector<std::string>& blockPalette) {
-    std::vector<int> blockStatesData;
+    // 子区块包含16x16x16=4096个方块
+    const int totalBlocks = 4096;
+    std::vector<int> blockStatesData(totalBlocks, 0);
 
-    // 获取 data 子标签
+    // 获取 data 标签
     auto dataTag = getChildByName(blockStatesTag, "data");
-
-    // 如果没有找到 data 标签或者标签类型不对，则直接返回空
     if (!dataTag || dataTag->type != TagType::LONG_ARRAY) {
-        return blockStatesData;  // 返回空的 blockStatesData
+        return blockStatesData;
     }
 
-    size_t numBlocks = dataTag->payload.size() / sizeof(long long);
-
-    // 计算编码位数
+    // 根据调色板中方块状态的数量决定每个状态占用的位数
     size_t numBlockStates = blockPalette.size();
     int bitsPerState = (numBlockStates <= 16) ? 4 : static_cast<int>(std::ceil(std::log2(numBlockStates)));
-    int statesPerLong = 64 / bitsPerState;  // 每个 long 中可以存储的方块状态数量
+    int statesPerLong = 64 / bitsPerState;  // 每个 long 能存储的状态数
 
-    for (size_t i = 0; i < numBlocks; ++i) {
-        long long encodedState;
-
-        // 使用正确的字节顺序读取 long 数据
-        std::memcpy(&encodedState, &dataTag->payload[i * sizeof(long long)], sizeof(long long));
-
-        // 反转字节顺序（如果需要）
-        encodedState = reverseEndian(encodedState);
-
-        // 解析每个 long 数据，根据 YZX 编码获取方块状态的索引
-        for (int j = 0; j < statesPerLong; ++j) {
-            // 根据位数提取对应的方块状态索引
-            int blockStateIndex = (encodedState >> (j * bitsPerState)) & ((1 << bitsPerState) - 1);
-            blockStatesData.push_back(blockStateIndex);
-        }
+    // 将 payload 数据转换为 long 数组，并根据需要反转字节顺序
+    size_t numLongs = dataTag->payload.size() / sizeof(long long);
+    std::vector<long long> data(numLongs);
+    for (size_t i = 0; i < numLongs; ++i) {
+        long long encoded;
+        std::memcpy(&encoded, &dataTag->payload[i * sizeof(long long)], sizeof(long long));
+        encoded = reverseEndian(encoded);  // 根据需要反转字节顺序
+        data[i] = encoded;
     }
 
+    // 按照子区块内的 YZX 编码顺序（索引i = 256*y + 16*z + x）读取4096个方块状态
+    for (int i = 0; i < totalBlocks; ++i) {
+        int longIndex = i / statesPerLong;
+        int bitOffset = (i % statesPerLong) * bitsPerState;
+        if (longIndex < data.size()) {
+            int paletteIndex = static_cast<int>((data[longIndex] >> bitOffset) & ((1LL << bitsPerState) - 1));
+            blockStatesData[i] = paletteIndex;
+        }
+    }
     return blockStatesData;
 }
+
 
 
 

@@ -6,7 +6,7 @@
 #include <vector>
 #include <string>
 #include <cmath>
-#include <nlohmann/json.hpp>  // 用于解析 JSON
+#include "include/json.hpp"
 #include <mutex>
 #include <future>
 #include "JarReader.h"
@@ -37,9 +37,70 @@ struct ModelData {
     std::vector<std::string> materialNames;
     std::vector<std::string> texturePaths;
 
-    std::vector<std::string> faceDirections; // 每个面的方向
-    std::vector<std::string> faceNames;           // 每个面的名称
+    short tintindex;
+
+    std::vector<std::string> faceDirections; // 每个面的方向 faceDirections 4个一组代表一个面
+    std::vector<std::string> faceNames;       // 每个面的名称
 };
+
+// 自定义顶点键：用整数表示，精度保留到小数点后6位
+struct VertexKey {
+    int x, y, z;
+    bool operator==(const VertexKey& other) const {
+        return x == other.x && y == other.y && z == other.z;
+    }
+};
+
+// 自定义 UV 键
+struct UVKey {
+    int u, v;
+    bool operator==(const UVKey& other) const {
+        return u == other.u && v == other.v;
+    }
+};
+// 自定义顶点键
+struct FaceKey {
+    std::array<int, 4> sortedVerts;
+    int materialIndex;
+    bool operator==(const FaceKey& other) const {
+        return sortedVerts == other.sortedVerts &&
+            materialIndex == other.materialIndex;
+    }
+};
+
+struct FaceKeyHasher {
+    size_t operator()(const FaceKey& k) const {
+        size_t seed = 0;
+        // 结合材质信息和每个顶点索引
+        seed ^= std::hash<int>()(k.materialIndex) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        for (int v : k.sortedVerts) {
+            seed ^= std::hash<int>()(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+    }
+};
+namespace std {
+    template <>
+    struct hash<VertexKey> {
+        std::size_t operator()(const VertexKey& key) const {
+            size_t res = 17;
+            res = res * 31 + hash<int>()(key.x);
+            res = res * 31 + hash<int>()(key.y);
+            res = res * 31 + hash<int>()(key.z);
+            return res;
+        }
+    };
+
+    template <>
+    struct hash<UVKey> {
+        std::size_t operator()(const UVKey& key) const {
+            size_t res = 17;
+            res = res * 31 + hash<int>()(key.u);
+            res = res * 31 + hash<int>()(key.v);
+            return res;
+        }
+    };
+}
 
 enum FaceType { UP, DOWN, NORTH, SOUTH, WEST, EAST, UNKNOWN };
 
@@ -59,6 +120,9 @@ ModelData ProcessModelJson(const std::string& namespaceName,
 
 // 模型合并
 ModelData MergeModelData(const ModelData& data1, const ModelData& data2);
+
+ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2);
+
 void MergeModelsDirectly(ModelData& data1, const ModelData& data2);
 
 

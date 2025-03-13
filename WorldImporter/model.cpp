@@ -499,6 +499,7 @@ nlohmann::json GetModelJson(const std::string& namespaceName, const std::string&
     for (size_t i = 0; i < GlobalCache::jarOrder.size(); ++i) {
         const std::string& modId = GlobalCache::jarOrder[i];
         std::string cacheKey = modId + ":" + namespaceName + ":" + modelPath;
+        
         auto it = GlobalCache::models.find(cacheKey);
         if (it != GlobalCache::models.end()) {
             return it->second;
@@ -630,7 +631,6 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                 float oy = origin[1].get<float>() / 16.0f;
                 float oz = origin[2].get<float>() / 16.0f;
                 float angle_rad = angle_deg * (M_PI / 180.0f); // 转换为弧度
-
                 // 对每个面的顶点应用旋转
                 for (auto& faceEntry : elementVertices) {
                     auto& vertices = faceEntry.second;
@@ -759,6 +759,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                     return true;
                 };
 
+            // 用于记录需要覆盖 uv 的信息，key 为保留面的名称
             std::vector<std::string> facesToRemove;
             for (const auto& faceEntry : elementVertices) {
                 const std::string& faceName = faceEntry.first;
@@ -768,6 +769,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                 // 反向面存在且重叠时才移除
                 if (oppositeIt != elementVertices.end()) {
                     if (areFacesCoinciding(faceEntry.second, oppositeIt->second)) {
+                        // 根据 faceName 判断移除哪一面
                         if (faceName == "south" || faceName == "west" || faceName == "down") {
                             facesToRemove.push_back(faceName);
                         }
@@ -786,14 +788,13 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                 elementVertices.erase(face);
             }
 
-
-
             // 遍历每个面的数据，判断面是否存在，如果存在则处理
             for (auto& face : faces.items()) {
                 std::string faceName = face.key();
-                if (elementVertices.find(faceName) != elementVertices.end()) {
-                    auto faceVertices = elementVertices[faceName];
 
+                if (elementVertices.find(faceName) != elementVertices.end()) {
+
+                    auto faceVertices = elementVertices[faceName];
                     // ======== 面重叠处理逻辑 ========
                     if (faceVertices.size() >= 3) {
                         // 计算法线方向
@@ -801,7 +802,6 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                         const auto& v1 = faceVertices[1];
                         const auto& v2 = faceVertices[2];
 
-                        // 计算向量差
                         float vec1x = v1[0] - v0[0];
                         float vec1y = v1[1] - v0[1];
                         float vec1z = v1[2] - v0[2];
@@ -809,12 +809,10 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                         float vec2y = v2[1] - v0[1];
                         float vec2z = v2[2] - v0[2];
 
-                        // 计算法线向量
                         float crossX = vec1y * vec2z - vec1z * vec2y;
                         float crossY = vec1z * vec2x - vec1x * vec2z;
                         float crossZ = vec1x * vec2y - vec1y * vec2x;
 
-                        // 归一化处理
                         float length = std::sqrt(crossX * crossX + crossY * crossY + crossZ * crossZ);
                         if (length > 0) {
                             crossX /= length;
@@ -822,12 +820,10 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                             crossZ /= length;
                         }
 
-                        // 四舍五入法线向量到小数点后两位
                         crossX = std::round(crossX * 100.0f) / 100.0f;
                         crossY = std::round(crossY * 100.0f) / 100.0f;
                         crossZ = std::round(crossZ * 100.0f) / 100.0f;
 
-                        // 计算面中心点
                         float centerX = 0.0f, centerY = 0.0f, centerZ = 0.0f;
                         for (const auto& v : faceVertices) {
                             centerX += v[0];
@@ -838,12 +834,10 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                         centerY /= faceVertices.size();
                         centerZ /= faceVertices.size();
 
-                        // 四舍五入中心点到小数点后四位
                         centerX = std::round(centerX * 10000.0f) / 10000.0f;
                         centerY = std::round(centerY * 10000.0f) / 10000.0f;
                         centerZ = std::round(centerZ * 10000.0f) / 10000.0f;
 
-                        // 生成唯一标识键
                         std::stringstream keyStream;
                         keyStream << std::fixed << std::setprecision(2)
                             << crossX << "," << crossY << "," << crossZ << "_"
@@ -851,10 +845,8 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                             << centerX << "," << centerY << "," << centerZ;
                         std::string key = keyStream.str();
 
-                        // 根据标志位处理面重叠
                         bool skipFace = false;
-                        if (false) {
-                            // 启用重叠处理：计算偏移量并调整顶点
+                        if (config.allowDoubleFace) {
                             int count = ++faceCountMap[key];
                             float offset = (count - 1) * 0.001f;
                             for (auto& v : faceVertices) {
@@ -864,18 +856,15 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                             }
                         }
                         else {
-                            // 禁用重叠处理：仅保留第一个面
                             if (faceCountMap[key]++ >= 1) {
-                                skipFace = true; // 标记跳过该面
+                                skipFace = true;
                             }
                         }
 
-                        // 如果需要跳过则终止当前面处理
                         if (skipFace) {
-                            continue; // 确保在循环中使用continue跳过后续处理
+                            continue;
                         }
 
-                        // 更新当前面的顶点数据
                         elementVertices[faceName] = faceVertices;
                     }
 
@@ -888,64 +877,57 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                             std::to_string(vertex[1]) + "," +
                             std::to_string(vertex[2]);
 
-                        // 检查顶点缓存
                         if (vertexCache.find(vertexKey) == vertexCache.end()) {
-                            // 插入新顶点并记录索引
-                            vertexCache[vertexKey] = data.vertices.size() / 3; // 新索引计算方式
+                            vertexCache[vertexKey] = data.vertices.size() / 3;
                             data.vertices.insert(data.vertices.end(),
                                 { vertex[0], vertex[1], vertex[2] });
                         }
                         vertexIndices[i] = vertexCache[vertexKey];
                     }
 
-                    // 插入面数据（四个顶点索引）
                     data.faces.insert(data.faces.end(),
                         { vertexIndices[0], vertexIndices[1],
                             vertexIndices[2], vertexIndices[3] });
 
-                    // 初始化materialIndices（假设faceId是连续递增的）
-                    data.materialIndices.resize(faceId + 1, -1); // -1表示未分配材质
-                    // 在处理每个面的材质时
+                    data.materialIndices.resize(faceId + 1, -1);
                     if (face.value().contains("texture")) {
                         std::string texture = face.value()["texture"];
                         if (texture.front() == '#') texture.erase(0, 1);
 
-                        // 通过映射获取材质索引
                         auto it = textureKeyToMaterialIndex.find(texture);
                         if (it != textureKeyToMaterialIndex.end()) {
                             data.materialIndices[faceId] = it->second;
                         }
                         std::vector<float> uvRegion;
-
                         if (faceName == "down")
                         {
-                            uvRegion = { x1 * 16, (1 - z2) * 16, x2 * 16, (1 - z1) * 16 }; // 默认 UV 区域
+                            uvRegion = { x1 * 16, (1 - z2) * 16, x2 * 16, (1 - z1) * 16 };
                         }
                         else if (faceName == "up")
                         {
-                            uvRegion = { x1 * 16, z1 * 16, x2 * 16, z2 * 16 }; // 默认 UV 区域
+                            uvRegion = { x1 * 16, z1 * 16, x2 * 16, z2 * 16 };
                         }
                         else if (faceName == "north")
                         {
-                            uvRegion = { (1 - x2) * 16, (1 - y2) * 16, (1 - x1) * 16, (1 - y1) * 16 }; // 默认 UV 区域
+                            uvRegion = { (1 - x2) * 16, (1 - y2) * 16, (1 - x1) * 16, (1 - y1) * 16 };
                         }
                         else if (faceName == "south")
                         {
-                            uvRegion = { x1 * 16, (1 - y2) * 16, x2 * 16, (1 - y1) * 16 }; // 默认 UV 区域
+                            uvRegion = { x1 * 16, (1 - y2) * 16, x2 * 16, (1 - y1) * 16 };
                         }
                         else if (faceName == "west")
                         {
-                            uvRegion = { z1 * 16, (1 - y2) * 16, z2 * 16, (1 - y1) * 16 }; // 默认 UV 区域
+                            uvRegion = { z1 * 16, (1 - y2) * 16, z2 * 16, (1 - y1) * 16 };
                         }
                         else if (faceName == "east")
                         {
-                            uvRegion = { (1 - z2) * 16, (1 - y2) * 16, (1 - z1) * 16, (1 - y1) * 16 }; // 默认 UV 区域
+                            uvRegion = { (1 - z2) * 16, (1 - y2) * 16, (1 - z1) * 16, (1 - y1) * 16 };
                         }
-                        
 
-                        std::array<int, 4> uvIndices;
+                        // 如果 JSON 中存在 uv 则使用其数据
                         if (face.value().contains("uv")) {
                             auto uv = face.value()["uv"];
+                           
                             uvRegion = {
                                 uv[0].get<float>(),
                                 uv[1].get<float>(),
@@ -953,13 +935,9 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                                 uv[3].get<float>()
                             };
                         }
-                        
-                        // 获取旋转角度，默认为0
-                        int rotation = face.value().value("rotation", 0);
-
-                        
-                        // 计算四个 UV 坐标点
-
+                  
+                        std::array<int, 4> uvIndices;
+                        // 计算四个 UV 坐标点（注意这里直接使用 uvRegion 进行转换）
                         std::vector<std::vector<float>> uvCoords = {
                             {uvRegion[2] / 16.0f, 1 - uvRegion[3] / 16.0f},
                             {uvRegion[2] / 16.0f, 1 - uvRegion[1] / 16.0f},
@@ -967,8 +945,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                             {uvRegion[0] / 16.0f, 1 - uvRegion[3] / 16.0f}
                         };
 
-
-                        // 计算旋转步数，确保rotation值为0, 90, 180, 270中的一个
+                        int rotation = face.value().value("rotation", 0);
                         int steps = ((rotation % 360) + 360) % 360 / 90;
 
                         if (steps != 0) {
@@ -978,9 +955,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                             }
                             uvCoords = rotatedUV;
                         }
-                        
 
-                        // 插入UV数据并记录索引
                         for (int i = 0; i < 4; ++i) {
                             const auto& uv = uvCoords[i];
                             std::string uvKey =
@@ -995,36 +970,37 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                             uvIndices[i] = uvCache[uvKey];
                         }
 
-                        // 插入UV面数据
                         data.uvFaces.insert(data.uvFaces.end(),
                             { uvIndices[0], uvIndices[1],
                                 uvIndices[2], uvIndices[3] });
                     }
 
-                    // 处理faceDirections
                     std::string faceDirection;
-
                     if (face.value().contains("cullface")) {
                         faceDirection = face.value()["cullface"].get<std::string>();
                     }
                     else {
                         faceDirection = "DO_NOT_CULL";
                     }
-
-                    // 将面的方向信息添加到faceDirections
+                    short tintindex=-1;
+                    if (face.value().contains("tintindex")) {
+                        tintindex = face.value()["tintindex"].get<int>();
+                    }
+                    data.tintindex = tintindex;
+                    
                     for (int i = 0; i < 4; ++i) {
                         data.faceDirections.push_back(faceDirection);
                     }
                     data.faceNames.push_back(faceName);
-                    // 增加面ID
                     faceId++;
                 }
 
             }
         }
     }
-    
+
 }
+
 
 // 处理模型数据的方法
 ModelData ProcessModelData(const nlohmann::json& modelJson, const std::string& blockName) {
@@ -1105,193 +1081,460 @@ ModelData ProcessModelJson(const std::string& namespaceName, const std::string& 
 ModelData MergeModelData(const ModelData& data1, const ModelData& data2) {
     ModelData mergedData;
 
-    // 使用哈希表进行顶点去重（Key结构：x,y,z）
-    std::unordered_map<std::string, int> vertexMap;
-    std::vector<float> uniqueVertices;
-
-    // 使用哈希表进行UV去重（Key结构：u,v）
-    std::unordered_map<std::string, int> uvMap;
-    std::vector<float> uniqueUVs;
-
-    // 索引映射表（旧索引 -> 新索引）
-    std::vector<int> vertexIndexMap;
-    std::vector<int> uvIndexMap;
-
     //------------------------ 阶段1：顶点处理 ------------------------
+    std::unordered_map<VertexKey, int> vertexMap;
+    // 预估合并后顶点数量，避免重复 rehash
+    vertexMap.reserve((data1.vertices.size() + data2.vertices.size()) / 3);
+    std::vector<float> uniqueVertices;
+    uniqueVertices.reserve(data1.vertices.size() + data2.vertices.size());
+    std::vector<int> vertexIndexMap;
+    vertexIndexMap.reserve((data1.vertices.size() + data2.vertices.size()) / 3);
+
     auto processVertices = [&](const std::vector<float>& vertices) {
-        const size_t count = vertices.size() / 3;
-        vertexIndexMap.reserve(vertexIndexMap.size() + count);
-
+        size_t count = vertices.size() / 3;
         for (size_t i = 0; i < count; ++i) {
-            // 生成唯一键（精度到小数点后6位）
-            char buffer[64];
-            snprintf(buffer, sizeof(buffer), "%.6f,%.6f,%.6f",
-                vertices[i * 3], vertices[i * 3 + 1], vertices[i * 3 + 2]);
-
-            std::string key(buffer);
+            float x = vertices[i * 3];
+            float y = vertices[i * 3 + 1];
+            float z = vertices[i * 3 + 2];
+            // 转为整数表示（保留6位小数）
+            int rx = static_cast<int>(std::round(x * 1000000.0f));
+            int ry = static_cast<int>(std::round(y * 1000000.0f));
+            int rz = static_cast<int>(std::round(z * 1000000.0f));
+            VertexKey key{ rx, ry, rz };
 
             auto it = vertexMap.find(key);
             if (it == vertexMap.end()) {
-                // 新顶点
                 int newIndex = uniqueVertices.size() / 3;
-                uniqueVertices.insert(uniqueVertices.end(),
-                    &vertices[i * 3], &vertices[i * 3 + 3]);
+                uniqueVertices.push_back(x);
+                uniqueVertices.push_back(y);
+                uniqueVertices.push_back(z);
                 vertexMap[key] = newIndex;
                 vertexIndexMap.push_back(newIndex);
             }
             else {
-                // 已存在顶点
                 vertexIndexMap.push_back(it->second);
             }
         }
         };
 
-    // 处理data1顶点
     processVertices(data1.vertices);
-    // 处理data2顶点（偏移量保持不变）
     processVertices(data2.vertices);
     mergedData.vertices = std::move(uniqueVertices);
 
     //------------------------ 阶段2：UV处理 ------------------------
+    std::unordered_map<UVKey, int> uvMap;
+    uvMap.reserve((data1.uvCoordinates.size() + data2.uvCoordinates.size()) / 2);
+    std::vector<float> uniqueUVs;
+    uniqueUVs.reserve(data1.uvCoordinates.size() + data2.uvCoordinates.size());
+    std::vector<int> uvIndexMap;
+    uvIndexMap.reserve((data1.uvCoordinates.size() + data2.uvCoordinates.size()) / 2);
+
     auto processUVs = [&](const std::vector<float>& uvs) {
-        const size_t count = uvs.size() / 2;
-        uvIndexMap.reserve(uvIndexMap.size() + count);
-
+        size_t count = uvs.size() / 2;
         for (size_t i = 0; i < count; ++i) {
-            // 生成唯一键（精度到小数点后6位）
-            char buffer[32];
-            snprintf(buffer, sizeof(buffer), "%.6f,%.6f",
-                uvs[i * 2], uvs[i * 2 + 1]);
-
-            std::string key(buffer);
+            float u = uvs[i * 2];
+            float v = uvs[i * 2 + 1];
+            int ru = static_cast<int>(std::round(u * 1000000.0f));
+            int rv = static_cast<int>(std::round(v * 1000000.0f));
+            UVKey key{ ru, rv };
 
             auto it = uvMap.find(key);
             if (it == uvMap.end()) {
-                // 新UV
                 int newIndex = uniqueUVs.size() / 2;
-                uniqueUVs.push_back(uvs[i * 2]);
-                uniqueUVs.push_back(uvs[i * 2 + 1]);
+                uniqueUVs.push_back(u);
+                uniqueUVs.push_back(v);
                 uvMap[key] = newIndex;
                 uvIndexMap.push_back(newIndex);
             }
             else {
-                // 已存在UV
                 uvIndexMap.push_back(it->second);
             }
         }
         };
 
-    // 处理data1 UV
     processUVs(data1.uvCoordinates);
-    // 处理data2 UV
     processUVs(data2.uvCoordinates);
     mergedData.uvCoordinates = std::move(uniqueUVs);
 
     //------------------------ 阶段3：面数据处理 ------------------------
-    // 合并面数据（使用映射后的索引）
+    // 面和 UV 面数据合并时直接使用映射后的索引
     auto remapFaces = [&](const std::vector<int>& faces, bool isData1) {
-        const size_t faceCount = faces.size() / 4;
-        const int indexOffset = isData1 ? 0 : data1.vertices.size() / 3;
-
+        size_t faceCount = faces.size() / 4;
+        // data2 的顶点需要加上 data1 原始顶点数偏移
+        int indexOffset = isData1 ? 0 : data1.vertices.size() / 3;
         for (size_t i = 0; i < faceCount; ++i) {
-            std::array<int, 4> remapped;
             for (int j = 0; j < 4; ++j) {
-                const int originalIndex = faces[i * 4 + j] + (isData1 ? 0 : indexOffset);
-                remapped[j] = vertexIndexMap[originalIndex];
+                int originalIndex = faces[i * 4 + j] + (isData1 ? 0 : indexOffset);
+                mergedData.faces.push_back(vertexIndexMap[originalIndex]);
             }
-            mergedData.faces.insert(mergedData.faces.end(), remapped.begin(), remapped.end());
         }
         };
 
     remapFaces(data1.faces, true);
     remapFaces(data2.faces, false);
 
-    // 合并UV面数据（使用映射后的索引）
     auto remapUVFaces = [&](const std::vector<int>& uvFaces, bool isData1) {
-        const size_t faceCount = uvFaces.size() / 4;
-        const int indexOffset = isData1 ? 0 : data1.uvCoordinates.size() / 2;
-
+        size_t faceCount = uvFaces.size() / 4;
+        int indexOffset = isData1 ? 0 : data1.uvCoordinates.size() / 2;
         for (size_t i = 0; i < faceCount; ++i) {
-            std::array<int, 4> remapped;
             for (int j = 0; j < 4; ++j) {
-                const int originalIndex = uvFaces[i * 4 + j] + (isData1 ? 0 : indexOffset);
-                remapped[j] = uvIndexMap[originalIndex];
+                int originalIndex = uvFaces[i * 4 + j] + (isData1 ? 0 : indexOffset);
+                mergedData.uvFaces.push_back(uvIndexMap[originalIndex]);
             }
-            mergedData.uvFaces.insert(mergedData.uvFaces.end(), remapped.begin(), remapped.end());
         }
         };
 
     remapUVFaces(data1.uvFaces, true);
     remapUVFaces(data2.uvFaces, false);
 
-    // 阶段4：合并材质数据
-    // 创建材质映射表（data2旧索引 -> 新索引）
-    std::vector<int> materialIndexMap(data2.materialNames.size(), -1);
-
-    // 初始化合并后的材质列表
+    //------------------------ 阶段4：材质数据合并 ------------------------
+    // 使用哈希映射快速判断 data1 中已存在的材质
+    std::unordered_map<std::string, int> materialMap;
+    materialMap.reserve(data1.materialNames.size());
     mergedData.materialNames = data1.materialNames;
     mergedData.texturePaths = data1.texturePaths;
 
-    // 合并材质并建立映射
-    for (size_t i = 0; i < data2.materialNames.size(); ++i) {
-        auto it = std::find(mergedData.materialNames.begin(),
-            mergedData.materialNames.end(),
-            data2.materialNames[i]);
+    for (size_t i = 0; i < data1.materialNames.size(); i++) {
+        materialMap[data1.materialNames[i]] = static_cast<int>(i);
+    }
 
-        if (it != mergedData.materialNames.end()) {
-            // 材质已存在，记录映射关系
-            materialIndexMap[i] = std::distance(mergedData.materialNames.begin(), it);
+    std::vector<int> materialIndexMap(data2.materialNames.size(), -1);
+    for (size_t i = 0; i < data2.materialNames.size(); ++i) {
+        auto it = materialMap.find(data2.materialNames[i]);
+        if (it != materialMap.end()) {
+            materialIndexMap[i] = it->second;
         }
         else {
-            // 添加新材质
-            materialIndexMap[i] = mergedData.materialNames.size();
+            int newIndex = mergedData.materialNames.size();
+            materialMap[data2.materialNames[i]] = newIndex;
+            materialIndexMap[i] = newIndex;
             mergedData.materialNames.push_back(data2.materialNames[i]);
             mergedData.texturePaths.push_back(data2.texturePaths[i]);
         }
     }
 
-    // 合并材质索引
     mergedData.materialIndices = data1.materialIndices;
+    mergedData.materialIndices.reserve(data1.materialIndices.size() + data2.materialIndices.size());
     for (int original_idx : data2.materialIndices) {
-        if (original_idx != -1) {
-            mergedData.materialIndices.push_back(materialIndexMap[original_idx]);
-        }
-        else {
-            mergedData.materialIndices.push_back(-1);
-        }
+        mergedData.materialIndices.push_back(
+            (original_idx != -1) ? materialIndexMap[original_idx] : -1
+        );
     }
 
-    // 直接合并 faceDirections（无需去重）
-    mergedData.faceDirections.reserve(
-        data1.faceDirections.size() + data2.faceDirections.size()
-    );
-    mergedData.faceDirections.insert(
-        mergedData.faceDirections.end(),
-        data1.faceDirections.begin(),
-        data1.faceDirections.end()
-    );
-    mergedData.faceDirections.insert(
-        mergedData.faceDirections.end(),
-        data2.faceDirections.begin(),
-        data2.faceDirections.end()
-    );
+    //------------------------ 阶段5：合并其他数据 ------------------------
+    mergedData.faceDirections.reserve(data1.faceDirections.size() + data2.faceDirections.size());
+    mergedData.faceDirections.insert(mergedData.faceDirections.end(),
+        data1.faceDirections.begin(), data1.faceDirections.end());
+    mergedData.faceDirections.insert(mergedData.faceDirections.end(),
+        data2.faceDirections.begin(), data2.faceDirections.end());
 
-    mergedData.faceNames.reserve(
-        data1.faceNames.size() + data2.faceNames.size()
-    );
-    mergedData.faceNames.insert(
-        mergedData.faceNames.end(),
-        data1.faceNames.begin(),
-        data1.faceNames.end()
-    );
-    mergedData.faceNames.insert(
-        mergedData.faceNames.end(),
-        data2.faceNames.begin(),
-        data2.faceNames.end()
-    );
+    mergedData.faceNames.reserve(data1.faceNames.size() + data2.faceNames.size());
+    mergedData.faceNames.insert(mergedData.faceNames.end(),
+        data1.faceNames.begin(), data1.faceNames.end());
+    mergedData.faceNames.insert(mergedData.faceNames.end(),
+        data2.faceNames.begin(), data2.faceNames.end());
+
+    if (data1.tintindex != -1)
+    {
+        mergedData.tintindex = data1.tintindex;
+        return mergedData;
+    }
+    else if (data2.tintindex != -1)
+    {
+        mergedData.tintindex = data2.tintindex;
+        return mergedData;
+    }else
+    {
+        mergedData.tintindex = -1;
+    }
+    
     return mergedData;
 }
 
+// 以下方法用于合并两个模型数据，针对流体/水方块模型，对重复面做严格剔除：
+// 如果 mesh2 的面被包含在 mesh1 的某个面内，则跳过该面及其对应数据
+//
+ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2) {
+    ModelData mergedData;
+
+    //------------------------ 阶段1：顶点处理 ------------------------
+    std::unordered_map<VertexKey, int> vertexMap;
+    vertexMap.reserve((data1.vertices.size() + data2.vertices.size()) / 3);
+    std::vector<float> uniqueVertices;
+    uniqueVertices.reserve(data1.vertices.size() + data2.vertices.size());
+    std::vector<int> vertexIndexMap;
+    vertexIndexMap.reserve((data1.vertices.size() + data2.vertices.size()) / 3);
+
+    auto processVertices = [&](const std::vector<float>& vertices) {
+        size_t count = vertices.size() / 3;
+        for (size_t i = 0; i < count; ++i) {
+            float x = vertices[i * 3];
+            float y = vertices[i * 3 + 1];
+            float z = vertices[i * 3 + 2];
+            // 转为整数表示（保留6位小数）
+            int rx = static_cast<int>(std::round(x * 1000000.0f));
+            int ry = static_cast<int>(std::round(y * 1000000.0f));
+            int rz = static_cast<int>(std::round(z * 1000000.0f));
+            VertexKey key{ rx, ry, rz };
+
+            auto it = vertexMap.find(key);
+            if (it == vertexMap.end()) {
+                int newIndex = uniqueVertices.size() / 3;
+                uniqueVertices.push_back(x);
+                uniqueVertices.push_back(y);
+                uniqueVertices.push_back(z);
+                vertexMap[key] = newIndex;
+                vertexIndexMap.push_back(newIndex);
+            }
+            else {
+                vertexIndexMap.push_back(it->second);
+            }
+        }
+        };
+
+    processVertices(data1.vertices);
+    processVertices(data2.vertices);
+    mergedData.vertices = std::move(uniqueVertices);
+
+    //------------------------ 阶段2：UV处理 ------------------------
+    std::unordered_map<UVKey, int> uvMap;
+    uvMap.reserve((data1.uvCoordinates.size() + data2.uvCoordinates.size()) / 2);
+    std::vector<float> uniqueUVs;
+    uniqueUVs.reserve(data1.uvCoordinates.size() + data2.uvCoordinates.size());
+    std::vector<int> uvIndexMap;
+    uvIndexMap.reserve((data1.uvCoordinates.size() + data2.uvCoordinates.size()) / 2);
+
+    auto processUVs = [&](const std::vector<float>& uvs) {
+        size_t count = uvs.size() / 2;
+        for (size_t i = 0; i < count; ++i) {
+            float u = uvs[i * 2];
+            float v = uvs[i * 2 + 1];
+            int ru = static_cast<int>(std::round(u * 1000000.0f));
+            int rv = static_cast<int>(std::round(v * 1000000.0f));
+            UVKey key{ ru, rv };
+
+            auto it = uvMap.find(key);
+            if (it == uvMap.end()) {
+                int newIndex = uniqueUVs.size() / 2;
+                uniqueUVs.push_back(u);
+                uniqueUVs.push_back(v);
+                uvMap[key] = newIndex;
+                uvIndexMap.push_back(newIndex);
+            }
+            else {
+                uvIndexMap.push_back(it->second);
+            }
+        }
+        };
+
+    processUVs(data1.uvCoordinates);
+    processUVs(data2.uvCoordinates);
+    mergedData.uvCoordinates = std::move(uniqueUVs);
+
+    //------------------------ 阶段3：材质数据处理 ------------------------
+    std::unordered_map<std::string, int> materialMap;
+    materialMap.reserve(data1.materialNames.size());
+    mergedData.materialNames = data1.materialNames;
+    mergedData.texturePaths = data1.texturePaths;
+    for (size_t i = 0; i < data1.materialNames.size(); i++) {
+        materialMap[data1.materialNames[i]] = static_cast<int>(i);
+    }
+    std::vector<int> materialIndexMap; // 用于记录 data2 材质索引映射
+    materialIndexMap.resize(data2.materialNames.size(), -1);
+    for (size_t i = 0; i < data2.materialNames.size(); i++) {
+        auto it = materialMap.find(data2.materialNames[i]);
+        if (it != materialMap.end()) {
+            materialIndexMap[i] = it->second;
+        }
+        else {
+            int newIndex = mergedData.materialNames.size();
+            materialMap[data2.materialNames[i]] = newIndex;
+            materialIndexMap[i] = newIndex;
+            mergedData.materialNames.push_back(data2.materialNames[i]);
+            mergedData.texturePaths.push_back(data2.texturePaths[i]);
+        }
+    }
+    // 先拷贝 data1 的面对应的材质索引、面朝向和面名称
+    mergedData.materialIndices = data1.materialIndices;
+    mergedData.faceDirections = data1.faceDirections;
+    mergedData.faceNames = data1.faceNames;
+
+    //------------------------ 阶段4：网格体1面数据处理 ------------------------
+    // 直接将 data1 的面（及 UV 面）数据进行重映射后加入 mergedData
+    auto remapFaces = [&](const std::vector<int>& faces, bool isData1) {
+        size_t faceCount = faces.size() / 4;
+        int indexOffset = isData1 ? 0 : data1.vertices.size() / 3;
+        for (size_t i = 0; i < faceCount; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                int originalIndex = faces[i * 4 + j] + indexOffset;
+                mergedData.faces.push_back(vertexIndexMap[originalIndex]);
+            }
+        }
+        };
+
+    auto remapUVFaces = [&](const std::vector<int>& uvFaces, bool isData1) {
+        size_t faceCount = uvFaces.size() / 4;
+        int indexOffset = isData1 ? 0 : data1.uvCoordinates.size() / 2;
+        for (size_t i = 0; i < faceCount; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                int originalIndex = uvFaces[i * 4 + j] + indexOffset;
+                mergedData.uvFaces.push_back(uvIndexMap[originalIndex]);
+            }
+        }
+        };
+
+    // mesh1 的面数据直接加入
+    remapFaces(data1.faces, true);
+    remapUVFaces(data1.uvFaces, true);
+    int mesh1FaceCount = data1.faces.size() / 4; // mesh1 面数量
+
+    //------------------------ 阶段5：辅助几何检测函数 ------------------------
+
+    // 计算面（四边形）的法向，使用前三个顶点
+    auto computeNormal = [&](const std::vector<float>& vertices, const std::vector<int>& faceIndices) -> std::array<float, 3> {
+        float x0 = vertices[faceIndices[0] * 3];
+        float y0 = vertices[faceIndices[0] * 3 + 1];
+        float z0 = vertices[faceIndices[0] * 3 + 2];
+        float x1 = vertices[faceIndices[1] * 3];
+        float y1 = vertices[faceIndices[1] * 3 + 1];
+        float z1 = vertices[faceIndices[1] * 3 + 2];
+        float x2 = vertices[faceIndices[2] * 3];
+        float y2 = vertices[faceIndices[2] * 3 + 1];
+        float z2 = vertices[faceIndices[2] * 3 + 2];
+        float ux = x1 - x0, uy = y1 - y0, uz = z1 - z0;
+        float vx = x2 - x0, vy = y2 - y0, vz = z2 - z0;
+        std::array<float, 3> normal = { uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx };
+        float len = std::sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
+        if (len > 1e-6f) {
+            normal[0] /= len; normal[1] /= len; normal[2] /= len;
+        }
+        return normal;
+        };
+
+    // 根据法向判断投影时丢弃哪个坐标轴：返回 0 表示丢弃 x，1 表示丢弃 y，2 表示丢弃 z
+    auto determineDropAxis = [&](const std::array<float, 3>& normal) -> int {
+        float absX = std::fabs(normal[0]);
+        float absY = std::fabs(normal[1]);
+        float absZ = std::fabs(normal[2]);
+        if (absX >= absY && absX >= absZ)
+            return 0;
+        else if (absY >= absX && absY >= absZ)
+            return 1;
+        else
+            return 2;
+        };
+
+    // 将某个顶点投影到二维平面，dropAxis 指定丢弃的坐标
+    auto projectPoint = [&](const std::vector<float>& vertices, int vertexIndex, int dropAxis) -> std::pair<float, float> {
+        float x = vertices[vertexIndex * 3];
+        float y = vertices[vertexIndex * 3 + 1];
+        float z = vertices[vertexIndex * 3 + 2];
+        if (dropAxis == 0) return { y, z };
+        else if (dropAxis == 1) return { x, z };
+        else return { x, y };
+        };
+
+    // 判断二维点 p 是否在三角形 (a, b, c) 内（采用重心坐标法）
+    auto pointInTriangle = [&](const std::pair<float, float>& p,
+        const std::pair<float, float>& a,
+        const std::pair<float, float>& b,
+        const std::pair<float, float>& c) -> bool {
+            float denom = (b.second - c.second) * (a.first - c.first) + (c.first - b.first) * (a.second - c.second);
+            if (std::fabs(denom) < 1e-6f) return false;
+            float alpha = ((b.second - c.second) * (p.first - c.first) + (c.first - b.first) * (p.second - c.second)) / denom;
+            float beta = ((c.second - a.second) * (p.first - c.first) + (a.first - c.first) * (p.second - c.second)) / denom;
+            float gamma = 1.0f - alpha - beta;
+            return (alpha >= 0.0f && beta >= 0.0f && gamma >= 0.0f);
+        };
+
+    // 判断二维点 p 是否在四边形内（将四边形分解为两个三角形）
+    auto pointInQuad = [&](const std::vector<int>& quadIndices, const std::vector<float>& vertices, const std::pair<float, float>& p, int dropAxis) -> bool {
+        std::vector<std::pair<float, float>> proj;
+        for (int idx : quadIndices) {
+            proj.push_back(projectPoint(vertices, idx, dropAxis));
+        }
+        if (pointInTriangle(p, proj[0], proj[1], proj[2])) return true;
+        if (pointInTriangle(p, proj[0], proj[2], proj[3])) return true;
+        return false;
+        };
+
+    // 判断 mesh2 的某个面（给定其4个顶点索引，均为 mergedData.vertices 的下标）是否被包含在 mesh1 的任一面内
+    auto isFaceContained = [&](const std::vector<int>& faceIndices2) -> bool {
+        // 遍历所有 mesh1 的面（已在 mergedData.faces 中，前 mesh1FaceCount 个面）
+        for (size_t i = 0; i < static_cast<size_t>(mesh1FaceCount); i++) {
+            std::vector<int> faceIndices1(4);
+            for (int j = 0; j < 4; j++) {
+                faceIndices1[j] = mergedData.faces[i * 4 + j];
+            }
+            auto normal = computeNormal(mergedData.vertices, faceIndices1);
+            int dropAxis = determineDropAxis(normal);
+            bool allInside = true;
+            for (int idx : faceIndices2) {
+                auto p = projectPoint(mergedData.vertices, idx, dropAxis);
+                if (!pointInQuad(faceIndices1, mergedData.vertices, p, dropAxis)) {
+                    allInside = false;
+                    break;
+                }
+            }
+            if (allInside)
+                return true;
+        }
+        return false;
+        };
+
+    //------------------------ 阶段6：网格体2面数据处理（严格检查重复面） ------------------------
+    int data2FaceCount = data2.faces.size() / 4;
+    int data2VertexOffset = data1.vertices.size() / 3;
+    int data2UVOffset = data1.uvCoordinates.size() / 2;
+    for (size_t i = 0; i < static_cast<size_t>(data2FaceCount); i++) {
+        // 重映射 mesh2 面的顶点索引
+        std::vector<int> faceIndices(4);
+        for (int j = 0; j < 4; j++) {
+            int originalIndex = data2.faces[i * 4 + j] + data2VertexOffset;
+            faceIndices[j] = vertexIndexMap[originalIndex];
+        }
+
+        // 获取 data2 对应面的 faceDirections（假设每个面有4个方向信息，索引为 i*4 ~ i*4+3）
+        bool doNotCull = false;
+        if (data2.faceDirections.size() >= (i + 1) * 4) {
+            for (int k = 0; k < 4; k++) {
+                if (data2.faceDirections[i * 4 + k] == "DO_NOT_CULL") {
+                    doNotCull = true;
+                    break;
+                }
+            }
+        }
+
+        // 如果不标记 DO_NOT_CULL 且该面完全被包含在 mesh1 的某个面内，则跳过该面
+        if (!doNotCull && isFaceContained(faceIndices))
+            continue;
+
+        // 添加该面到合并结果
+        mergedData.faces.insert(mergedData.faces.end(), faceIndices.begin(), faceIndices.end());
+
+        // 对应的UV面处理
+        std::vector<int> uvFaceIndices(4);
+        for (int j = 0; j < 4; j++) {
+            int originalUVIndex = data2.uvFaces[i * 4 + j] + data2UVOffset;
+            uvFaceIndices[j] = uvIndexMap[originalUVIndex];
+        }
+        mergedData.uvFaces.insert(mergedData.uvFaces.end(), uvFaceIndices.begin(), uvFaceIndices.end());
+
+        // 材质索引（通过映射处理）
+        int originalMatIndex = data2.materialIndices[i];
+        mergedData.materialIndices.push_back((originalMatIndex != -1) ? materialIndexMap[originalMatIndex] : -1);
+
+        // faceDirections 4个一组代表一个面，将 data2 对应的4个方向信息拷贝到合并结果中
+        if (data2.faceDirections.size() >= (i + 1) * 4) {
+            for (int k = 0; k < 4; k++) {
+                mergedData.faceDirections.push_back(data2.faceDirections[i * 4 + k]);
+            }
+        }
+        
+    }
+
+    return mergedData;
+}
 
 void MergeModelsDirectly(ModelData& data1, const ModelData& data2) {
     // 阶段1：合并顶点数据

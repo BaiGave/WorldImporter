@@ -30,6 +30,12 @@ struct Config {
     int status; // 运行状态
     bool importByChunk;  // 是否按区块导入
     bool importByBlockType;  // 是否按方块种类导入
+    bool useChunkPrecision; //使用区块精度导出
+    bool keepBoundary; // 保留边界面
+    bool strictDeduplication;
+    bool cullCave;
+    bool exportLightBlock;
+    bool allowDoubleFace;
     int pointCloudType;  // 实心或空心，0为实心，1为空心
     int lodLevel;  // LOD等级: 0低，1中，2高
     std::string importFilePath; // 导入文件路径
@@ -39,10 +45,13 @@ struct Config {
     Config()
         : worldPath(""), packagePath(""),solidBlocksFile("config\\jsons\\solids.json"), fluidsFile("config\\jsons\\fluids.json"),
         minX(0), minY(0), minZ(0), maxX(0), maxY(0), maxZ(0), status(0), importByChunk(false),
-        importByBlockType(false), pointCloudType(0), lodLevel(0), selectedGameVersion(""),
+        importByBlockType(false), useChunkPrecision(false), keepBoundary(false), strictDeduplication(true), cullCave(true), exportLightBlock(true), allowDoubleFace(false), pointCloudType(0), lodLevel(0), selectedGameVersion(""),
         versionConfigs() {
     }
 };
+
+// 声明全局 config 变量
+extern Config config;
 
 // 声明写入配置函数
 void WriteConfig(const Config& config, const std::string& configFile);

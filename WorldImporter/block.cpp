@@ -1,6 +1,6 @@
 ﻿#include <iostream>
 #include <unordered_map>
-#include <nlohmann/json.hpp>
+#include "include/json.hpp"
 #include <string>
 #include <sstream>
 #include <memory>
@@ -175,15 +175,6 @@ void UpdateSkyLightNeighborFlags() {
 // --------------------------------------------------------------------------------
 // 方块相关核心函数
 // --------------------------------------------------------------------------------
-void RegisterBlockPalette(const std::vector<std::string>& blockPalette) {
-    for (const auto& blockName : blockPalette) {
-        if (find_if(globalBlockPalette.begin(), globalBlockPalette.end(), [&blockName](const Block& b) {
-            return b.name == blockName;
-            }) == globalBlockPalette.end()) {
-            globalBlockPalette.emplace_back(Block(blockName));
-        }
-    }
-}
 // 新增函数：处理单个子区块
 void ProcessSection(int chunkX, int chunkZ, int sectionY, const NbtTagPtr& sectionTag) {
     // 获取方块数据
@@ -314,7 +305,11 @@ void LoadAndCacheBlockData(int chunkX, int chunkZ) {
     std::vector<char> chunkData = GetChunkNBTData(regionData, mod32(chunkX), mod32(chunkZ));
     size_t index = 0;
     auto tag = readTag(chunkData, index);
-    
+
+    auto yPosTag = getChildByName(tag, "yPos");
+    if (yPosTag && yPosTag->type == TagType::INT) {
+        minSectionY = static_cast<int>(yPosTag->payload[0]);
+    }
     // 处理高度图
     auto heightMapsTag = getChildByName(tag, "Heightmaps");
     if (heightMapsTag && heightMapsTag->type == TagType::COMPOUND) {
@@ -368,7 +363,6 @@ int GetBlockId(int blockX, int blockY, int blockZ) {
     blockYToSectionY(blockY, sectionY);
     int adjustedSectionY = AdjustSectionY(sectionY);
     auto blockKey = std::make_tuple(chunkX, chunkZ, adjustedSectionY);
-
     if (sectionCache.find(blockKey) == sectionCache.end()) {
         LoadAndCacheBlockData(chunkX, chunkZ);
     }
@@ -462,7 +456,7 @@ std::string GetBlockNamespaceById(int blockId) {
     }
 }
 
-int getLevel(int blockX, int blockY, int blockZ) {
+int GetLevel(int blockX, int blockY, int blockZ) {
     int currentId = GetBlockId(blockX, blockY, blockZ);
     Block currentBlock = GetBlockById(currentId);
     std::string baseName = currentBlock.GetNameAndNameSpaceWithoutState(); // 获取带命名空间的完整名称
@@ -492,101 +486,81 @@ int getLevel(int blockX, int blockY, int blockZ) {
 int GetBlockIdWithNeighbors(
     int blockX, int blockY, int blockZ,
     bool* neighborIsAir,
-    int* fluidLevels
-) {
+    int* fluidLevels) {
     int currentId = GetBlockId(blockX, blockY, blockZ);
     Block currentBlock = GetBlockById(currentId);
     std::string currentBaseName = currentBlock.GetNameAndNameSpaceWithoutState();
 
-    // 判断当前方块是否是流体
     bool isFluid = fluidDefinitions.find(currentBaseName) != fluidDefinitions.end();
-    bool hasFluidData = currentBlock.level != -1;
+    bool hasFluidData = (currentBlock.level != -1);
 
-    if (hasFluidData) {
-        // 填充 neighborIsAir 数组（非空时）
-        if (neighborIsAir != nullptr) {
-            const std::vector<std::tuple<int, int, int>> directions = {
-                {0, 1, 0},    // 上（Y+）
-                {0, -1, 0},   // 下（Y-）
-                {-1, 0, 0},   // 西（X-）
-                {1, 0, 0},    // 东（X+）
-                {0, 0, -1},   // 北（Z-）
-                {0, 0, 1}     // 南（Z+）
-            };
+    // 统一处理 neighborIsAir 数组（6个方向）
+    if (neighborIsAir != nullptr) {
+        static const std::array<std::tuple<int, int, int>, 6> directions = { {
+            {0, 1, 0},    // 上（Y+）
+            {0, -1, 0},   // 下（Y-）
+            {-1, 0, 0},   // 西（X-）
+            {1, 0, 0},    // 东（X+）
+            {0, 0, -1},   // 北（Z-）
+            {0, 0, 1}     // 南（Z+）
+        } };
 
-            for (int i = 0; i < 6; ++i) {
-                int dx, dy, dz;
-                std::tie(dx, dy, dz) = directions[i];
-                int nx = blockX + dx;
-                int ny = blockY + dy;
-                int nz = blockZ + dz;
-                Block neighborBlock = GetBlockById(GetBlockId(nx, ny, nz));
+        for (size_t i = 0; i < directions.size(); ++i) {
+            int dx, dy, dz;
+            std::tie(dx, dy, dz) = directions[i];
+            int nx = blockX + dx;
+            int ny = blockY + dy;
+            int nz = blockZ + dz;
+
+            // 如果启用了保留边界面，则直接判断
+            if (config.keepBoundary &&
+                ((nx == config.maxX + 1) || (nx == config.minX - 1) ||
+                    (nz == config.maxZ + 1) || (nz == config.minZ - 1))) {
+                neighborIsAir[i] = true;
+                continue;
+            }
+
+            int neighborId = GetBlockId(nx, ny, nz);
+            Block neighborBlock = GetBlockById(neighborId);
+
+            if (hasFluidData) {
                 std::string neighborBase = neighborBlock.GetNameAndNameSpaceWithoutState();
-
-                // 新的判断逻辑
                 bool isSameFluid = (currentBaseName == neighborBase);
-                bool neighborIsFluid = fluidDefinitions.find(neighborBase) != fluidDefinitions.end();
-
+                bool neighborIsFluid = (fluidDefinitions.find(neighborBase) != fluidDefinitions.end());
                 neighborIsAir[i] = (isSameFluid && (neighborBlock.level != 0 && neighborBlock.level != -1)) ||
-                    (neighborBlock.level != 0 &&!neighborIsFluid && neighborBlock.air);
+                    (neighborBlock.level != 0 && !neighborIsFluid && neighborBlock.air);
             }
-        }
-        if (fluidLevels != nullptr) {
-            // 填充 fluidLevels 数组（9 个元素）
-            const std::array<std::tuple<int, int, int>, 10> levelDirections = {
-                std::make_tuple(0, 0, -1),   // 北
-                std::make_tuple(0, 0, 1),    // 南
-                std::make_tuple(1, 0, 0),    // 东
-                std::make_tuple(-1, 0, 0),   // 西
-                std::make_tuple(1, 0, -1),   // 东北
-                std::make_tuple(-1, 0, -1),  // 西北
-                std::make_tuple(1, 0, 1),    // 东南
-                std::make_tuple(-1, 0, 1),    // 西南
-                std::make_tuple(0, -1, 0)   //下
-            };
-
-            fluidLevels[0] = getLevel(blockX, blockY, blockZ);
-            for (int i = 0; i < 8; ++i) {
-                int dx, dy, dz;
-                std::tie(dx, dy, dz) = levelDirections[i];
-                int nx = blockX + dx;
-                int ny = blockY + dy;
-                int nz = blockZ + dz;
-                int neighborId = GetBlockId(nx, ny, nz);
-                Block neighborBlock = GetBlockById(neighborId);
-                std::string neighborShortName = neighborBlock.GetNameWithoutState();
-                fluidLevels[i + 1] = getLevel(nx, ny, nz);
-            }
-        }
-    }
-    else
-    {
-        // 填充 neighborIsAir 数组（非空时）
-        if (neighborIsAir != nullptr) {
-            const std::vector<std::tuple<int, int, int>> directions = {
-                {0, 1, 0},    // 上（Y+）
-                {0, -1, 0},   // 下（Y-）
-                {-1, 0, 0},   // 西（X-）
-                {1, 0, 0},    // 东（X+）
-                {0, 0, -1},   // 北（Z-）
-                {0, 0, 1}     // 南（Z+）
-            };
-
-            for (int i = 0; i < 6; ++i) {
-                int dx, dy, dz;
-                std::tie(dx, dy, dz) = directions[i];
-                int nx = blockX + dx;
-                int ny = blockY + dy;
-                int nz = blockZ + dz;
-                int neighborId = GetBlockId(nx, ny, nz);
-                Block neighborBlock = GetBlockById(neighborId);
+            else {
                 neighborIsAir[i] = neighborBlock.air;
             }
         }
     }
 
+    // 处理 fluidLevels 数组，仅在存在流体数据且数组不为空时进行
+    if (hasFluidData && fluidLevels != nullptr) {
+        // 中心块的流体等级
+        fluidLevels[0] = GetLevel(blockX, blockY, blockZ);
+        static const std::array<std::tuple<int, int, int>, 9> levelDirections = { {
+            {0, 0, -1},   // 北
+            {0, 0, 1},    // 南
+            {1, 0, 0},    // 东
+            {-1, 0, 0},   // 西
+            {1, 0, -1},   // 东北
+            {-1, 0, -1},  // 西北
+            {1, 0, 1},    // 东南
+            {-1, 0, 1},   // 西南
+            {0, 1, 0}     // 上
+        } };
+        for (size_t i = 0; i < levelDirections.size(); ++i) {
+            int dx, dy, dz;
+            std::tie(dx, dy, dz) = levelDirections[i];
+            fluidLevels[i + 1] = GetLevel(blockX + dx, blockY + dy, blockZ + dz);
+        }
+    }
+
     return currentId;
 }
+
 int GetHeightMapY(int blockX, int blockZ, const std::string& heightMapType) {
     // 将世界坐标转换为区块坐标
     int chunkX, chunkZ;
@@ -621,7 +595,7 @@ int GetHeightMapY(int blockX, int blockZ, const std::string& heightMapType) {
 // 全局方块配置相关函数
 // --------------------------------------------------------------------------------
 void InitializeGlobalBlockPalette() {
-    globalBlockPalette.emplace_back(Block("minecraft:air", true));
+    globalBlockPalette.emplace_back(Block("minecraft:air"));
 }
 
 std::vector<Block> GetGlobalBlockPalette() {

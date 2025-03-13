@@ -3,6 +3,7 @@
 #define ENTITY_BLOCK_H
 
 #include "model.h"
+#include "config.h"
 #include <string>
 
 class EntityBlock {

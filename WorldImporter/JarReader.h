@@ -5,8 +5,7 @@
 #include <string>
 #include <vector>
 #include "fileutils.h"
-#include <nlohmann/json.hpp>  // 用于解析JSON
-
+#include "include/json.hpp"
 #ifdef _WIN32
 #include <windows.h>
 #endif

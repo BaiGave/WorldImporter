@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 
+int minSectionY;
 // 计算 YZX 编码后的数字
 int toYZX(int x, int y, int z) {
     int encoded = (y << 8) | (z << 4) | x;
@@ -46,8 +47,7 @@ void blockYToSectionY(int blockY, int& chunkY) {
 }
 
 int AdjustSectionY(int SectionY) {
-    const int OFFSET = 64;
-    return SectionY + OFFSET;
+    return SectionY - 4;
 }
 
 inline void worldToBiomeUnit(int worldX, int worldY, int worldZ,
