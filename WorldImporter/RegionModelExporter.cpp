@@ -16,12 +16,10 @@ using namespace std;
 using namespace std::chrono;  // 新增：方便使用 chrono
 
 
-
-
 // 缓存方块ID到颜色的映射
 std::unordered_map<int, std::string> blockColorCache;
 
-std::string GetBlockAverageColor(int blockId, Block currentBlock,int x, int y, int z) {
+std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, int z, float gamma = 2.0f) {
     std::string ns = GetBlockNamespaceById(blockId);
     std::string blockName = GetBlockNameById(blockId);
     // 标准化方块名称（去掉命名空间，处理状态）
@@ -32,11 +30,8 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock,int x, int y, i
     ModelData blockModel;
     if (currentBlock.level > -1) {
         AssignFluidMaterials(blockModel, currentBlock.name);
-       
-
     }
-    else
-    {
+    else {
         // 处理其他方块
         blockModel = GetRandomModelFromCache(ns, blockName);
     }
@@ -71,15 +66,33 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock,int x, int y, i
                     // 若有 alpha 通道且该像素 alpha 为 0，则跳过
                     if (channels >= 4 && data[i * channels + 3] == 0)
                         continue;
-                    sumR += data[i * channels];
-                    sumG += data[i * channels + 1];
-                    sumB += data[i * channels + 2];
+                    // 先将原始 sRGB 值转换到 [0,1]
+                    float r_s = data[i * channels] / 255.0f;
+                    float g_s = data[i * channels + 1] / 255.0f;
+                    float b_s = data[i * channels + 2] / 255.0f;
+                    // sRGB 转换到线性空间
+                    float r_lin = (r_s <= 0.04045f) ? (r_s / 12.92f) : pow((r_s + 0.055f) / 1.055f, 2.4f);
+                    float g_lin = (g_s <= 0.04045f) ? (g_s / 12.92f) : pow((g_s + 0.055f) / 1.055f, 2.4f);
+                    float b_lin = (b_s <= 0.04045f) ? (b_s / 12.92f) : pow((b_s + 0.055f) / 1.055f, 2.4f);
+                    sumR += r_lin;
+                    sumG += g_lin;
+                    sumB += b_lin;
                     validPixelCount++;
                 }
                 if (validPixelCount > 0) {
-                    r = sumR / (validPixelCount * 255.0f);
-                    g = sumG / (validPixelCount * 255.0f);
-                    b = sumB / (validPixelCount * 255.0f);
+                    float avgR_lin = sumR / validPixelCount;
+                    float avgG_lin = sumG / validPixelCount;
+                    float avgB_lin = sumB / validPixelCount;
+
+                    // 应用伽马校正（降低伽马）
+                    avgR_lin = pow(avgR_lin, gamma);
+                    avgG_lin = pow(avgG_lin, gamma);
+                    avgB_lin = pow(avgB_lin, gamma);
+
+                    // 线性空间转换回 sRGB
+                    r = (avgR_lin <= 0.0031308f) ? (avgR_lin * 12.92f) : (1.055f * pow(avgR_lin, 1.0f / 2.4f) - 0.055f);
+                    g = (avgG_lin <= 0.0031308f) ? (avgG_lin * 12.92f) : (1.055f * pow(avgG_lin, 1.0f / 2.4f) - 0.055f);
+                    b = (avgB_lin <= 0.0031308f) ? (avgB_lin * 12.92f) : (1.055f * pow(avgB_lin, 1.0f / 2.4f) - 0.055f);
                 }
                 stbi_image_free(data);
             }
@@ -98,14 +111,13 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock,int x, int y, i
         sscanf(textureAverage.c_str(), "%f %f %f", &textureR, &textureG, &textureB);
         uint32_t hexColor;
         // 获取当前坐标的群系颜色（十六进制），转换为 0-1 范围的 RGB
-        if (blockModel.tintindex==2)
-        {
+        if (blockModel.tintindex == 2) {
             hexColor = Biome::GetColor(GetBiomeId(x, y, z), BiomeColorType::Water);
         }
         else {
-            hexColor = Biome::GetColor(GetBiomeId(x, y, z), BiomeColorType::Grass);
+            hexColor = Biome::GetColor(GetBiomeId(x, y, z), BiomeColorType::Foliage);
         }
-        
+
         float biomeR = ((hexColor >> 16) & 0xFF) / 255.0f;
         float biomeG = ((hexColor >> 8) & 0xFF) / 255.0f;
         float biomeB = (hexColor & 0xFF) / 255.0f;
@@ -126,7 +138,6 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock,int x, int y, i
         return std::string(finalColorStr);
     }
 }
-
 
 void deduplicateVertices(ModelData& data) {
     std::unordered_map<VertexKey, int> vertexMap;
@@ -218,7 +229,6 @@ void deduplicateUV(ModelData& model) {
 }
 
 
-
 void deduplicateFaces(ModelData& data) {
     size_t faceCountNum = data.faces.size() / 4;
     std::vector<FaceKey> keys;
@@ -303,8 +313,8 @@ void RegionModelExporter::ExportRegionModels(const string& outputName) {
     blockYToSectionY(yStart, sectionYStart);
     blockYToSectionY(yEnd, sectionYEnd);
     // 计算中心坐标
-    int centerX = 3;//(chunkXStart + chunkXEnd) / 2;
-    int centerZ = 53;//(chunkZStart + chunkZEnd) / 2;
+    int centerX = (chunkXStart + chunkXEnd) / 2;
+    int centerZ = (chunkZStart + chunkZEnd) / 2;
     auto start = high_resolution_clock::now();
     LoadChunks();
     auto end = high_resolution_clock::now();
@@ -319,7 +329,7 @@ void RegionModelExporter::ExportRegionModels(const string& outputName) {
 
     
     // 定义半径范围（可以根据需要调整）
-    int radius = 12; // 半径为16个区块
+    int radius = 6; // 半径为16个区块
 
     ModelData finalMergedModel;
 
@@ -384,8 +394,18 @@ void RegionModelExporter::ExportRegionModels(const string& outputName) {
     duration = duration_cast<milliseconds>(end - start);
     cout << "deduplicateFaces: " << duration.count() << " ms" << endl;
 
+
     if (!finalMergedModel.vertices.empty()) {
         CreateModelFiles(finalMergedModel, outputName);
+        auto biomeMap = Biome::GenerateBiomeMap(xStart, zStart, xEnd, zEnd);
+        // 导出图片
+        Biome::ExportToPNG(biomeMap, "foliage.png",BiomeColorType::Foliage);
+        Biome::ExportToPNG(biomeMap, "water.png", BiomeColorType::Water);
+        Biome::ExportToPNG(biomeMap, "grass.png", BiomeColorType::Grass);
+        Biome::ExportToPNG(biomeMap, "dryfoliage.png", BiomeColorType::DryFoliage);
+        Biome::ExportToPNG(biomeMap, "waterFog.png", BiomeColorType::WaterFog);
+        Biome::ExportToPNG(biomeMap, "fog.png", BiomeColorType::Fog);
+        Biome::ExportToPNG(biomeMap, "sky.png", BiomeColorType::Sky);
     }
 }
 
@@ -575,7 +595,7 @@ ModelData RegionModelExporter::GenerateLODChunkModel(int chunkX, int sectionY, i
     int zStart = config.minZ;
     int zEnd = config.maxZ;
 
-    // 计算区块内的方块范围
+    // 计算区块内的方块范围（这里以 16 为例）
     int blockXStart = chunkX * 16;
     int blockZStart = chunkZ * 16;
     int blockYStart = sectionY * 16;
@@ -591,69 +611,73 @@ ModelData RegionModelExporter::GenerateLODChunkModel(int chunkX, int sectionY, i
     auto isAir = [&](int cx, int cy, int cz) -> bool {
         int id = GetBlockId(cx, cy, cz);
         Block b = GetBlockById(id);
-        return (b.name == "minecraft:air");
+        return (b.air);
         };
 
-    // 遍历区块内每个大区域
-    for (int x = blockXStart; x < blockXStart + 16; x += lodSize) {
-        for (int z = blockZStart; z < blockZStart + 16; z += lodSize) {
-            for (int y = blockYStart; y < blockYStart + 16; y += lodSize) {
+    // 遍历区块内每个大区域（注意：这里以 lodSize 为步长）
+    for (int x = blockXStart; x < blockXStart + 16; x += (int)lodSize) {
+        for (int z = blockZStart; z < blockZStart + 16; z += (int)lodSize) {
+            for (int y = blockYStart; y < blockYStart + 16; y += (int)lodSize) {
                 // 检查大区域是否在导出区域内
-                if (x < xStart || x + lodSize > xEnd ||
-                    y < yStart || y + lodSize > yEnd ||
-                    z < zStart || z + lodSize > zEnd)
-                {
+                if (x < xStart || x + (int)lodSize > xEnd ||
+                    y < yStart || y + (int)lodSize > yEnd ||
+                    z < zStart || z + (int)lodSize > zEnd) {
                     continue;
                 }
                 if (config.cullCave && GetSkyLight(x, y, z) == -1)
                     continue;
 
-                // 扫描区域内所有小方块，统计空气方块数量，并获取第一个非空气块的颜色
-                int totalBlocks = lodSize * lodSize * lodSize;
-                int airCount = 0;
-                bool cubeHasNonAir = false;
-                std::string color;
-                for (int dx = 0; dx < lodSize; ++dx) {
-                    for (int dy = 0; dy < lodSize; ++dy) {
-                        for (int dz = 0; dz < lodSize; ++dz) {
+                // 用局部坐标表示，初始范围设为整个区域
+                int localMinX = (int)lodSize, localMaxX = 0;
+                int localMinY = (int)lodSize, localMaxY = 0;
+                int localMinZ = (int)lodSize, localMaxZ = 0;
+                std::string color; // 记录第一个非空气块的颜色
+                bool isFluidBlock = false; // 标记是否为流体块
+
+                for (int dx = 0; dx < (int)lodSize; ++dx) {
+                    for (int dy = 0; dy < (int)lodSize; ++dy) {
+                        for (int dz = 0; dz < (int)lodSize; ++dz) {
                             int currentX = x + dx;
                             int currentY = y + dy;
                             int currentZ = z + dz;
                             // 超出检测范围视为空气
-                            if (!inRange(currentX, currentY, currentZ)) {
-                                airCount++;
+                            if (!inRange(currentX, currentY, currentZ))
                                 continue;
-                            }
-                            if (config.cullCave && GetSkyLight(x, y, z) == -1) {
-                                airCount++;
+                            if (config.cullCave && GetSkyLight(currentX, currentY, currentZ) == -1)
                                 continue;
-                            }
                             int id = GetBlockId(currentX, currentY, currentZ);
                             Block currentBlock = GetBlockById(id);
-                            if (currentBlock.name == "minecraft:air") {
-                                airCount++;
-                            }
-                            else {
-                                cubeHasNonAir = true;
-                                if (color.empty()) {
+                            std::string currentBaseName = currentBlock.GetNameAndNameSpaceWithoutState();
+
+                            bool isFluid = fluidDefinitions.find(currentBaseName) != fluidDefinitions.end();
+                            bool hasFluidData = (currentBlock.level != -1);
+
+                            if (currentBlock.name != "minecraft:air") {
+                                localMinX = std::fmin(localMinX, dx);
+                                localMaxX = std::fmax(localMaxX, dx + 1); // 注意：max 记录的是最后非空气块后的位置
+                                localMinY = std::fmin(localMinY, dy);
+                                localMaxY = std::fmax(localMaxY, dy + 1);
+                                localMinZ = std::fmin(localMinZ, dz);
+                                localMaxZ = std::fmax(localMaxZ, dz + 1);
+                                if (color.empty())
                                     color = GetBlockAverageColor(id, currentBlock, currentX, currentY, currentZ);
+
+                                // 判断是否为流体块
+                                if (isFluid && hasFluidData) {
+                                    isFluidBlock = true;
                                 }
                             }
                         }
                     }
                 }
-                // 如果区域内全为空气，或空气比例超过95%，则跳过该区域
-                if (!cubeHasNonAir || ((float)airCount / totalBlocks) > 0.95f) {
-                    continue;
-                }
+                // 此时 [localMinX, localMaxX), [localMinY, localMaxY), [localMinZ, localMaxZ) 就是包含所有非空气块的最小包围盒
 
-                // 对各个面进行检测：检测相邻的采样点是否为空气（或超出范围）
-                // 如果检测超出范围，根据 config.cullFaceOutOfRange 判断是否剔除此面
+                // 根据包围盒检测各个面的可见性（检测相邻区域是否为空气）
                 bool topVisible = false;
-                for (int dx = 0; dx < lodSize && !topVisible; ++dx) {
-                    for (int dz = 0; dz < lodSize && !topVisible; ++dz) {
+                for (int dx = localMinX; dx < localMaxX && !topVisible; ++dx) {
+                    for (int dz = localMinZ; dz < localMaxZ && !topVisible; ++dz) {
                         int tx = x + dx;
-                        int ty = y + (int)lodSize;
+                        int ty = y + localMaxY; // 顶面外侧
                         int tz = z + dz;
                         if (!inRange(tx, ty, tz)) {
                             if (!config.keepBoundary) {
@@ -674,10 +698,10 @@ ModelData RegionModelExporter::GenerateLODChunkModel(int chunkX, int sectionY, i
             topFaceCheckEnd:
 
                 bool bottomVisible = false;
-                for (int dx = 0; dx < lodSize && !bottomVisible; ++dx) {
-                    for (int dz = 0; dz < lodSize && !bottomVisible; ++dz) {
+                for (int dx = localMinX; dx < localMaxX && !bottomVisible; ++dx) {
+                    for (int dz = localMinZ; dz < localMaxZ && !bottomVisible; ++dz) {
                         int bx = x + dx;
-                        int by = y - 1;
+                        int by = y + localMinY - 1; // 底面外侧
                         int bz = z + dz;
                         if (!inRange(bx, by, bz)) {
                             if (!config.keepBoundary) {
@@ -698,11 +722,11 @@ ModelData RegionModelExporter::GenerateLODChunkModel(int chunkX, int sectionY, i
             bottomFaceCheckEnd:
 
                 bool northVisible = false;
-                for (int dx = 0; dx < lodSize && !northVisible; ++dx) {
-                    for (int dy = 0; dy < lodSize && !northVisible; ++dy) {
+                for (int dx = localMinX; dx < localMaxX && !northVisible; ++dx) {
+                    for (int dy = localMinY; dy < localMaxY && !northVisible; ++dy) {
                         int nx = x + dx;
                         int ny = y + dy;
-                        int nz = z - 1;
+                        int nz = z + localMinZ - 1; // 北面外侧
                         if (!inRange(nx, ny, nz)) {
                             if (!config.keepBoundary) {
                                 northVisible = false;
@@ -722,11 +746,11 @@ ModelData RegionModelExporter::GenerateLODChunkModel(int chunkX, int sectionY, i
             northFaceCheckEnd:
 
                 bool southVisible = false;
-                for (int dx = 0; dx < lodSize && !southVisible; ++dx) {
-                    for (int dy = 0; dy < lodSize && !southVisible; ++dy) {
+                for (int dx = localMinX; dx < localMaxX && !southVisible; ++dx) {
+                    for (int dy = localMinY; dy < localMaxY && !southVisible; ++dy) {
                         int sx = x + dx;
                         int sy = y + dy;
-                        int sz = z + (int)lodSize;
+                        int sz = z + localMaxZ; // 南面外侧
                         if (!inRange(sx, sy, sz)) {
                             if (!config.keepBoundary) {
                                 southVisible = false;
@@ -746,9 +770,9 @@ ModelData RegionModelExporter::GenerateLODChunkModel(int chunkX, int sectionY, i
             southFaceCheckEnd:
 
                 bool westVisible = false;
-                for (int dy = 0; dy < lodSize && !westVisible; ++dy) {
-                    for (int dz = 0; dz < lodSize && !westVisible; ++dz) {
-                        int wx = x - 1;
+                for (int dy = localMinY; dy < localMaxY && !westVisible; ++dy) {
+                    for (int dz = localMinZ; dz < localMaxZ && !westVisible; ++dz) {
+                        int wx = x + localMinX - 1; // 西面外侧
                         int wy = y + dy;
                         int wz = z + dz;
                         if (!inRange(wx, wy, wz)) {
@@ -770,9 +794,9 @@ ModelData RegionModelExporter::GenerateLODChunkModel(int chunkX, int sectionY, i
             westFaceCheckEnd:
 
                 bool eastVisible = false;
-                for (int dy = 0; dy < lodSize && !eastVisible; ++dy) {
-                    for (int dz = 0; dz < lodSize && !eastVisible; ++dz) {
-                        int ex = x + (int)lodSize;
+                for (int dy = localMinY; dy < localMaxY && !eastVisible; ++dy) {
+                    for (int dz = localMinZ; dz < localMaxZ && !eastVisible; ++dz) {
+                        int ex = x + localMaxX; // 东面外侧
                         int ey = y + dy;
                         int ez = z + dz;
                         if (!inRange(ex, ey, ez)) {
@@ -795,12 +819,11 @@ ModelData RegionModelExporter::GenerateLODChunkModel(int chunkX, int sectionY, i
 
                 // 如果所有面都不可见，则跳过该区域
                 if (!topVisible && !bottomVisible && !northVisible &&
-                    !southVisible && !westVisible && !eastVisible)
-                {
+                    !southVisible && !westVisible && !eastVisible) {
                     continue;
                 }
 
-                // 根据检测结果有选择性地生成各个面
+                // 根据包围盒生成各面顶点数据
                 ModelData largeBlockModel;
                 int vertexOffset = 0;
                 std::vector<float> vertices;
@@ -810,7 +833,6 @@ ModelData RegionModelExporter::GenerateLODChunkModel(int chunkX, int sectionY, i
                 std::vector<std::string> texturePaths;
                 std::vector<int> materialIndices;
 
-                // 辅助 lambda 用于添加面数据
                 auto addFace = [&](const float faceVerts[12]) {
                     for (int i = 0; i < 12; ++i)
                         vertices.push_back(faceVerts[i]);
@@ -825,69 +847,69 @@ ModelData RegionModelExporter::GenerateLODChunkModel(int chunkX, int sectionY, i
                     vertexOffset += 4;
                     };
 
-                // 生成各面顶点数据（修正后的面朝向）
+                // 生成各面顶点数据（各面坐标均基于包围盒的局部坐标）
                 if (bottomVisible) {
-                    // 底面：顺序 (0,0,0) -> (lodSize,0,0) -> (lodSize,0,lodSize) -> (0,0,lodSize)
+                    // 底面： (localMinX, localMinY, localMinZ) -> (localMaxX, localMinY, localMinZ) -> (localMaxX, localMinY, localMaxZ) -> (localMinX, localMinY, localMaxZ)
                     float bottomFace[12] = {
-                        0.0f, 0.0f, 0.0f,
-                        lodSize, 0.0f, 0.0f,
-                        lodSize, 0.0f, lodSize,
-                        0.0f, 0.0f, lodSize
+                        (float)localMinX, (float)localMinY, (float)localMinZ,
+                        (float)localMaxX, (float)localMinY, (float)localMinZ,
+                        (float)localMaxX, (float)localMinY, (float)localMaxZ,
+                        (float)localMinX, (float)localMinY, (float)localMaxZ
                     };
                     addFace(bottomFace);
                 }
                 if (topVisible) {
-                    // 顶面：顺序 (0,lodSize,0) -> (0,lodSize,lodSize) -> (lodSize,lodSize,lodSize) -> (lodSize,lodSize,0)
+                    // 顶面： (localMinX, localMaxY, localMinZ) -> (localMinX, localMaxY, localMaxZ) -> (localMaxX, localMaxY, localMaxZ) -> (localMaxX, localMaxY, localMinZ)
                     float topFace[12] = {
-                        0.0f, lodSize, 0.0f,
-                        0.0f, lodSize, lodSize,
-                        lodSize, lodSize, lodSize,
-                        lodSize, lodSize, 0.0f
+                        (float)localMinX, (float)localMaxY, (float)localMinZ,
+                        (float)localMinX, (float)localMaxY, (float)localMaxZ,
+                        (float)localMaxX, (float)localMaxY, (float)localMaxZ,
+                        (float)localMaxX, (float)localMaxY, (float)localMinZ
                     };
                     addFace(topFace);
                 }
                 if (northVisible) {
-                    // 北面（朝 -z）： (0,0,0) -> (0,lodSize,0) -> (lodSize,lodSize,0) -> (lodSize,0,0)
+                    // 北面（朝 -z）： (localMinX, localMinY, localMinZ) -> (localMinX, localMaxY, localMinZ) -> (localMaxX, localMaxY, localMinZ) -> (localMaxX, localMinY, localMinZ)
                     float northFace[12] = {
-                        0.0f, 0.0f, 0.0f,
-                        0.0f, lodSize, 0.0f,
-                        lodSize, lodSize, 0.0f,
-                        lodSize, 0.0f, 0.0f
+                        (float)localMinX, (float)localMinY, (float)localMinZ,
+                        (float)localMinX, (float)localMaxY, (float)localMinZ,
+                        (float)localMaxX, (float)localMaxY, (float)localMinZ,
+                        (float)localMaxX, (float)localMinY, (float)localMinZ
                     };
                     addFace(northFace);
                 }
                 if (southVisible) {
-                    // 南面（朝 +z）： (0,0,lodSize) -> (lodSize,0,lodSize) -> (lodSize,lodSize,lodSize) -> (0,lodSize,lodSize)
+                    // 南面（朝 +z）： (localMinX, localMinY, localMaxZ) -> (localMaxX, localMinY, localMaxZ) -> (localMaxX, localMaxY, localMaxZ) -> (localMinX, localMaxY, localMaxZ)
                     float southFace[12] = {
-                        0.0f, 0.0f, lodSize,
-                        lodSize, 0.0f, lodSize,
-                        lodSize, lodSize, lodSize,
-                        0.0f, lodSize, lodSize
+                        (float)localMinX, (float)localMinY, (float)localMaxZ,
+                        (float)localMaxX, (float)localMinY, (float)localMaxZ,
+                        (float)localMaxX, (float)localMaxY, (float)localMaxZ,
+                        (float)localMinX, (float)localMaxY, (float)localMaxZ
                     };
                     addFace(southFace);
                 }
                 if (westVisible) {
-                    // 西面（朝 -x）： (0,0,0) -> (0,0,lodSize) -> (0,lodSize,lodSize) -> (0,lodSize,0)
+                    // 西面（朝 -x）： (localMinX, localMinY, localMinZ) -> (localMinX, localMinY, localMaxZ) -> (localMinX, localMaxY, localMaxZ) -> (localMinX, localMaxY, localMinZ)
                     float westFace[12] = {
-                        0.0f, 0.0f, 0.0f,
-                        0.0f, 0.0f, lodSize,
-                        0.0f, lodSize, lodSize,
-                        0.0f, lodSize, 0.0f
+                        (float)localMinX, (float)localMinY, (float)localMinZ,
+                        (float)localMinX, (float)localMinY, (float)localMaxZ,
+                        (float)localMinX, (float)localMaxY, (float)localMaxZ,
+                        (float)localMinX, (float)localMaxY, (float)localMinZ
                     };
                     addFace(westFace);
                 }
                 if (eastVisible) {
-                    // 东面（朝 +x）： (lodSize,0,0) -> (lodSize,0,lodSize) -> (lodSize,lodSize,lodSize) -> (lodSize,lodSize,0)
+                    // 东面（朝 +x）： (localMaxX, localMinY, localMinZ) -> (localMaxX, localMaxY, localMinZ) -> (localMaxX, localMaxY, localMaxZ) -> (localMaxX, localMinY, localMaxZ)
                     float eastFace[12] = {
-                        lodSize, 0.0f, 0.0f,
-                        lodSize, lodSize, 0.0f,
-                        lodSize, lodSize, lodSize,
-                        lodSize, 0.0f, lodSize
+                        (float)localMaxX, (float)localMinY, (float)localMinZ,
+                        (float)localMaxX, (float)localMaxY, (float)localMinZ,
+                        (float)localMaxX, (float)localMaxY, (float)localMaxZ,
+                        (float)localMaxX, (float)localMinY, (float)localMaxZ
                     };
                     addFace(eastFace);
                 }
 
-                // 整理生成的面数据到模型
+                // 整理生成的面数据到模型，并应用位置偏移（x,y,z 为大区域在世界中的起始位置）
                 largeBlockModel.vertices = vertices;
                 largeBlockModel.faces = faces;
                 largeBlockModel.uvFaces = uvFaces;
@@ -895,8 +917,18 @@ ModelData RegionModelExporter::GenerateLODChunkModel(int chunkX, int sectionY, i
                 largeBlockModel.texturePaths = texturePaths;
                 largeBlockModel.materialIndices = materialIndices;
 
-                // 应用位置偏移后合并到区块模型
                 ApplyPositionOffset(largeBlockModel, x, y, z);
+
+                // 如果是流体块，单独处理流体的LOD生成逻辑
+                if (isFluidBlock) {
+                    // 处理流体块的LOD生成逻辑
+                    // ...
+                }
+                else {
+                    // 处理普通方块的LOD生成逻辑
+                    // ...
+                }
+
                 if (chunkModel.vertices.empty())
                     chunkModel = largeBlockModel;
                 else
@@ -906,7 +938,6 @@ ModelData RegionModelExporter::GenerateLODChunkModel(int chunkX, int sectionY, i
     }
     return chunkModel;
 }
-
 void RegionModelExporter::LoadChunks() {
     int xStart = config.minX;
     int xEnd = config.maxX;

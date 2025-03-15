@@ -175,7 +175,7 @@ std::string Biome::GetColormapData(const std::string& namespaceName, const std::
     std::cerr << "Colormap not found: " << namespaceName << ":" << colormapName << std::endl;
     return "";
 }
-std::vector<std::vector<int>> Biome::GenerateBiomeMap(int minX, int minZ, int maxX, int maxZ, int y) {
+std::vector<std::vector<int>> Biome::GenerateBiomeMap(int minX, int minZ, int maxX, int maxZ) {
     std::vector<std::vector<int>> biomeMap;
     int width = maxX - minX + 1;
     int height = maxZ - minZ + 1;
@@ -447,7 +447,25 @@ bool Biome::ExportToPNG(const std::vector<std::vector<int>>& biomeMap,
             imageData[index + 2] = std::get<2>(color);  // B
         }
     }
+    char buffer[MAX_PATH];
+    GetModuleFileNameA(NULL, buffer, MAX_PATH);
+    std::string exePath(buffer);
+    size_t pos = exePath.find_last_of("\\/");
+    std::string exeDir = exePath.substr(0, pos);
+    // 定义导出文件夹名称
+    const std::string exportFolderName = "biomeTex";
 
-    // 写入PNG文件
-    return stbi_write_png(filename.c_str(), width, height, 3, imageData.data(), width * 3);
+    // 创建完整的文件夹路径
+    std::string folderPath = exeDir + "\\" + exportFolderName;
+
+    // 创建文件夹（如果不存在）
+    BOOL folderCreated = CreateDirectoryA(folderPath.c_str(), NULL);
+    if (!folderCreated && GetLastError() != ERROR_ALREADY_EXISTS) {
+        std::cerr << "Error: Failed to create directory " << folderPath << std::endl;
+        return false;
+    }
+
+    // 创建完整的文件路径
+    std::string filePath = folderPath + "\\" + filename;    // 写入PNG文件
+    return stbi_write_png(filePath.c_str(), width, height, 3, imageData.data(), width * 3);
 }

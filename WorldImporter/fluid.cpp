@@ -10,6 +10,7 @@ using namespace std;
 // 模型缓存（假设有一个全局缓存 Map）
 static std::unordered_map<int, ModelData> fluidModelCache;
 
+
 float getHeight(int level) {
     if (level == 0)
         return 14.166666f; // 水源
@@ -364,6 +365,13 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
 }
 
 void AssignFluidMaterials(ModelData& model, const std::string& fluidId) {
+    if (fluidId.find("minecraft:water") != string::npos) {
+        model.tintindex = 2;
+    }
+    else
+    {
+        model.tintindex = -1;
+    }
     // 提取基础 ID 和状态值（如果有多个状态值）
     std::string baseId;
     std::unordered_map<std::string, std::string> stateValues;
@@ -439,5 +447,5 @@ void AssignFluidMaterials(ModelData& model, const std::string& fluidId) {
         "textures/" + ns + "/" + fluidInfo.folder + "/" + fluidName + fluidInfo.flow_texture + ".png"
     };
 
-    model.tintindex = 2;
+    
 }
