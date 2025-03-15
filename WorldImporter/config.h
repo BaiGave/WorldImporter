@@ -32,10 +32,11 @@ struct Config {
     bool importByBlockType;  // 是否按方块种类导入
     bool useChunkPrecision; //使用区块精度导出
     bool keepBoundary; // 保留边界面
-    bool strictDeduplication;
-    bool cullCave;
-    bool exportLightBlock;
-    bool allowDoubleFace;
+    bool strictDeduplication;//严格剔除面
+    bool cullCave;//剔除洞穴
+    bool exportLightBlock;//导出光源方块
+    bool allowDoubleFace;//允许重叠面
+    bool useUnderwaterLOD;
     int pointCloudType;  // 实心或空心，0为实心，1为空心
     int lodLevel;  // LOD等级: 0低，1中，2高
     std::string importFilePath; // 导入文件路径
@@ -45,7 +46,7 @@ struct Config {
     Config()
         : worldPath(""), packagePath(""),solidBlocksFile("config\\jsons\\solids.json"), fluidsFile("config\\jsons\\fluids.json"),
         minX(0), minY(0), minZ(0), maxX(0), maxY(0), maxZ(0), status(0), importByChunk(false),
-        importByBlockType(false), useChunkPrecision(false), keepBoundary(false), strictDeduplication(true), cullCave(true), exportLightBlock(true), allowDoubleFace(false), pointCloudType(0), lodLevel(0), selectedGameVersion(""),
+        importByBlockType(false), useChunkPrecision(false), keepBoundary(false), strictDeduplication(true), cullCave(true), exportLightBlock(true), allowDoubleFace(false), useUnderwaterLOD(true), pointCloudType(0), lodLevel(0), selectedGameVersion(""),
         versionConfigs() {
     }
 };

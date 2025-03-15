@@ -196,6 +196,5 @@ int main() {
         // 如果是 0，执行整合包所有方块状态导出逻辑
         ProcessAllBlockstateVariants();
     }
-    Sleep(10000);
     return 0;
 }

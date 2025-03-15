@@ -439,6 +439,8 @@ int GetSkyLight(int blockX, int blockY, int blockZ);
 
 int GetBlockLight(int blockX, int blockY, int blockZ);
 
+int GetLevel(int blockX, int blockY, int blockZ);
+
 // 获取方块名称转换为Block对象
 Block GetBlockById(int blockId);
 

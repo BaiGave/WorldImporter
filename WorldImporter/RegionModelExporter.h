@@ -22,6 +22,13 @@ public:
     // 导出指定区域内的所有方块模型
     static void ExportRegionModels(const std::string& outputName = "region_model");
 
+    static bool IsRegionValid(int x, int y, int z, float lodSize);
+
+    static bool IsRegionEmpty(int x, int y, int z, float lodSize, bool isFluid = false);
+    
+
+    static float GetChunkLODAtBlock(int x, int y, int z);
+
     static ModelData GenerateChunkModel(int chunkX, int sectionY, int chunkZ);
 
     static ModelData GenerateLODChunkModel(int chunkX, int sectionY, int chunkZ, float lodSize);

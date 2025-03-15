@@ -8,6 +8,7 @@
 #include <iomanip>  // 用于 std::setw 和 std::setfill
 #include <sstream>  // 用于 std::ostringstream
 #include <regex>
+#include <tuple>
 #include <chrono>  // 新增：用于时间测量
 #include <iostream>  // 新增：用于输出时间
 #include "EntityBlock.h"
@@ -15,6 +16,17 @@
 using namespace std;
 using namespace std::chrono;  // 新增：方便使用 chrono
 
+struct TupleHash {
+    std::size_t operator()(const std::tuple<int, int, int>& t) const {
+        auto h1 = std::hash<int>()(std::get<0>(t));
+        auto h2 = std::hash<int>()(std::get<1>(t));
+        auto h3 = std::hash<int>()(std::get<2>(t));
+        return h1 ^ (h2 << 1) ^ (h3 << 2);
+    }
+};
+
+// 全局变量：存储每个块（chunkX, sectionY, chunkZ）对应的 LOD 值
+static std::unordered_map<std::tuple<int, int, int>, float, TupleHash> g_chunkLODs;
 
 // 缓存方块ID到颜色的映射
 std::unordered_map<int, std::string> blockColorCache;
@@ -138,6 +150,7 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
         return std::string(finalColorStr);
     }
 }
+
 
 void deduplicateVertices(ModelData& data) {
     std::unordered_map<VertexKey, int> vertexMap;
@@ -334,6 +347,30 @@ void RegionModelExporter::ExportRegionModels(const string& outputName) {
     ModelData finalMergedModel;
 
     start = high_resolution_clock::now();
+    // 预先遍历所有块，记录各块的 LOD 值
+    for (int chunkX = chunkXStart; chunkX <= chunkXEnd; ++chunkX) {
+        for (int chunkZ = chunkZStart; chunkZ <= chunkZEnd; ++chunkZ) {
+            for (int sectionY = sectionYStart; sectionY <= sectionYEnd; ++sectionY) {
+                int distance = sqrt((chunkX - centerX) * (chunkX - centerX) +
+                    (chunkZ - centerZ) * (chunkZ - centerZ));
+                float chunkLOD = 1.0f;
+                if (distance <= radius) {
+                    chunkLOD = 1.0f;
+                }
+                else if (distance <= radius * 2) {
+                    chunkLOD = 1.0f;
+                }
+                else if (distance <= radius * 4) {
+                    chunkLOD = 2.0f;
+                }
+                else {
+                    chunkLOD = 4.0f;
+                }
+                g_chunkLODs[std::make_tuple(chunkX, sectionY, chunkZ)] = chunkLOD;
+            }
+        }
+    }
+
     for (int chunkX = chunkXStart; chunkX <= chunkXEnd; ++chunkX) {
         for (int chunkZ = chunkZStart; chunkZ <= chunkZEnd; ++chunkZ) {
             for (int sectionY = sectionYStart; sectionY <= sectionYEnd; ++sectionY) {
@@ -347,7 +384,6 @@ void RegionModelExporter::ExportRegionModels(const string& outputName) {
                     (currentCenterZ - centerZ) * (currentCenterZ - centerZ)
                 );
                 ModelData chunkModel;
-
                 // 根据距离选择生成方法
                 if (distance <= radius) {
                     // 距离中心在 radius 范围内，使用高精度生成
@@ -408,6 +444,18 @@ void RegionModelExporter::ExportRegionModels(const string& outputName) {
         Biome::ExportToPNG(biomeMap, "sky.png", BiomeColorType::Sky);
     }
 }
+
+float RegionModelExporter::GetChunkLODAtBlock(int x, int y, int z) {
+    int chunkX, chunkZ, sectionY;
+    blockToChunk(x, z, chunkX, chunkZ);
+    blockYToSectionY(y, sectionY);
+    auto key = std::make_tuple(chunkX, sectionY, chunkZ);
+    if (g_chunkLODs.find(key) != g_chunkLODs.end()) {
+        return g_chunkLODs[key];
+    }
+    return 1.0f; // 默认使用高精度
+}
+
 
 ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int chunkZ) {
     ModelData chunkModel;
@@ -586,6 +634,51 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
     return chunkModel;
 }
 
+// 辅助函数：判断指定区域是否有效 
+bool RegionModelExporter::IsRegionValid(int x, int y, int z, float lodSize) {
+
+    // 检查区域是否在导出范围内
+    if (x < config.minX || x + lodSize > config.maxX ||
+        z < config.minZ || z + lodSize > config.maxZ ||
+        y < config.minY || y + lodSize > config.maxY) {
+        if (config.keepBoundary)
+        {
+            return false;
+        }
+        return true;
+    }
+    // 检查区域是否为空（可选）
+    // 这里假设有一个函数可以判断区域是否为空
+    return !IsRegionEmpty(x, y, z, lodSize);
+}
+
+// 修改后的 IsRegionEmpty 方法：增加 isFluid 参数（默认为 false 用于固体判断）
+bool RegionModelExporter::IsRegionEmpty(int x, int y, int z, float lodSize, bool isFluid) {
+    for (int dx = 0; dx < lodSize; ++dx) {
+        for (int dz = 0; dz < lodSize; ++dz) {
+            for (int dy = 0; dy < lodSize; ++dy) {
+                int blockId = GetBlockId(x + dx, y + dy, z + dz);
+                Block currentBlock = GetBlockById(blockId);
+                if (isFluid) {
+
+                    // 流体判断：只要不是 "minecraft:air" 就认为区域非空
+                    if (currentBlock.name != "minecraft:air") {
+                        return false;
+                    }
+                }
+                else {
+                    // 固体判断：采用原来的判断条件
+                    if (!currentBlock.air ||(currentBlock.level!=-1&& !config.useUnderwaterLOD)) {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+    return true;
+}
+
+
 ModelData RegionModelExporter::GenerateLODChunkModel(int chunkX, int sectionY, int chunkZ, float lodSize) {
     ModelData chunkModel;
     int xStart = config.minX;
@@ -595,349 +688,309 @@ ModelData RegionModelExporter::GenerateLODChunkModel(int chunkX, int sectionY, i
     int zStart = config.minZ;
     int zEnd = config.maxZ;
 
-    // 计算区块内的方块范围（这里以 16 为例）
+    // 计算区块内的方块范围
     int blockXStart = chunkX * 16;
     int blockZStart = chunkZ * 16;
     int blockYStart = sectionY * 16;
 
-    // 辅助 lambda 判断坐标是否在检测范围内
-    auto inRange = [&](int cx, int cy, int cz) -> bool {
-        return (cx >= xStart && cx < xEnd &&
-            cy >= yStart && cy < yEnd &&
-            cz >= zStart && cz < zEnd);
-        };
+    // 遍历区块内每个大区域（步长为 lodSize）
+    for (int x = blockXStart; x < blockXStart + 16; x += lodSize) {
+        for (int z = blockZStart; z < blockZStart + 16; z += lodSize) {
+            for (int y = blockYStart; y < blockYStart + 16; y += lodSize) {
 
-    // 辅助 lambda 判断指定位置是否为空气
-    auto isAir = [&](int cx, int cy, int cz) -> bool {
-        int id = GetBlockId(cx, cy, cz);
-        Block b = GetBlockById(id);
-        return (b.air);
-        };
-
-    // 遍历区块内每个大区域（注意：这里以 lodSize 为步长）
-    for (int x = blockXStart; x < blockXStart + 16; x += (int)lodSize) {
-        for (int z = blockZStart; z < blockZStart + 16; z += (int)lodSize) {
-            for (int y = blockYStart; y < blockYStart + 16; y += (int)lodSize) {
-                // 检查大区域是否在导出区域内
-                if (x < xStart || x + (int)lodSize > xEnd ||
-                    y < yStart || y + (int)lodSize > yEnd ||
-                    z < zStart || z + (int)lodSize > zEnd) {
+                // 检查当前区域是否在导出范围内
+                if (x < xStart || x + lodSize > xEnd ||
+                    z < zStart || z + lodSize > zEnd ||
+                    y < yStart || y + lodSize > yEnd)
                     continue;
+
+                if (config.cullCave) {
+                    if (GetSkyLight(x, y, z) == -1)
+                        continue;
                 }
-                if (config.cullCave && GetSkyLight(x, y, z) == -1)
-                    continue;
 
-                // 用局部坐标表示，初始范围设为整个区域
-                int localMinX = (int)lodSize, localMaxX = 0;
-                int localMinY = (int)lodSize, localMaxY = 0;
-                int localMinZ = (int)lodSize, localMaxZ = 0;
-                std::string color; // 记录第一个非空气块的颜色
-                bool isFluidBlock = false; // 标记是否为流体块
+                // 遍历区域内的方块，统计固体和流体数量、记录颜色，同时记录流体中 level==0 的最高局部 y 值
+                int solidCount = 0;
+                int fluidCount = 0;
+                int maxFluidSurfaceLocal = -1; // 记录局部坐标中，fluid level==0的最高层（dy值）
+                std::string solidColor, fluidColor;
 
-                for (int dx = 0; dx < (int)lodSize; ++dx) {
-                    for (int dy = 0; dy < (int)lodSize; ++dy) {
-                        for (int dz = 0; dz < (int)lodSize; ++dz) {
-                            int currentX = x + dx;
-                            int currentY = y + dy;
-                            int currentZ = z + dz;
-                            // 超出检测范围视为空气
-                            if (!inRange(currentX, currentY, currentZ))
+                for (int dx = 0; dx < lodSize; ++dx) {
+                    for (int dz = 0; dz < lodSize; ++dz) {
+                        for (int dy = 0; dy < lodSize; ++dy) {
+                            int blockId = GetBlockId(x + dx, y + dy, z + dz);
+                            Block currentBlock = GetBlockById(blockId);
+                            if (currentBlock.name == "minecraft:air")
                                 continue;
-                            if (config.cullCave && GetSkyLight(currentX, currentY, currentZ) == -1)
-                                continue;
-                            int id = GetBlockId(currentX, currentY, currentZ);
-                            Block currentBlock = GetBlockById(id);
-                            std::string currentBaseName = currentBlock.GetNameAndNameSpaceWithoutState();
 
-                            bool isFluid = fluidDefinitions.find(currentBaseName) != fluidDefinitions.end();
-                            bool hasFluidData = (currentBlock.level != -1);
-
-                            if (currentBlock.name != "minecraft:air") {
-                                localMinX = std::fmin(localMinX, dx);
-                                localMaxX = std::fmax(localMaxX, dx + 1); // 注意：max 记录的是最后非空气块后的位置
-                                localMinY = std::fmin(localMinY, dy);
-                                localMaxY = std::fmax(localMaxY, dy + 1);
-                                localMinZ = std::fmin(localMinZ, dz);
-                                localMaxZ = std::fmax(localMaxZ, dz + 1);
-                                if (color.empty())
-                                    color = GetBlockAverageColor(id, currentBlock, currentX, currentY, currentZ);
-
-                                // 判断是否为流体块
-                                if (isFluid && hasFluidData) {
-                                    isFluidBlock = true;
+                            if (currentBlock.level == -1) { // 固体
+                                if (solidCount == 0) {
+                                    solidColor = GetBlockAverageColor(blockId, currentBlock, x, y, z);
+                                }
+                                solidCount++;
+                            }
+                            else { // 流体
+                                if (fluidCount == 0) {
+                                    fluidColor = GetBlockAverageColor(blockId, currentBlock, x, y, z);
+                                }
+                                fluidCount++;
+                                // 如果流体的 level 为 0，则记录当前局部 y 值
+                                if (currentBlock.level == 0) {
+                                    if (dy > maxFluidSurfaceLocal) {
+                                        maxFluidSurfaceLocal = dy;
+                                    }
                                 }
                             }
                         }
                     }
                 }
-                // 此时 [localMinX, localMaxX), [localMinY, localMaxY), [localMinZ, localMaxZ) 就是包含所有非空气块的最小包围盒
 
-                // 根据包围盒检测各个面的可见性（检测相邻区域是否为空气）
-                bool topVisible = false;
-                for (int dx = localMinX; dx < localMaxX && !topVisible; ++dx) {
-                    for (int dz = localMinZ; dz < localMaxZ && !topVisible; ++dz) {
-                        int tx = x + dx;
-                        int ty = y + localMaxY; // 顶面外侧
-                        int tz = z + dz;
-                        if (!inRange(tx, ty, tz)) {
-                            if (!config.keepBoundary) {
-                                topVisible = false;
-                                goto topFaceCheckEnd;
+                // 计算流体的顶面高度：只要在区域内找到 level==0 的流体，就检查其上方是否全为空气
+                float fluidTopY = lodSize; // 默认液体顶面高度为 lodSize
+                bool adjustFluidHeight = false;
+                if (fluidCount > 0 && maxFluidSurfaceLocal >= 0) {
+                    bool upperIsAir = true;
+                    // 检查从 maxFluidSurfaceLocal+1 到 lodSize-1 的所有方块是否全为空气
+                    for (int ddy = maxFluidSurfaceLocal + 1; ddy < lodSize && upperIsAir; ++ddy) {
+                        for (int ddx = 0; ddx < lodSize && upperIsAir; ++ddx) {
+                            for (int ddz = 0; ddz < lodSize; ++ddz) {
+                                int bid = GetBlockId(x + ddx, y + ddy, z + ddz);
+                                Block b = GetBlockById(bid);
+                                if (b.name != "minecraft:air") {
+                                    upperIsAir = false;
+                                    break;
+                                }
                             }
-                            else {
-                                topVisible = true;
-                                break;
-                            }
-                        }
-                        if (isAir(tx, ty, tz)) {
-                            topVisible = true;
-                            break;
                         }
                     }
-                }
-            topFaceCheckEnd:
-
-                bool bottomVisible = false;
-                for (int dx = localMinX; dx < localMaxX && !bottomVisible; ++dx) {
-                    for (int dz = localMinZ; dz < localMaxZ && !bottomVisible; ++dz) {
-                        int bx = x + dx;
-                        int by = y + localMinY - 1; // 底面外侧
-                        int bz = z + dz;
-                        if (!inRange(bx, by, bz)) {
-                            if (!config.keepBoundary) {
-                                bottomVisible = false;
-                                goto bottomFaceCheckEnd;
-                            }
-                            else {
-                                bottomVisible = true;
-                                break;
-                            }
-                        }
-                        if (isAir(bx, by, bz)) {
-                            bottomVisible = true;
-                            break;
-                        }
+                    if (upperIsAir) {
+                        int fluidSurfaceLayer = maxFluidSurfaceLocal + 1; // n 值
+                        fluidTopY = (fluidSurfaceLayer - 1) + (14.166666f / 16.0f);
+                        adjustFluidHeight = true;
                     }
                 }
-            bottomFaceCheckEnd:
 
-                bool northVisible = false;
-                for (int dx = localMinX; dx < localMaxX && !northVisible; ++dx) {
-                    for (int dy = localMinY; dy < localMaxY && !northVisible; ++dy) {
-                        int nx = x + dx;
-                        int ny = y + dy;
-                        int nz = z + localMinZ - 1; // 北面外侧
-                        if (!inRange(nx, ny, nz)) {
-                            if (!config.keepBoundary) {
-                                northVisible = false;
-                                goto northFaceCheckEnd;
-                            }
-                            else {
-                                northVisible = true;
-                                break;
-                            }
-                        }
-                        if (isAir(nx, ny, nz)) {
-                            northVisible = true;
-                            break;
-                        }
+                // 固体区域：计算邻域信息（保留原有逻辑）
+                bool hasNeighbor[6] = { false };
+                bool regionIsSolid = (solidCount > 0);
+                if (regionIsSolid) {
+                    // 上方 (y+)
+                    if (IsRegionValid(x, y + lodSize, z, lodSize)) {
+                        hasNeighbor[0] = true;
+                    }
+                    // 下方 (y-)
+                    if (IsRegionValid(x, y - lodSize, z, lodSize)) {
+                        hasNeighbor[1] = true;
+                    }
+                    // 西方 (x-)
+                    if (IsRegionValid(x - lodSize, y, z, lodSize)) {
+                        hasNeighbor[2] = true;
+                    }
+                    // 东方 (x+)
+                    if (IsRegionValid(x + lodSize, y, z, lodSize)) {
+                        hasNeighbor[3] = true;
+                    }
+                    // 北方 (z-)
+                    if (IsRegionValid(x, y, z - lodSize, lodSize)) {
+                        hasNeighbor[4] = true;
+                    }
+                    // 南方 (z+)
+                    if (IsRegionValid(x, y, z + lodSize, lodSize)) {
+                        hasNeighbor[5] = true;
                     }
                 }
-            northFaceCheckEnd:
 
-                bool southVisible = false;
-                for (int dx = localMinX; dx < localMaxX && !southVisible; ++dx) {
-                    for (int dy = localMinY; dy < localMaxY && !southVisible; ++dy) {
-                        int sx = x + dx;
-                        int sy = y + dy;
-                        int sz = z + localMaxZ; // 南面外侧
-                        if (!inRange(sx, sy, sz)) {
-                            if (!config.keepBoundary) {
-                                southVisible = false;
-                                goto southFaceCheckEnd;
+                // 辅助 lambda：检查邻域是否完全为空（用于流体），边界外视为完全为空
+                auto IsFluidNeighborEmpty = [&](int nx, int ny, int nz, float size) -> bool {
+                    if (nx < config.minX || nx + size > config.maxX ||
+                        ny < config.minY || ny + size > config.maxY ||
+                        nz < config.minZ || nz + size > config.maxZ) {
+                        if (config.keepBoundary) {
+                            return true;
+                        }
+                        return false;
+                    }
+                    return IsRegionEmpty(nx, ny, nz, size, true);
+                    };
+
+                // 修改生成包围盒的 lambda，增加 topHeight 参数用于固体（传入 lodSize）或流体（调整后高度）
+                auto generateBox = [&](const std::string& color, bool isFluid, float topHeight) -> ModelData {
+                    ModelData box;
+                    float topY = topHeight; // 使用传入的高度
+
+                    float size = lodSize;  // 水平尺寸保持 lodSize
+                    // 定义流体偏移量（仅对流体有效）
+                    float fluidOffset = 1.0f - (14.166666f / 16.0f);
+                    // 对于流体，下部顶点下移 fluidOffset；固体则保持 0
+                    float bottomY = isFluid ? -fluidOffset : 0.0f;
+                    // 生成顶点数组：x、z 坐标使用 size，y 坐标区分上下两层
+                    std::vector<float> vertices = {
+                        // 底面 (全部使用下移后的 bottomY)
+                        0.0f, bottomY, 0.0f,
+                        size, bottomY, 0.0f,
+                        size, bottomY, size,
+                        0.0f, bottomY, size,
+                        // 顶面 (y 坐标使用 topY)
+                        0.0f, topY, 0.0f,
+                        size, topY, 0.0f,
+                        size, topY, size,
+                        0.0f, topY, size,
+                        // 北面：前两个顶点下移，后两个使用顶面高度
+                        0.0f, bottomY, 0.0f,
+                        size, bottomY, 0.0f,
+                        size, topY, 0.0f,
+                        0.0f, topY, 0.0f,
+                        // 南面
+                        0.0f, bottomY, size,
+                        size, bottomY, size,
+                        size, topY, size,
+                        0.0f, topY, size,
+                        // 西面
+                        0.0f, bottomY, 0.0f,
+                        0.0f, bottomY, size,
+                        0.0f, topY, size,
+                        0.0f, topY, 0.0f,
+                        // 东面
+                        size, bottomY, 0.0f,
+                        size, bottomY, size,
+                        size, topY, size,
+                        size, topY, 0.0f
+                    };
+                    box.vertices = vertices;
+
+                    // 定义面索引，每个面由 4 个顶点构成
+                    box.faces = {
+                        // 底面
+                        0, 3, 2, 1,
+                        // 顶面
+                        4, 7, 6, 5,
+                        // 北面
+                        8, 11, 10, 9,
+                        // 南面
+                        12, 15, 14, 13,
+                        // 西面
+                        16, 17, 18, 19,
+                        // 东面
+                        20, 23, 22, 21
+                    };
+
+                    // 定义 UV 坐标
+                    box.uvCoordinates = {
+                        0.0f, 0.0f,  1.0f, 0.0f,  1.0f, 1.0f,  0.0f, 1.0f,
+                        0.0f, 0.0f,  1.0f, 0.0f,  1.0f, 1.0f,  0.0f, 1.0f,
+                        0.0f, 0.0f,  1.0f, 0.0f,  1.0f, 1.0f,  0.0f, 1.0f,
+                        0.0f, 0.0f,  1.0f, 0.0f,  1.0f, 1.0f,  0.0f, 1.0f,
+                        0.0f, 0.0f,  1.0f, 0.0f,  1.0f, 1.0f,  0.0f, 1.0f,
+                        0.0f, 0.0f,  1.0f, 0.0f,  1.0f, 1.0f,  0.0f, 1.0f
+                    };
+
+                    // 材质信息
+                    box.materialNames = { color };
+                    box.texturePaths = { color };
+                    box.materialIndices = { 0, 0, 0, 0, 0, 0 };
+
+                    ApplyPositionOffset(box, x, y, z);
+
+                    // 原有的面剔除逻辑
+                    std::vector<bool> validFaces(6, true);
+                    if (!isFluid) {
+                        validFaces[1] = !hasNeighbor[0]; // 上面
+                        validFaces[0] = !hasNeighbor[1]; // 下面
+                        validFaces[4] = !hasNeighbor[2]; // 西面
+                        validFaces[5] = !hasNeighbor[3]; // 东方
+                        validFaces[2] = !hasNeighbor[4]; // 北面
+                        validFaces[3] = !hasNeighbor[5]; // 南面
+                    }
+                    else {
+                        validFaces[0] = IsFluidNeighborEmpty(x, y - lodSize, z, lodSize); // 底面
+                        validFaces[1] = IsFluidNeighborEmpty(x, y + lodSize, z, lodSize); // 顶面
+                        validFaces[2] = IsFluidNeighborEmpty(x, y, z - lodSize, lodSize); // 北面
+                        validFaces[3] = IsFluidNeighborEmpty(x, y, z + lodSize, lodSize); // 南面
+                        validFaces[4] = IsFluidNeighborEmpty(x - lodSize, y, z, lodSize); // 西面
+                        validFaces[5] = IsFluidNeighborEmpty(x + lodSize, y, z, lodSize); // 东方
+                    }
+
+                    // 新增：当相邻区域的 LOD 与当前区域不同，则采用新逻辑——扫描邻域，只要任一方块为空气就生成该面
+                    auto hasAirInNeighbor = [&](int nx, int ny, int nz, int regionSize, bool isFluid) -> bool {
+                        for (int dx = 0; dx < regionSize; ++dx) {
+                            for (int dy = 0; dy < regionSize; ++dy) {
+                                for (int dz = 0; dz < regionSize; ++dz) {
+                                    int bid = GetBlockId(nx + dx, ny + dy, nz + dz);
+                                    Block b = GetBlockById(bid);
+                                    if (!isFluid)
+                                    {
+                                        if (b.air) {
+                                            return true;
+                                        }
+                                    }
+                                    
+                                }
+                            }
+                        }
+                        return false;
+                        };
+
+                    int regionSize = static_cast<int>(lodSize);
+                    // 针对每个面判断：如果相邻区域的 LOD 与当前区域不同，则扫描该邻域
+                    for (int faceIdx = 0; faceIdx < 6; ++faceIdx) {
+                        int nx = x, ny = y, nz = z;
+                        switch (faceIdx) {
+                        case 0: ny = y - regionSize; break; // 底面
+                        case 1: ny = y + regionSize; break; // 顶面
+                        case 2: nz = z - regionSize; break; // 北面
+                        case 3: nz = z + regionSize; break; // 南面
+                        case 4: nx = x - regionSize; break; // 西面
+                        case 5: nx = x + regionSize; break; // 东方
+                        }
+                        // 查询相邻区域的 LOD（使用全局方法 GetChunkLODAtBlock）
+                        float neighborLOD = GetChunkLODAtBlock(nx, ny, nz);
+                        // 如果相邻区域的 LOD 与当前区域不同，则扫描邻域内任意块是否为空气
+                        if (std::fabs(neighborLOD - lodSize) > 0.001f) {
+                            // 新逻辑：只要相邻区域有任意一个空气属性的方块，就生成该面
+                            if (hasAirInNeighbor(nx, ny, nz, regionSize,isFluid)) {
+                                validFaces[faceIdx] = true;
                             }
                             else {
-                                southVisible = true;
-                                break;
+                                validFaces[faceIdx] = false;
                             }
-                        }
-                        if (isAir(sx, sy, sz)) {
-                            southVisible = true;
-                            break;
                         }
                     }
-                }
-            southFaceCheckEnd:
 
-                bool westVisible = false;
-                for (int dy = localMinY; dy < localMaxY && !westVisible; ++dy) {
-                    for (int dz = localMinZ; dz < localMaxZ && !westVisible; ++dz) {
-                        int wx = x + localMinX - 1; // 西面外侧
-                        int wy = y + dy;
-                        int wz = z + dz;
-                        if (!inRange(wx, wy, wz)) {
-                            if (!config.keepBoundary) {
-                                westVisible = false;
-                                goto westFaceCheckEnd;
+                    // 根据 validFaces 生成过滤后的模型数据
+                    ModelData filteredBox;
+                    for (int faceIdx = 0; faceIdx < 6; ++faceIdx) {
+                        if (validFaces[faceIdx]) {
+                            for (int i = 0; i < 4; ++i) {
+                                filteredBox.faces.push_back(box.faces[faceIdx * 4 + i]);
+                                filteredBox.uvFaces.push_back(box.uvCoordinates[faceIdx * 4 + i]);
                             }
-                            else {
-                                westVisible = true;
-                                break;
-                            }
-                        }
-                        if (isAir(wx, wy, wz)) {
-                            westVisible = true;
-                            break;
+                            filteredBox.materialIndices.push_back(box.materialIndices[faceIdx]);
                         }
                     }
-                }
-            westFaceCheckEnd:
-
-                bool eastVisible = false;
-                for (int dy = localMinY; dy < localMaxY && !eastVisible; ++dy) {
-                    for (int dz = localMinZ; dz < localMaxZ && !eastVisible; ++dz) {
-                        int ex = x + localMaxX; // 东面外侧
-                        int ey = y + dy;
-                        int ez = z + dz;
-                        if (!inRange(ex, ey, ez)) {
-                            if (!config.keepBoundary) {
-                                eastVisible = false;
-                                goto eastFaceCheckEnd;
-                            }
-                            else {
-                                eastVisible = true;
-                                break;
-                            }
-                        }
-                        if (isAir(ex, ey, ez)) {
-                            eastVisible = true;
-                            break;
-                        }
-                    }
-                }
-            eastFaceCheckEnd:
-
-                // 如果所有面都不可见，则跳过该区域
-                if (!topVisible && !bottomVisible && !northVisible &&
-                    !southVisible && !westVisible && !eastVisible) {
-                    continue;
-                }
-
-                // 根据包围盒生成各面顶点数据
-                ModelData largeBlockModel;
-                int vertexOffset = 0;
-                std::vector<float> vertices;
-                std::vector<int> faces;
-                std::vector<int> uvFaces;
-                std::vector<std::string> materialNames;
-                std::vector<std::string> texturePaths;
-                std::vector<int> materialIndices;
-
-                auto addFace = [&](const float faceVerts[12]) {
-                    for (int i = 0; i < 12; ++i)
-                        vertices.push_back(faceVerts[i]);
-                    faces.push_back(vertexOffset);
-                    faces.push_back(vertexOffset + 1);
-                    faces.push_back(vertexOffset + 2);
-                    faces.push_back(vertexOffset + 3);
-                    uvFaces.insert(uvFaces.end(), { vertexOffset, vertexOffset + 1, vertexOffset + 2, vertexOffset + 3 });
-                    materialNames.push_back(color);
-                    texturePaths.push_back(color);
-                    materialIndices.push_back(0);
-                    vertexOffset += 4;
+                    filteredBox.vertices = box.vertices;
+                    filteredBox.uvCoordinates = box.uvCoordinates;
+                    filteredBox.materialNames = box.materialNames;
+                    filteredBox.texturePaths = box.texturePaths;
+                    return filteredBox;
                     };
 
-                // 生成各面顶点数据（各面坐标均基于包围盒的局部坐标）
-                if (bottomVisible) {
-                    // 底面： (localMinX, localMinY, localMinZ) -> (localMaxX, localMinY, localMinZ) -> (localMaxX, localMinY, localMaxZ) -> (localMinX, localMinY, localMaxZ)
-                    float bottomFace[12] = {
-                        (float)localMinX, (float)localMinY, (float)localMinZ,
-                        (float)localMaxX, (float)localMinY, (float)localMinZ,
-                        (float)localMaxX, (float)localMinY, (float)localMaxZ,
-                        (float)localMinX, (float)localMinY, (float)localMaxZ
-                    };
-                    addFace(bottomFace);
+                // 根据区域内情况：若存在固体则生成固体模型，否则在有流体的情况下生成流体模型
+                if (solidCount > 0) {
+                    ModelData solidBox = generateBox(solidColor, false, lodSize);
+                    MergeModelsDirectly(chunkModel, solidBox);
                 }
-                if (topVisible) {
-                    // 顶面： (localMinX, localMaxY, localMinZ) -> (localMinX, localMaxY, localMaxZ) -> (localMaxX, localMaxY, localMaxZ) -> (localMaxX, localMaxY, localMinZ)
-                    float topFace[12] = {
-                        (float)localMinX, (float)localMaxY, (float)localMinZ,
-                        (float)localMinX, (float)localMaxY, (float)localMaxZ,
-                        (float)localMaxX, (float)localMaxY, (float)localMaxZ,
-                        (float)localMaxX, (float)localMaxY, (float)localMinZ
-                    };
-                    addFace(topFace);
+                else if (fluidCount > 0) {
+                    // 流体时根据是否检测到液面调整高度
+                    ModelData fluidBox = generateBox(fluidColor, true, adjustFluidHeight ? fluidTopY : lodSize);
+                    MergeModelsDirectly(chunkModel, fluidBox);
                 }
-                if (northVisible) {
-                    // 北面（朝 -z）： (localMinX, localMinY, localMinZ) -> (localMinX, localMaxY, localMinZ) -> (localMaxX, localMaxY, localMinZ) -> (localMaxX, localMinY, localMinZ)
-                    float northFace[12] = {
-                        (float)localMinX, (float)localMinY, (float)localMinZ,
-                        (float)localMinX, (float)localMaxY, (float)localMinZ,
-                        (float)localMaxX, (float)localMaxY, (float)localMinZ,
-                        (float)localMaxX, (float)localMinY, (float)localMinZ
-                    };
-                    addFace(northFace);
-                }
-                if (southVisible) {
-                    // 南面（朝 +z）： (localMinX, localMinY, localMaxZ) -> (localMaxX, localMinY, localMaxZ) -> (localMaxX, localMaxY, localMaxZ) -> (localMinX, localMaxY, localMaxZ)
-                    float southFace[12] = {
-                        (float)localMinX, (float)localMinY, (float)localMaxZ,
-                        (float)localMaxX, (float)localMinY, (float)localMaxZ,
-                        (float)localMaxX, (float)localMaxY, (float)localMaxZ,
-                        (float)localMinX, (float)localMaxY, (float)localMaxZ
-                    };
-                    addFace(southFace);
-                }
-                if (westVisible) {
-                    // 西面（朝 -x）： (localMinX, localMinY, localMinZ) -> (localMinX, localMinY, localMaxZ) -> (localMinX, localMaxY, localMaxZ) -> (localMinX, localMaxY, localMinZ)
-                    float westFace[12] = {
-                        (float)localMinX, (float)localMinY, (float)localMinZ,
-                        (float)localMinX, (float)localMinY, (float)localMaxZ,
-                        (float)localMinX, (float)localMaxY, (float)localMaxZ,
-                        (float)localMinX, (float)localMaxY, (float)localMinZ
-                    };
-                    addFace(westFace);
-                }
-                if (eastVisible) {
-                    // 东面（朝 +x）： (localMaxX, localMinY, localMinZ) -> (localMaxX, localMaxY, localMinZ) -> (localMaxX, localMaxY, localMaxZ) -> (localMaxX, localMinY, localMaxZ)
-                    float eastFace[12] = {
-                        (float)localMaxX, (float)localMinY, (float)localMinZ,
-                        (float)localMaxX, (float)localMaxY, (float)localMinZ,
-                        (float)localMaxX, (float)localMaxY, (float)localMaxZ,
-                        (float)localMaxX, (float)localMinY, (float)localMaxZ
-                    };
-                    addFace(eastFace);
-                }
-
-                // 整理生成的面数据到模型，并应用位置偏移（x,y,z 为大区域在世界中的起始位置）
-                largeBlockModel.vertices = vertices;
-                largeBlockModel.faces = faces;
-                largeBlockModel.uvFaces = uvFaces;
-                largeBlockModel.materialNames = materialNames;
-                largeBlockModel.texturePaths = texturePaths;
-                largeBlockModel.materialIndices = materialIndices;
-
-                ApplyPositionOffset(largeBlockModel, x, y, z);
-
-                // 如果是流体块，单独处理流体的LOD生成逻辑
-                if (isFluidBlock) {
-                    // 处理流体块的LOD生成逻辑
-                    // ...
-                }
-                else {
-                    // 处理普通方块的LOD生成逻辑
-                    // ...
-                }
-
-                if (chunkModel.vertices.empty())
-                    chunkModel = largeBlockModel;
-                else
-                    MergeModelsDirectly(chunkModel, largeBlockModel);
             }
         }
     }
     return chunkModel;
 }
+
+
 void RegionModelExporter::LoadChunks() {
     int xStart = config.minX;
     int xEnd = config.maxX;
