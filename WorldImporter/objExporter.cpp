@@ -411,12 +411,22 @@ void createMtlFile(const ModelData& data, const std::string& mtlFileName) {
                 mtlFile << "Ni 1.500000\n";
                 mtlFile << "illum 2\n";
             }
-            else if (texturePath.find("color#") == 0) { // 纯颜色材质处理
-                // 解析RGB颜色值（格式："color:r g b"）
-                std::string colorStr = texturePath.substr(6);
+            // 处理纯颜色材质（支持流体格式：流体名-color#r g b 和普通格式：color#r g b）
+            else if (texturePath.find("color#") != std::string::npos || texturePath.find("-color#") != std::string::npos) {
+                std::string colorStr;
+                size_t pos = texturePath.find("-color#");
+                if (pos != std::string::npos) {
+                    // 流体材质格式，提取“-color#”后面的颜色部分
+                    colorStr = texturePath.substr(pos + std::string("-color#").size());
+                }
+                else if (texturePath.find("color#") == 0) {
+                    colorStr = texturePath.substr(std::string("color#").size());
+                }
+                else {
+                    colorStr = "";
+                }
                 std::istringstream iss(colorStr);
                 float r, g, b;
-                
                 if (iss >> r >> g >> b) {
                     mtlFile << "Kd " << std::fixed << std::setprecision(6)
                         << r << " " << g << " " << b << "\n";
@@ -460,6 +470,7 @@ void createMtlFile(const ModelData& data, const std::string& mtlFileName) {
         std::cerr << "Failed to create .mtl file: " << mtlFileName << std::endl;
     }
 }
+
 // 单独的文件创建方法
 void CreateModelFiles(const ModelData& data, const std::string& filename) {
     auto start = high_resolution_clock::now();  // 新增：开始时间点

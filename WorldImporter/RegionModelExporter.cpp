@@ -40,7 +40,9 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
         blockName = blockName.substr(colonPos + 1);
     }
     ModelData blockModel;
-    if (currentBlock.level > -1) {
+    // 判断当前方块是否是注册流体或已有level标记
+    bool isFluid = (fluidDefinitions.find(currentBlock.GetNameAndNameSpaceWithoutState()) != fluidDefinitions.end());
+    if (isFluid && currentBlock.level > -1) {
         AssignFluidMaterials(blockModel, currentBlock.name);
     }
     else {
@@ -116,6 +118,7 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
         blockColorCache[blockId] = textureAverage;
     }
 
+    char finalColorStr[128];
     // 如果需要群系颜色混合，则每次都进行混合计算，不缓存混合后的结果
     if (blockModel.tintindex != -1) {
         // 解析缓存的图片平均颜色
@@ -139,14 +142,23 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
         float finalG = biomeG * textureG;
         float finalB = biomeB * textureB;
 
-        char blendedColorStr[128];
-        snprintf(blendedColorStr, sizeof(blendedColorStr), "color#%.3f %.3f %.3f", finalR, finalG, finalB);
-        return std::string(blendedColorStr);
+        if (isFluid) {
+            // 流体格式：流体名-color#r g b
+            snprintf(finalColorStr, sizeof(finalColorStr), "%s-color#%.3f %.3f %.3f", currentBlock.GetNameAndNameSpaceWithoutState().c_str(), finalR, finalG, finalB);
+        }
+        else {
+            snprintf(finalColorStr, sizeof(finalColorStr), "color#%.3f %.3f %.3f", finalR, finalG, finalB);
+        }
+        return std::string(finalColorStr);
     }
     else {
         // 不需要群系混合，直接返回并缓存纹理图片的平均颜色
-        char finalColorStr[128];
-        snprintf(finalColorStr, sizeof(finalColorStr), "color#%s", textureAverage.c_str());
+        if (isFluid) {
+            snprintf(finalColorStr, sizeof(finalColorStr), "%s-color#%s", currentBlock.GetNameAndNameSpaceWithoutState().c_str(), textureAverage.c_str());
+        }
+        else {
+            snprintf(finalColorStr, sizeof(finalColorStr), "color#%s", textureAverage.c_str());
+        }
         return std::string(finalColorStr);
     }
 }
