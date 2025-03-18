@@ -208,8 +208,8 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
         float finalB = biomeB * textureB;
 
         if (isFluid) {
-            // 流体格式：流体名-color#r g b
-            snprintf(finalColorStr, sizeof(finalColorStr), "%s-color#%.3f %.3f %.3f", currentBlock.GetNameAndNameSpaceWithoutState().c_str(), finalR, finalG, finalB);
+            // 流体格式：color#r g b-流体名
+            snprintf(finalColorStr, sizeof(finalColorStr), "color#%.3f %.3f %.3f-%s", finalR, finalG, finalB, currentBlock.GetNameAndNameSpaceWithoutState().c_str());
         }
         else {
             snprintf(finalColorStr, sizeof(finalColorStr), "color#%.3f %.3f %.3f", finalR, finalG, finalB);
@@ -219,7 +219,7 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
     else {
         // 不需要群系混合，直接返回并缓存纹理图片的平均颜色
         if (isFluid) {
-            snprintf(finalColorStr, sizeof(finalColorStr), "%s-color#%s", currentBlock.GetNameAndNameSpaceWithoutState().c_str(), textureAverage.c_str());
+            snprintf(finalColorStr, sizeof(finalColorStr), "color#%s-%s", textureAverage.c_str()), currentBlock.GetNameAndNameSpaceWithoutState().c_str();
         }
         else {
             snprintf(finalColorStr, sizeof(finalColorStr), "color#%s", textureAverage.c_str());
