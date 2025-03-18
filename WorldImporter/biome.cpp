@@ -318,6 +318,105 @@ int Biome::GetColor(int biomeId, BiomeColorType colorType) {
     }
 }
 
+
+int Biome::GetBiomeColor(int blockX, int blockY, int blockZ, BiomeColorType colorType) {
+    // 生物群系过渡距离，默认值为4，可根据需要调整
+    const int biomeTransitionDistance = 4;
+    int count = 0;
+    unsigned int rSum = 0, gSum = 0, bSum = 0;
+
+    // 遍历以 (blockX, blockZ) 为中心、边长为 (2*biomeTransitionDistance + 1) 的正方形区域
+    for (int dx = -biomeTransitionDistance; dx <= biomeTransitionDistance; dx++) {
+        for (int dz = -biomeTransitionDistance; dz <= biomeTransitionDistance; dz++) {
+            int curX = blockX + dx;
+            int curZ = blockZ + dz;
+
+            // 将世界坐标转换为区块坐标
+            int chunkX, chunkZ;
+            blockToChunk(curX, curZ, chunkX, chunkZ);
+
+            // 将当前块的Y坐标转换为子区块索引（保持与原 Y 坐标一致）
+            int sectionY;
+            blockYToSectionY(blockY, sectionY);
+
+            // 创建缓存键
+            auto blockKey = std::make_tuple(chunkX, chunkZ, sectionY);
+
+            // 检查 SectionCache 中是否存在对应的区块数据，否则加载缓存
+            if (sectionCache.find(blockKey) == sectionCache.end()) {
+                LoadAndCacheBlockData(chunkX, chunkZ);
+            }
+
+            const auto& biomeData = sectionCache[blockKey].biomeData;
+
+            // 计算在子区块内的坐标，注意与生物群系数据排列有关
+            int biomeX = mod16(curX) / 4;
+            int biomeY = mod16(blockY) / 4;
+            int biomeZ = mod16(curZ) / 4;
+            int index = 16 * biomeY + 4 * biomeZ + biomeX;
+
+            // 获取生物群系ID（若超出范围，则默认为0）
+            int biomeId = (index < biomeData.size()) ? biomeData[index] : 0;
+
+            // 共享读锁确保 biomeRegistry 的线程安全
+            std::shared_lock<std::shared_mutex> lock(registryMutex);
+            auto it = std::find_if(biomeRegistry.begin(), biomeRegistry.end(),
+                [biomeId](const auto& entry) { return entry.second.id == biomeId; });
+
+            // 默认颜色设置为白色
+            int color = 0xFFFFFF;
+            if (it != biomeRegistry.end()) {
+                // 获取独立颜色锁，确保颜色数据读取安全
+                std::lock_guard<std::mutex> colorLock(it->second.colorMutex);
+                switch (colorType) {
+                case BiomeColorType::Foliage:
+                    color = it->second.colors.foliage;
+                    break;
+                case BiomeColorType::DryFoliage:
+                    color = it->second.colors.dryFoliage;
+                    break;
+                case BiomeColorType::Grass:
+                    color = it->second.colors.grass;
+                    break;
+                case BiomeColorType::Fog:
+                    color = it->second.colors.fog;
+                    break;
+                case BiomeColorType::Sky:
+                    color = it->second.colors.sky;
+                    break;
+                case BiomeColorType::Water:
+                    color = it->second.colors.water;
+                    break;
+                case BiomeColorType::WaterFog:
+                    color = it->second.colors.waterFog;
+                    break;
+                default:
+                    color = 0xFFFFFF;
+                    break;
+                }
+            }
+
+            // 将颜色分解为RGB分量并累加
+            int r = (color >> 16) & 0xFF;
+            int g = (color >> 8) & 0xFF;
+            int b = color & 0xFF;
+            rSum += r;
+            gSum += g;
+            bSum += b;
+            count++;
+        }
+    }
+
+    // 计算各分量的平均值
+    int avgR = rSum / count;
+    int avgG = gSum / count;
+    int avgB = bSum / count;
+    // 组合回最终颜色值
+    int finalColor = (avgR << 16) | (avgG << 8) | avgB;
+    return finalColor;
+}
+
+
 // 新增辅助函数处理颜色逻辑
 int Biome::ParseColorWithFallback(nlohmann::json& effects,
     const std::string& colorKey,
@@ -407,7 +506,6 @@ bool Biome::ExportToPNG(const std::vector<std::vector<int>>& biomeMap,
         uint8_t r = (colorValue >> 16) & 0xFF;
         uint8_t g = (colorValue >> 8) & 0xFF;
         uint8_t b = colorValue & 0xFF;
-        //std::cout << std::to_string(r) <<"," << std::to_string(g) << "," << std::to_string(b) << std::endl;
         colorMap[entry.second.id] = std::make_tuple(r, g, b);
     }
 

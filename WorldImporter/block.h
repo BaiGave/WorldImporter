@@ -3,7 +3,7 @@
 
 #include "config.h"
 #include "nbtutils.h"
-extern Config config;
+
 
 #include <vector>
 #include <string>
@@ -14,10 +14,10 @@ extern Config config;
 #include <utility>
 #include <cctype>  // for tolower
 #include <regex>   // for regex matching
-
+extern Config config;
 // 自定义哈希函数声明
-struct pair_hash;
-struct triple_hash;
+extern struct pair_hash;
+extern struct triple_hash;
 
 extern std::unordered_set<std::string> solidBlocks; // 改为哈希表
 extern std::unordered_set<std::string> fluidBlocks;

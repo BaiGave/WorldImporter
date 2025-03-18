@@ -180,9 +180,12 @@ int main() {
     loadAndUpdateConfig();  // 重新加载和更新配置
     
     if (config.status == 1) {
+        auto start_time = high_resolution_clock::now();
         // 如果是 1，导出区域内所有方块模型
         RegionModelExporter::ExportRegionModels("region_models");
-        
+        auto end_time = high_resolution_clock::now();
+        auto duration = duration_cast<milliseconds>(end_time - start_time);
+        cout << "Total time: " << duration.count() << " milliseconds" << endl;
         // 保存更新后的配置文件
         WriteConfig(config, "config\\config.json");
         

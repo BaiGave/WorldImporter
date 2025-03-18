@@ -71,12 +71,8 @@ std::string GetMinecraftVersion(const std::wstring& gameFolderPath, std::string&
         modLoaderType = "Vanilla";  // 默认值
     }
 
-    // 构建 .jar 文件路径（优先使用 version.json 中的信息，否则使用文件夹名）
-    std::string jarName = (hasVersionJson && versionData.contains("jar"))
-        ? versionData["jar"].get<std::string>()  // 显式转换为 string
-        : folderNameStr;                         // 已经是 string
 
-    std::wstring jarFilePath = gameFolderPath + L"\\" + string_to_wstring(jarName) + L".jar";
+    std::wstring jarFilePath = gameFolderPath + L"\\" + folderName + L".jar";
 
     // 更新缓存
     FolderData versionInfo = { "minecraft", wstring_to_string(jarFilePath) };
@@ -106,7 +102,7 @@ void GetModList(const std::wstring& gameFolderPath, std::vector<std::string>& mo
 
     // 获取 mods 文件夹路径
     std::wstring modsFolderPath = gameFolderPath + L"\\mods\\";
-    
+
     // 获取 mods 文件夹中的所有文件，匹配 .jar 文件
     WIN32_FIND_DATA findFileData;
     HANDLE hFind = INVALID_HANDLE_VALUE;
@@ -129,7 +125,7 @@ void GetModList(const std::wstring& gameFolderPath, std::vector<std::string>& mo
                 std::string modId;
                 try
                 {
-                     // 使用 JarReader 处理 .jar 文件
+                    // 使用 JarReader 处理 .jar 文件
                     JarReader jarReader(modsFolderPath + fileName);
 
                     if (modLoaderType == "Fabric") {
@@ -146,7 +142,7 @@ void GetModList(const std::wstring& gameFolderPath, std::vector<std::string>& mo
                 {
                     std::cerr << "Error occurred: " << e.what() << std::endl;
                 }
-                
+
 
                 if (!modId.empty()) {
                     FolderData modInfo = { modId, wstring_to_string(modsFolderPath + fileName) };
@@ -155,14 +151,14 @@ void GetModList(const std::wstring& gameFolderPath, std::vector<std::string>& mo
             }
         }
     } while (FindNextFile(hFind, &findFileData) != 0);
-    
-    
-    
+
+
+
     FindClose(hFind);
 
     // 临时存储一个新的 modList
     std::unordered_map<std::string, FolderData> updatedModListMap;
-    
+
     // 先复制原 modList 中已有的元素到 updatedModListMap 中
     for (const auto& mod : modList) {
         if (newMods.find(mod) != newMods.end()) {

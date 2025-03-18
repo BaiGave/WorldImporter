@@ -57,12 +57,14 @@ public:
 
     static int GetColor(int biomeId, BiomeColorType colorType);
 
+    static int GetBiomeColor(int blockX, int blockY, int blockZ, BiomeColorType colorType);
+
     // 打印所有已注册群系
     static void PrintAllRegisteredBiomes();
 
     static std::vector<std::vector<int>> GenerateBiomeMap(int minX, int minZ, int maxX, int maxZ);
 
-    static bool ExportToPNG(const std::vector<std::vector<int>>& biomeMap,
+    static bool ExportToPNG(const std::vector<std::vector<int>>& biomeColorMap,
         const std::string& filename,
         BiomeColorType colorType);
 

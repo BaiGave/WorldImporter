@@ -576,6 +576,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
     std::unordered_map<std::string, int> vertexCache;
     std::unordered_map<std::string, int> uvCache;
     int faceId = 0;
+    short tintindex = -1;
     std::unordered_map<std::string, int> faceCountMap; // 面计数映射
 
     auto elements = modelJson["elements"];
@@ -982,7 +983,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                     else {
                         faceDirection = "DO_NOT_CULL";
                     }
-                    short tintindex=-1;
+                    
                     if (face.value().contains("tintindex")) {
                         tintindex = face.value()["tintindex"].get<int>();
                     }

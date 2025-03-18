@@ -62,7 +62,7 @@ JarReader::JarReader(const std::wstring& jarFilePath)
         std::cerr << "Failed to open .jar file: " << utf8Path << std::endl;
         return;
     }
-    
+
 
     // 检查是否为原版
     if (isVanilla()) {
@@ -214,7 +214,7 @@ void JarReader::cacheAllResources(
                     zip_fclose(file);
                 }
             }
-            
+
         }
         // 处理 blockstate
         else if (filePath.find("/blockstates/") != std::string::npos &&
@@ -243,7 +243,7 @@ void JarReader::cacheAllResources(
             filePath.substr(filePath.size() - 5) == ".json")
         {
             size_t resStart = filePath.find("/models/", nsEnd) + 8;
-            
+
             std::string modelPath = filePath.substr(resStart, filePath.size() - resStart - 5);
             std::string cacheKey = namespaceName + ":" + modelPath;
 
@@ -448,7 +448,7 @@ std::string JarReader::getFabricModId() {
     }
 
     std::string modJsonContent = getFileContent("fabric.mod.json");
-    modJsonContent=preprocessJson(modJsonContent);
+    modJsonContent = preprocessJson(modJsonContent);
     nlohmann::json json = nlohmann::json::parse(modJsonContent);
     return json["id"].get<std::string>();
 }
@@ -517,5 +517,4 @@ std::string JarReader::cleanUpContent(const std::string& content) {
 
     return cleaned;
 }
-
 
