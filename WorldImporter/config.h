@@ -46,7 +46,6 @@ struct Config {
     bool importByChunk;  // 是否按区块导入 #待做
     bool importByBlockType;  // 是否按方块种类导入 #待做
     int pointCloudType;  // 实心或空心，0为实心，1为空心 #待做
-    int lodLevel;  // LOD等级: 0低，1中，2高 #待做
     std::string importFilePath; // 导入文件路径 #待做
     std::string selectedGameVersion; // 选择的游戏版本
     std::map<std::string, VersionConfig> versionConfigs;  // 按版本存储不同的配置
@@ -56,7 +55,7 @@ struct Config {
         minX(0), minY(0), minZ(0), maxX(0), maxY(0), maxZ(0), status(0),  importByChunk(false),
         importByBlockType(false), useChunkPrecision(true), keepBoundary(false), strictDeduplication(true), cullCave(true), exportLightBlock(true), allowDoubleFace(false),
         activeLOD(true), LOD0renderDistance(6), LOD1renderDistance(6), LOD2renderDistance(6), LOD3renderDistance(6),
-        useUnderwaterLOD(true), pointCloudType(0), lodLevel(0), selectedGameVersion(""),
+        useUnderwaterLOD(false), pointCloudType(0), selectedGameVersion(""),
         versionConfigs() {
     }
 };

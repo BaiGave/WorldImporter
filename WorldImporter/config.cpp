@@ -28,7 +28,6 @@ void WriteConfig(const Config& config, const std::string& configFile) {
     file << "importByChunk = " << (config.importByChunk ? "1" : "0") << std::endl;
     file << "importByBlockType = " << (config.importByBlockType ? "1" : "0") << std::endl;
     file << "pointCloudType = " << config.pointCloudType << std::endl;
-    file << "lodLevel = " << config.lodLevel << std::endl;
     file << "importFilePath = " << config.importFilePath << std::endl;
     file << "selectedGameVersion = " << config.selectedGameVersion << std::endl;
 
@@ -124,6 +123,42 @@ Config LoadConfig(const std::string& configFile) {
             else if (key == "status") {
                 config.status = std::stoi(value);
             }
+            else if (key == "useChunkPrecision") {
+                config.useChunkPrecision = std::stoi(value);
+            }
+            else if (key == "keepBoundary") {
+                config.keepBoundary = std::stoi(value);
+            }
+            else if (key == "strictDeduplication") {
+                config.strictDeduplication = std::stoi(value);
+            }
+            else if (key == "cullCave") {
+                config.cullCave = std::stoi(value);
+            }
+            else if (key == "exportLightBlock") {
+                config.exportLightBlock = std::stoi(value);
+            }
+            else if (key == "allowDoubleFace") {
+                config.allowDoubleFace = std::stoi(value);
+            }
+            else if (key == "activeLOD") {
+                config.activeLOD = std::stoi(value);
+            }
+            else if (key == "LOD0renderDistance") {
+                config.LOD0renderDistance = std::stoi(value);
+            }
+            else if (key == "LOD1renderDistance") {
+                config.LOD1renderDistance = std::stoi(value);
+            }
+            else if (key == "LOD2renderDistance") {
+                config.LOD2renderDistance = std::stoi(value);
+            }
+            else if (key == "LOD3renderDistance") {
+                config.LOD3renderDistance = std::stoi(value);
+            }
+            else if (key == "useUnderwaterLOD") {
+                config.useUnderwaterLOD = std::stoi(value);
+            }
             else if (key == "importByChunk") {
                 config.importByChunk = (value == "1");
             }
@@ -132,9 +167,6 @@ Config LoadConfig(const std::string& configFile) {
             }
             else if (key == "pointCloudType") {
                 config.pointCloudType = std::stoi(value);
-            }
-            else if (key == "lodLevel") {
-                config.lodLevel = std::stoi(value);
             }
             else if (key == "importFilePath") {
                 config.importFilePath = value;
