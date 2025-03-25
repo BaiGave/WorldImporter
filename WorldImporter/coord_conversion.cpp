@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 
+
 int minSectionY;
 // 计算 YZX 编码后的数字
 int toYZX(int x, int y, int z) {
@@ -56,4 +57,3 @@ inline void worldToBiomeUnit(int worldX, int worldY, int worldZ,
     biomeZ = (worldZ % 16) / 4;
     biomeY = (worldY % 16) / 4;
 }
-

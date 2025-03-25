@@ -146,6 +146,7 @@
     <ClCompile Include="fluid.cpp" />
     <ClCompile Include="GlobalCache.cpp" />
     <ClCompile Include="JarReader.cpp" />
+    <ClCompile Include="LODManager.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="model.cpp" />
     <ClCompile Include="nbtutils.cpp" />
@@ -169,6 +170,7 @@
     <ClInclude Include="global.h" />
     <ClInclude Include="GlobalCache.h" />
     <ClInclude Include="JarReader.h" />
+    <ClInclude Include="LODManager.h" />
     <ClInclude Include="model.h" />
     <ClInclude Include="nbtutils.h" />
     <ClInclude Include="objExporter.h" />

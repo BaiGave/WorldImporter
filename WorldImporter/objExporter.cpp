@@ -414,8 +414,17 @@ void createMtlFile(const ModelData& data, const std::string& mtlFileName) {
             // 处理纯颜色材质（支持流体格式：color#r g b-流体名 和普通格式：color#r g b）
             else if (texturePath.find("color#") != std::string::npos || texturePath.find("-color#") != std::string::npos) {
                 std::string colorStr;
-                // 流体材质格式，提取“color#”后面的颜色部分
-                colorStr = texturePath.substr(std::string("color#").size(),18);
+                size_t pos = texturePath.find("-color#");
+                if (pos != std::string::npos) {
+                    // 流体材质格式，提取“-color#”后面的颜色部分
+                    colorStr = texturePath.substr(pos + std::string("-color#").size());
+                }
+                else if (texturePath.find("color#") == 0) {
+                    colorStr = texturePath.substr(std::string("color#").size());
+                }
+                else {
+                    colorStr = "";
+                }
                 std::istringstream iss(colorStr);
                 float r, g, b;
                 if (iss >> r >> g >> b) {

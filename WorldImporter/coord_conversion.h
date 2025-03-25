@@ -1,6 +1,6 @@
 #ifndef COORD_CONVERSION_H
 #define COORD_CONVERSION_H
-
+#include <tuple>
 extern int minSectionY;
 
 // 计算 YZX 编码后的数字
