@@ -366,6 +366,14 @@ void ApplyRotationToFaceDirections(std::vector<std::string>& faceDirections, int
     
 }
 
+void ApplyPositionOffset(ModelData& model, int x, int y, int z) {
+    for (size_t i = 0; i < model.vertices.size(); i += 3) {
+        model.vertices[i] += x;    // X坐标偏移
+        model.vertices[i + 1] += y;  // Y坐标偏移
+        model.vertices[i + 2] += z;  // Z坐标偏移
+    }
+}
+
 //============== 模型数据处理模块 ==============//
 //---------------- JSON处理 ----------------
 nlohmann::json LoadParentModel(const std::string& namespaceName, const std::string& blockId, nlohmann::json& currentModelJson) {

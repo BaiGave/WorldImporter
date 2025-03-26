@@ -175,6 +175,7 @@ std::string Biome::GetColormapData(const std::string& namespaceName, const std::
     std::cerr << "Colormap not found: " << namespaceName << ":" << colormapName << std::endl;
     return "";
 }
+
 std::vector<std::vector<int>> Biome::GenerateBiomeMap(int minX, int minZ, int maxX, int maxZ) {
     std::vector<std::vector<int>> biomeMap;
     int width = maxX - minX + 1;
@@ -190,6 +191,18 @@ std::vector<std::vector<int>> Biome::GenerateBiomeMap(int minX, int minZ, int ma
         }
     }
     return biomeMap;
+}
+
+void Biome::ExportAllToPNG(int minX, int minZ, int maxX, int maxZ) {
+    auto biomeMap = GenerateBiomeMap(minX, minZ, maxX, maxZ);
+    // 导出图片
+    Biome::ExportToPNG(biomeMap, "foliage.png", BiomeColorType::Foliage);
+    Biome::ExportToPNG(biomeMap, "water.png", BiomeColorType::Water);
+    Biome::ExportToPNG(biomeMap, "grass.png", BiomeColorType::Grass);
+    Biome::ExportToPNG(biomeMap, "dryfoliage.png", BiomeColorType::DryFoliage);
+    Biome::ExportToPNG(biomeMap, "waterFog.png", BiomeColorType::WaterFog);
+    Biome::ExportToPNG(biomeMap, "fog.png", BiomeColorType::Fog);
+    Biome::ExportToPNG(biomeMap, "sky.png", BiomeColorType::Sky);
 }
 
 BiomeColors Biome::ParseBiomeColors(const nlohmann::json& biomeJson) {

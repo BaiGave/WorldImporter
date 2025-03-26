@@ -13,11 +13,11 @@
 #include <chrono>  // 新增：用于时间测量
 #include <iostream>  // 新增：用于输出时间
 #include "EntityBlock.h"
+#include "ModelDeduplicator.h"
+#include "chunk_group_allocator.h"
 
 using namespace std;
 using namespace std::chrono;  // 新增：方便使用 chrono
-
-
 
 // 自定义哈希函数，用于std::pair<int, int>
 struct pair_hash {
@@ -41,152 +41,19 @@ struct triple_hash {
 };
 
 
-void deduplicateVertices(ModelData& data) {
-    std::unordered_map<VertexKey, int> vertexMap;
-    // 预先分配容量，避免多次rehash
-    vertexMap.reserve(data.vertices.size() / 3);
-    std::vector<float> newVertices;
-    newVertices.reserve(data.vertices.size());
-    std::vector<int> indexMap(data.vertices.size() / 3);
-
-    for (size_t i = 0; i < data.vertices.size(); i += 3) {
-        float x = data.vertices[i];
-        float y = data.vertices[i + 1];
-        float z = data.vertices[i + 2];
-        // 保留四位小数（转为整数后再比较）
-        int rx = static_cast<int>(x * 10000 + 0.5f);
-        int ry = static_cast<int>(y * 10000 + 0.5f);
-        int rz = static_cast<int>(z * 10000 + 0.5f);
-        VertexKey key{ rx, ry, rz };
-
-        auto it = vertexMap.find(key);
-        if (it != vertexMap.end()) {
-            indexMap[i / 3] = it->second;
-        }
-        else {
-            int newIndex = newVertices.size() / 3;
-            vertexMap[key] = newIndex;
-            newVertices.push_back(x);
-            newVertices.push_back(y);
-            newVertices.push_back(z);
-            indexMap[i / 3] = newIndex;
-        }
-    }
-
-    data.vertices = std::move(newVertices);
-
-    // 更新面数据中的顶点索引
-    for (auto& idx : data.faces) {
-        idx = indexMap[idx];
-    }
-}
-
-void deduplicateUV(ModelData& model) {
-    // 如果没有 UV 坐标，则直接返回
-    if (model.uvCoordinates.empty()) {
-        return;
-    }
-
-    // 使用哈希表记录每个唯一 UV 对应的新索引
-    std::unordered_map<UVKey, int> uvMap;
-    std::vector<float> newUV;  // 存储去重后的 UV 坐标（每两个元素构成一组）
-    // 原始 UV 数组中组的数量（每组有2个元素：u,v）
-    int uvCount = model.uvCoordinates.size() / 2;
-    // 建立一个映射表，从旧的 UV 索引到新的 UV 索引
-    std::vector<int> indexMapping(uvCount, -1);
-
-    for (int i = 0; i < uvCount; i++) {
-        float u = model.uvCoordinates[i * 2];
-        float v = model.uvCoordinates[i * 2 + 1];
-        // 将浮点数转换为整数，保留小数点后6位的精度
-        int iu = static_cast<int>(std::round(u * 1000000));
-        int iv = static_cast<int>(std::round(v * 1000000));
-        UVKey key = { iu, iv };
-
-        auto it = uvMap.find(key);
-        if (it == uvMap.end()) {
-            // 如果没有找到，则是新 UV，记录新的索引
-            int newIndex = newUV.size() / 2;
-            uvMap[key] = newIndex;
-            newUV.push_back(u);
-            newUV.push_back(v);
-            indexMapping[i] = newIndex;
-        }
-        else {
-            // 如果已存在，则记录已有的新索引
-            indexMapping[i] = it->second;
-        }
-    }
-
-    // 如果 uvFaces 不为空，则更新 uvFaces 中的索引
-    if (!model.uvFaces.empty()) {
-        for (int& idx : model.uvFaces) {
-            // 注意：这里假设 uvFaces 中的索引都在有效范围内
-            idx = indexMapping[idx];
-        }
-    }
-
-    // 替换掉原有的 uvCoordinates
-    model.uvCoordinates = std::move(newUV);
-}
-
-void deduplicateFaces(ModelData& data) {
-    size_t faceCountNum = data.faces.size() / 4;
-    std::vector<FaceKey> keys;
-    keys.reserve(faceCountNum);
-
-    // 第一次遍历：计算每个面的规范化键并存入数组（避免重复排序）
-    for (size_t i = 0; i < data.faces.size(); i += 4) {
-        std::array<int, 4> face = {
-            data.faces[i], data.faces[i + 1],
-            data.faces[i + 2], data.faces[i + 3]
-        };
-        std::array<int, 4> sorted = face;
-        std::sort(sorted.begin(), sorted.end());
-        int matIndex = config.strictDeduplication ? data.materialIndices[i / 4] : -1;
-        keys.push_back(FaceKey{ sorted, matIndex });
-    }
-
-    // 使用预分配容量的 unordered_map 来统计每个 FaceKey 的出现次数
-    std::unordered_map<FaceKey, int, FaceKeyHasher> freq;
-    freq.reserve(faceCountNum);
-    for (const auto& key : keys) {
-        freq[key]++;
-    }
-
-    // 第二次遍历：过滤只出现一次的面
-    std::vector<int> newFaces;
-    newFaces.reserve(data.faces.size());
-    std::vector<int> newUvFaces;
-    newUvFaces.reserve(data.uvFaces.size());
-    std::vector<int> newMaterials;
-    newMaterials.reserve(data.materialIndices.size());
-
-    for (size_t i = 0; i < keys.size(); i++) {
-        if (freq[keys[i]] == 1) {
-            size_t base = i * 4;
-            newFaces.insert(newFaces.end(),
-                data.faces.begin() + base,
-                data.faces.begin() + base + 4);
-            newUvFaces.insert(newUvFaces.end(),
-                data.uvFaces.begin() + base,
-                data.uvFaces.begin() + base + 4);
-            newMaterials.push_back(data.materialIndices[i]);
-        }
-    }
-
-    data.faces.swap(newFaces);
-    data.uvFaces.swap(newUvFaces);
-    data.materialIndices.swap(newMaterials);
-}
-
-void RegionModelExporter::ExportRegionModels(const string& outputName) {
+void RegionModelExporter::ExportModels(const string& outputName) {
     int xStart = config.minX;
     int xEnd = config.maxX;
     int yStart = config.minY;
     int yEnd = config.maxY;
     int zStart = config.minZ;
     int zEnd = config.maxZ;
+
+    // 定义半径范围（可以根据需要调整）
+    int LOD0renderDistance = config.LOD0renderDistance;
+    int LOD1renderDistance = config.LOD1renderDistance + LOD0renderDistance;
+    int LOD2renderDistance = config.LOD2renderDistance + LOD1renderDistance;
+    int LOD3renderDistance = config.LOD3renderDistance + LOD2renderDistance;
 
     if (config.useChunkPrecision) {
         auto alignTo16 = [](int value) -> int {
@@ -213,142 +80,108 @@ void RegionModelExporter::ExportRegionModels(const string& outputName) {
     blockToChunk(xEnd, zEnd, chunkXEnd, chunkZEnd);
     blockYToSectionY(yStart, sectionYStart);
     blockYToSectionY(yEnd, sectionYEnd);
+
     // 计算中心坐标
-    int centerX = (chunkXStart + chunkXEnd) / 2;
-    int centerZ = (chunkZStart + chunkZEnd) / 2;
-    LoadChunks();
+    if (config.isLODAutoCenter)
+    {
+        // 计算中心坐标
+        config.LODCenterX = (chunkXStart + chunkXEnd) / 2;
+        config.LODCenterZ = (chunkZStart + chunkZEnd) / 2;
+    }
+
+    LoadChunks(chunkXStart, chunkXEnd, chunkZStart, chunkZEnd,
+        sectionYStart, sectionYEnd,LOD0renderDistance, LOD1renderDistance, LOD2renderDistance, LOD3renderDistance);
 
     UpdateSkyLightNeighborFlags();
-    auto blocks = GetGlobalBlockPalette();
-    ProcessBlockstateForBlocks(blocks);
 
-    auto biomeMap = Biome::GenerateBiomeMap(xStart, zStart, xEnd, zEnd);
-    // 导出图片
-    Biome::ExportToPNG(biomeMap, "foliage.png", BiomeColorType::Foliage);
-    Biome::ExportToPNG(biomeMap, "water.png", BiomeColorType::Water);
-    Biome::ExportToPNG(biomeMap, "grass.png", BiomeColorType::Grass);
-    Biome::ExportToPNG(biomeMap, "dryfoliage.png", BiomeColorType::DryFoliage);
-    Biome::ExportToPNG(biomeMap, "waterFog.png", BiomeColorType::WaterFog);
-    Biome::ExportToPNG(biomeMap, "fog.png", BiomeColorType::Fog);
-    Biome::ExportToPNG(biomeMap, "sky.png", BiomeColorType::Sky);
+    ProcessBlockstateForBlocks(GetGlobalBlockPalette());
 
-    
-    // 定义半径范围（可以根据需要调整）
-    int LOD0renderDistance = config.LOD0renderDistance;
-    int LOD1renderDistance = config.LOD1renderDistance+ LOD0renderDistance;
-    int LOD2renderDistance = config.LOD2renderDistance+ LOD1renderDistance;
-    int LOD3renderDistance = config.LOD3renderDistance+ LOD2renderDistance;
+    Biome::ExportAllToPNG(xStart, zStart, xEnd, zEnd);
 
     ModelData finalMergedModel;
 
+    std::unordered_map<std::string, std::string> uniqueMaterials;
+    // 第一阶段：划分区块组并收集任务
+    auto chunkGroups = ChunkGroupAllocator::GenerateChunkGroups(
+        chunkXStart, chunkXEnd,
+        chunkZStart, chunkZEnd,
+        sectionYStart, sectionYEnd,
+        LOD0renderDistance, LOD1renderDistance,
+        LOD2renderDistance, LOD3renderDistance
+    );
 
-    for (int chunkX = chunkXStart; chunkX <= chunkXEnd; ++chunkX) {
-        for (int chunkZ = chunkZStart; chunkZ <= chunkZEnd; ++chunkZ) {
-            for (int sectionY = sectionYStart; sectionY <= sectionYEnd; ++sectionY) {
-                // 计算当前区块的中心坐标
-                int currentCenterX = chunkX;
-                int currentCenterZ = chunkZ;
+    // 第二阶段：按组生成并导出模型
+    for (const auto& group : chunkGroups) {
+        ModelData groupModel;
 
-                // 计算与中心点的距离
-                int distance = sqrt(
-                    (currentCenterX - centerX) * (currentCenterX - centerX) +
-                    (currentCenterZ - centerZ) * (currentCenterZ - centerZ)
-                );
-                ModelData chunkModel;
-                // 根据距离选择生成方法
-                if (distance <= LOD0renderDistance) {
-                    chunkModel = GenerateChunkModel(chunkX, sectionY, chunkZ);
-                }
-                else if (distance <= LOD1renderDistance) {
-                    chunkModel = GenerateLODChunkModel(chunkX, sectionY, chunkZ, 1.0f);
-                }
-                else if (distance <= LOD2renderDistance) {
-                    chunkModel = GenerateLODChunkModel(chunkX, sectionY, chunkZ, 2.0f);
-                }
-                else if (distance <= LOD3renderDistance) {
-                    chunkModel = GenerateLODChunkModel(chunkX, sectionY, chunkZ, 4.0f);
-                }
-                else
-                {
-                    chunkModel = GenerateLODChunkModel(chunkX, sectionY, chunkZ, 8.0f);
-                }
+        for (const auto& task : group.tasks) {
+            ModelData chunkModel;
+            if (task.lodLevel == 0.0f) {
+                chunkModel = GenerateChunkModel(task.chunkX, task.sectionY, task.chunkZ);
+            }
+            else {
+                chunkModel = GenerateLODChunkModel(task.chunkX, task.sectionY, task.chunkZ, task.lodLevel);
+            }
 
+            if (groupModel.vertices.empty()) {
+                groupModel = chunkModel;
+            }
+            else {
+                MergeModelsDirectly(groupModel, chunkModel);
+            }
+        }
 
-                // 合并到总模型
+        if (!groupModel.vertices.empty()) {
+            
+
+            if (config.exportFullModel) {
+                // 合并到完整模型
                 if (finalMergedModel.vertices.empty()) {
-                    finalMergedModel = chunkModel;
+                    finalMergedModel = groupModel;
                 }
                 else {
-                    MergeModelsDirectly(finalMergedModel, chunkModel);
+                    MergeModelsDirectly(finalMergedModel, groupModel);
                 }
+            }
+            else if (!config.exportFullModel && !groupModel.vertices.empty()) {
+                ModelDeduplicator::DeduplicateVertices(groupModel);
+                ModelDeduplicator::DeduplicateUV(groupModel);
+                ModelDeduplicator::DeduplicateFaces(groupModel);
+
+                // 生成分组文件名并导出
+                string groupFileName = outputName + "_x" + to_string(group.startX) + "_z" + to_string(group.startZ);
+                CreateMultiModelFiles(groupModel, groupFileName, uniqueMaterials, outputName); // 传递outputName作为共享mtl名
             }
         }
     }
-    
-    
-    deduplicateVertices(finalMergedModel);
-    deduplicateUV(finalMergedModel);
-    deduplicateFaces(finalMergedModel);
 
-
-    if (!finalMergedModel.vertices.empty()) {
+    // 导出完整模型
+    if (config.exportFullModel && !finalMergedModel.vertices.empty()) {
+        // 最终去重处理
+        ModelDeduplicator::DeduplicateVertices(finalMergedModel);
+        ModelDeduplicator::DeduplicateUV(finalMergedModel);
+        ModelDeduplicator::DeduplicateFaces(finalMergedModel);
         CreateModelFiles(finalMergedModel, outputName);
-        
+    }else if (!uniqueMaterials.empty()) {
+            createSharedMtlFile(uniqueMaterials, outputName); // 统一生成mtl
     }
+    
 }
 
-void RegionModelExporter::LoadChunks() {
-    int xStart = config.minX;
-    int xEnd = config.maxX;
-    int yStart = config.minY;
-    int yEnd = config.maxY;
-    int zStart = config.minZ;
-    int zEnd = config.maxZ;
-
-    // 定义半径范围（可以根据需要调整）
-    int LOD0renderDistance = config.LOD0renderDistance;
-    int LOD1renderDistance = config.LOD1renderDistance + LOD0renderDistance;
-    int LOD2renderDistance = config.LOD2renderDistance + LOD1renderDistance;
-    int LOD3renderDistance = config.LOD3renderDistance + LOD2renderDistance;
-
-    // 计算最小和最大坐标，以处理范围颠倒的情况
-    int min_x = min(xStart, xEnd);
-    int max_x = max(xStart, xEnd);
-    int min_z = min(zStart, zEnd);
-    int max_z = max(zStart, zEnd);
-    int min_y = min(yStart, yEnd);
-    int max_y = max(yStart, yEnd);
-
-    // 计算分块的范围（每个分块宽度为 16 块）
-    int chunkXStart, chunkXEnd, chunkZStart, chunkZEnd;
-    blockToChunk(min_x, min_z, chunkXStart, chunkZStart);
-    blockToChunk(max_x, max_z, chunkXEnd, chunkZEnd);
-    // 计算中心坐标
-    int centerX = (chunkXStart + chunkXEnd) / 2;
-    int centerZ = (chunkZStart + chunkZEnd) / 2;
-    // 处理可能的负数和范围计算
-    chunkXStart = floor((float)min_x / 16.0f);
-    chunkXEnd = ceil((float)max_x / 16.0f);
-    chunkZStart = floor((float)min_z / 16.0f);
-    chunkZEnd = ceil((float)max_z / 16.0f);
-
-    // 计算分段 Y 范围（每个分段高度为 16 块）
-    int sectionYStart, sectionYEnd;
-    blockYToSectionY(min_y, sectionYStart);
-    blockYToSectionY(max_y, sectionYEnd);
-    sectionYStart = static_cast<int>(floor((float)min_y / 16.0f));
-    sectionYEnd = static_cast<int>(ceil((float)max_y / 16.0f));
-
+void RegionModelExporter::LoadChunks(int chunkXStart, int chunkXEnd, int chunkZStart, int chunkZEnd,
+    int sectionYStart, int sectionYEnd,
+    int LOD0renderDistance, int LOD1renderDistance,
+    int LOD2renderDistance, int LOD3renderDistance) {
     // 加载所有相关的分块和分段
     for (int chunkX = chunkXStart; chunkX <= chunkXEnd; ++chunkX) {
         for (int chunkZ = chunkZStart; chunkZ <= chunkZEnd; ++chunkZ) {
             LoadAndCacheBlockData(chunkX, chunkZ);
             for (int sectionY = sectionYStart; sectionY <= sectionYEnd; ++sectionY) {
-                int distance = sqrt((chunkX - centerX) * (chunkX - centerX) +
-                    (chunkZ - centerZ) * (chunkZ - centerZ));
+                int distance = sqrt((chunkX - config.LODCenterX) * (chunkX - config.LODCenterX) +
+                    (chunkZ - config.LODCenterZ) * (chunkZ - config.LODCenterZ));
                 float chunkLOD = 1.0f;
                 if (distance <= LOD0renderDistance) {
-                    chunkLOD = 0.0f;    
+                    chunkLOD = 0.0f;
                 }
                 else if (distance <= LOD1renderDistance) {
                     chunkLOD = 1.0f;
@@ -359,8 +192,7 @@ void RegionModelExporter::LoadChunks() {
                 else if (distance <= LOD3renderDistance) {
                     chunkLOD = 4.0f;
                 }
-                else
-                {
+                else {
                     chunkLOD = 8.0f;
                 }
                 g_chunkLODs[std::make_tuple(chunkX, sectionY, chunkZ)] = chunkLOD;
@@ -369,13 +201,6 @@ void RegionModelExporter::LoadChunks() {
     }
 }
 
-void RegionModelExporter::ApplyPositionOffset(ModelData& model, int x, int y, int z) {
-    for (size_t i = 0; i < model.vertices.size(); i += 3) {
-        model.vertices[i] += x;    // X坐标偏移
-        model.vertices[i + 1] += y;  // Y坐标偏移
-        model.vertices[i + 2] += z;  // Z坐标偏移
-    }
-}
 
 ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int chunkZ) {
     ModelData chunkModel;

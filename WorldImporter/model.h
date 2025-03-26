@@ -125,7 +125,7 @@ ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2);
 
 void MergeModelsDirectly(ModelData& data1, const ModelData& data2);
 
-
+void ApplyPositionOffset(ModelData& model, int x, int y, int z);
 // exe路径获取
 std::string getExecutableDir();
 //---------------- JSON处理 ----------------

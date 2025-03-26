@@ -22,7 +22,8 @@ extern struct triple_hash;
 extern std::unordered_set<std::string> solidBlocks; // 改为哈希表
 extern std::unordered_set<std::string> fluidBlocks;
 extern std::unordered_set<std::string> alwaysWaterlogged;
-
+extern std::unordered_map<std::pair<int, int>, std::vector<char>, pair_hash> regionCache;
+extern std::unordered_map<std::pair<int, int>, std::unordered_map<std::string, std::vector<int>>, pair_hash> heightMapCache;
 struct FluidInfo {
     std::string folder;
     std::string property;          // 流体特殊属性（如waterlogged）
@@ -432,7 +433,11 @@ std::vector<char> getRegionFromCache(int regionX, int regionZ);
 
 
 void LoadAndCacheBlockData(int chunkX, int chunkZ);
+
+void ReleaseSectionCache();
+
 void UpdateSkyLightNeighborFlags();
+
 int GetBlockId(int blockX, int blockY, int blockZ);
 
 int GetSkyLight(int blockX, int blockY, int blockZ);

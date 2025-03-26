@@ -123,10 +123,10 @@ inline char* fast_ftoa(float value, char* ptr) {
 
 //——————————————导出.obj/.mtl方法—————————————
 
-void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objName) {
+void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objName, const std::string& mtlFileName = "") {
     std::string exeDir = getExecutableDir();
     std::string objFilePath = exeDir + objName + ".obj";
-    std::string mtlFilePath = objName + ".mtl";
+    std::string mtlFilePath = mtlFileName.empty() ? (objName + ".mtl") : (mtlFileName + ".mtl");
 
     size_t totalSize = 0;
     // 文件头部分
@@ -312,11 +312,11 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
 }
 
 // 创建 .obj 文件并写入内容
-void createObjFile(const ModelData& data, const std::string& objName) {
+void createObjFile(const ModelData& data, const std::string& objName, const std::string& mtlFileName = "") {
     std::string exeDir = getExecutableDir();
 
     std::string objFilePath = exeDir + objName + ".obj";
-    std::string mtlFilePath = objName + ".mtl";
+    std::string mtlFilePath = mtlFileName.empty() ? (objName + ".mtl") : (mtlFileName + ".mtl");
 
     // 提取模型名称
     std::string name;
@@ -387,6 +387,90 @@ void createObjFile(const ModelData& data, const std::string& objName) {
         std::cerr << "Error: Failed to create " << objFilePath << "\n";
     }
 }
+
+void createSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMaterials, const std::string& mtlFileName) {
+    std::string exeDir = getExecutableDir();
+    std::string fullMtlPath = exeDir + mtlFileName + ".mtl";
+
+    std::ofstream mtlFile(fullMtlPath);
+    if (mtlFile.is_open()) {
+        for (const auto& uM : uniqueMaterials) {
+            const std::string& textureName = uM.first;
+            std::string texturePath = uM.second;
+
+            mtlFile << "newmtl " << textureName << "\n";
+
+            // 处理材质类型
+            if (texturePath == "None") {
+                // LIGHT材质处理
+                mtlFile << "Ns 200.000000\n";
+                mtlFile << "Kd 1.000000 1.000000 1.000000\n";
+                mtlFile << "Ka 1.000000 1.000000 1.000000\n";
+                mtlFile << "Ks 0.900000 0.900000 0.900000\n";
+                mtlFile << "Ke 0.900000 0.900000 0.900000\n";
+                mtlFile << "Ni 1.500000\n";
+                mtlFile << "illum 2\n";
+            }
+            // 处理纯颜色材质（支持流体格式：color#r g b-流体名 和普通格式：color#r g b）
+            else if (texturePath.find("color#") != std::string::npos || texturePath.find("-color#") != std::string::npos) {
+                std::string colorStr;
+                size_t pos = texturePath.find("-color#");
+                if (pos != std::string::npos) {
+                    // 流体材质格式，提取“-color#”后面的颜色部分
+                    colorStr = texturePath.substr(pos + std::string("-color#").size());
+                }
+                else if (texturePath.find("color#") == 0) {
+                    colorStr = texturePath.substr(std::string("color#").size());
+                }
+                else {
+                    colorStr = "";
+                }
+                std::istringstream iss(colorStr);
+                float r, g, b;
+                if (iss >> r >> g >> b) {
+                    mtlFile << "Kd " << std::fixed << std::setprecision(6)
+                        << r << " " << g << " " << b << "\n";
+                }
+                else {
+                    mtlFile << "Kd 1.000000 1.000000 1.000000\n";
+                    std::cerr << "Error: Invalid color format in '" << texturePath << "'\n";
+                }
+                // 共用普通材质参数
+                mtlFile << "Ns 90.000000\n";
+                mtlFile << "Ks 0.000000 0.000000 0.000000\n";
+                mtlFile << "Ke 0.000000 0.000000 0.000000\n";
+                mtlFile << "Ni 1.500000\n";
+                mtlFile << "illum 1\n";
+            }
+            else {
+                // 普通纹理材质处理
+                mtlFile << "Ns 90.000000\n";
+                mtlFile << "Kd 1.000000 1.000000 1.000000\n";
+                mtlFile << "Ks 0.000000 0.000000 0.000000\n";
+                mtlFile << "Ke 0.000000 0.000000 0.000000\n";
+                mtlFile << "Ni 1.500000\n";
+                mtlFile << "illum 1\n";
+
+                // 处理纹理路径
+                if (mtlFileName.find("//") != std::string::npos) {
+                    texturePath = "../" + texturePath;
+                }
+                if (texturePath.find(".png") == std::string::npos) {
+                    texturePath += ".png";
+                }
+                mtlFile << "map_Kd " << texturePath << "\n";
+                mtlFile << "map_d " << texturePath << "\n";
+            }
+
+            mtlFile << "\n";
+        }
+        mtlFile.close();
+    }
+    else {
+        std::cerr << "Failed to create .mtl file: " << mtlFileName << std::endl;
+    }
+}
+
 // 创建 .mtl 文件，接收 textureToPath 作为参数
 void createMtlFile(const ModelData& data, const std::string& mtlFileName) {
     std::string exeDir = getExecutableDir();
@@ -500,4 +584,27 @@ void CreateModelFiles(const ModelData& data, const std::string& filename) {
     std::cout << "模型导出obj耗时: " << duration.count() << " ms" << std::endl;  // 新增：输出到控制台
     
     
+}
+
+//多个obj文件创建方法
+void CreateMultiModelFiles(const ModelData& data, const std::string& filename,
+    std::unordered_map<std::string, std::string>& uniqueMaterialsL,
+    const std::string& sharedMtlName) { // 新增共享mtl名称参数
+    auto start = high_resolution_clock::now();
+
+    if (data.vertices.size() > 8000) {
+        createObjFileViaMemoryMapped(data, filename, sharedMtlName); // 传递共享mtl名称
+    }
+    else {
+        createObjFile(data, filename, sharedMtlName); // 传递共享mtl名称
+    }
+
+    // 收集材质信息
+    for (size_t i = 0; i < data.materialNames.size(); ++i) {
+        uniqueMaterialsL[data.materialNames[i]] = data.texturePaths[i];
+    }
+
+    auto end = high_resolution_clock::now();
+    auto duration = duration_cast<milliseconds>(end - start);
+    std::cout << "模型导出obj耗时: " << duration.count() << " ms" << std::endl;
 }

@@ -232,6 +232,9 @@ BlockType GetBlockType2(int x, int y, int z) {
     if (!currentBlock.air && currentBlock.level == -1) {
         return SOLID;
     }
+    else if (currentBlock.level > -1) {
+        return FLUID;
+    }
     else
     {
         return AIR;
@@ -365,10 +368,22 @@ std::vector<std::string> LODManager::GetBlockColor(int x, int y, int z, int id, 
 bool IsRegionEmpty(int x, int y, int z, float lodSize) {
     int height;
     BlockType type = LODManager::DetermineLODBlockTypeWithUpperCheck(x, y, z, lodSize, nullptr, &height);
-    if (type == BlockType::SOLID && height == 0)
+    BlockType upperType = DetermineLODBlockType(x, y + lodSize, z, lodSize);
+    if (config.useUnderwaterLOD)
     {
-        return false;
+        if (type == BlockType::SOLID && height == 0)
+        {
+            return false;
+        }
     }
+    else
+    {
+        if ((type == BlockType::SOLID|| (type == BlockType::FLUID && upperType != AIR)) && height == 0)
+        {
+            return false;
+        }
+    }
+    
     return true;
 }
 
@@ -498,9 +513,20 @@ bool IsFaceOccluded(int faceDir, int x, int y, int z, int baseSize) {
         for (int dy = dyStart; dy < dyEnd; ++dy) {
             for (int dz = dzStart; dz < dzEnd; ++dz) {
                 BlockType type = GetBlockType2(dx, dy, dz);
-                if (type != SOLID) {
-                    return false; // 发现非固体方块，不剔除该面
+                if (config.useUnderwaterLOD)
+                {
+                    if (type != SOLID) {
+                        return false; // 发现非固体方块，不剔除该面
+                    }
                 }
+                else
+                {
+                    if (type == BlockType::AIR || (baseSize == 1&& type == BlockType::FLUID))
+                    {
+                        return false;
+                    }
+                }
+                
             }
         }
     }
@@ -666,7 +692,7 @@ ModelData LODManager::GenerateBox(int x, int y, int z, int baseSize, float boxHe
     }
 
     // 调整模型位置
-    RegionModelExporter::ApplyPositionOffset(box, x, y, z);
+    ApplyPositionOffset(box, x, y, z);
 
     // 面剔除逻辑
     std::vector<bool> validFaces(6, true);

@@ -137,6 +137,7 @@
     <ClCompile Include="biome.cpp" />
     <ClCompile Include="block.cpp" />
     <ClCompile Include="blockstate.cpp" />
+    <ClCompile Include="chunk_group_allocator.cpp" />
     <ClCompile Include="config.cpp" />
     <ClCompile Include="coord_conversion.cpp" />
     <ClCompile Include="dat.cpp" />
@@ -149,6 +150,7 @@
     <ClCompile Include="LODManager.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="model.cpp" />
+    <ClCompile Include="ModelDeduplicator.cpp" />
     <ClCompile Include="nbtutils.cpp" />
     <ClCompile Include="objExporter.cpp" />
     <ClCompile Include="PointCloudExporter.cpp" />
@@ -160,6 +162,7 @@
     <ClInclude Include="biome.h" />
     <ClInclude Include="block.h" />
     <ClInclude Include="blockstate.h" />
+    <ClInclude Include="chunk_group_allocator.h" />
     <ClInclude Include="config.h" />
     <ClInclude Include="coord_conversion.h" />
     <ClInclude Include="dat.h" />
@@ -172,6 +175,7 @@
     <ClInclude Include="JarReader.h" />
     <ClInclude Include="LODManager.h" />
     <ClInclude Include="model.h" />
+    <ClInclude Include="ModelDeduplicator.h" />
     <ClInclude Include="nbtutils.h" />
     <ClInclude Include="objExporter.h" />
     <ClInclude Include="PointCloudExporter.h" />

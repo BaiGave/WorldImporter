@@ -37,13 +37,17 @@ struct Config {
     bool exportLightBlock;//导出光源方块
     bool allowDoubleFace;//允许重叠面
     bool activeLOD; //使用LOD
+    bool isLODAutoCenter; //是否自动计算LOD中心坐标
+    int LODCenterX; //LOD中心坐标X
+    int LODCenterZ; //LOD中心坐标Z
     int LOD0renderDistance;//渲染距离
     int LOD1renderDistance;//LOD1 x1渲染距离
     int LOD2renderDistance;//LOD1 x2渲染距离
     int LOD3renderDistance;//LOD1 x4渲染距离
     bool useUnderwaterLOD; //水下LOD模型生成
 
-    bool importByChunk;  // 是否按区块导入 #待做
+    bool exportFullModel;  // 是否完整导入
+    int partitionSize; //分割大小
     bool importByBlockType;  // 是否按方块种类导入 #待做
     int pointCloudType;  // 实心或空心，0为实心，1为空心 #待做
     std::string importFilePath; // 导入文件路径 #待做
@@ -52,10 +56,10 @@ struct Config {
 
     Config()
         : worldPath(""), packagePath(""),solidBlocksFile("config\\jsons\\solids.json"), fluidsFile("config\\jsons\\fluids.json"),
-        minX(0), minY(0), minZ(0), maxX(0), maxY(0), maxZ(0), status(0),  importByChunk(false),
-        importByBlockType(false), useChunkPrecision(true), keepBoundary(false), strictDeduplication(true), cullCave(true), exportLightBlock(true), allowDoubleFace(false),
-        activeLOD(true), LOD0renderDistance(6), LOD1renderDistance(6), LOD2renderDistance(6), LOD3renderDistance(6),
-        useUnderwaterLOD(false), pointCloudType(0), selectedGameVersion(""),
+        minX(0), minY(0), minZ(0), maxX(0), maxY(0), maxZ(0), status(0), exportFullModel(false), partitionSize(4),
+        importByBlockType(false), useChunkPrecision(false), keepBoundary(false), strictDeduplication(true), cullCave(true), exportLightBlock(true), allowDoubleFace(false),
+        activeLOD(true), isLODAutoCenter(true), LOD0renderDistance(6), LOD1renderDistance(6), LOD2renderDistance(6), LOD3renderDistance(6),
+        useUnderwaterLOD(true), pointCloudType(0), selectedGameVersion(""),
         versionConfigs() {
     }
 };

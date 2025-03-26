@@ -64,6 +64,7 @@ public:
 
     static std::vector<std::vector<int>> GenerateBiomeMap(int minX, int minZ, int maxX, int maxZ);
 
+    static void ExportAllToPNG(int minX, int minZ, int maxX, int maxZ);
     static bool ExportToPNG(const std::vector<std::vector<int>>& biomeColorMap,
         const std::string& filename,
         BiomeColorType colorType);

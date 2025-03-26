@@ -25,7 +25,6 @@ void WriteConfig(const Config& config, const std::string& configFile) {
     file << "maxY = " << config.maxY << std::endl;
     file << "maxZ = " << config.maxZ << std::endl;
     file << "status = " << config.status << std::endl;
-    file << "importByChunk = " << (config.importByChunk ? "1" : "0") << std::endl;
     file << "importByBlockType = " << (config.importByBlockType ? "1" : "0") << std::endl;
     file << "pointCloudType = " << config.pointCloudType << std::endl;
     file << "importFilePath = " << config.importFilePath << std::endl;
@@ -144,6 +143,15 @@ Config LoadConfig(const std::string& configFile) {
             else if (key == "activeLOD") {
                 config.activeLOD = std::stoi(value);
             }
+            else if (key == "isLODAutoCenter") {
+                config.isLODAutoCenter = std::stoi(value);
+            }
+            else if (key == "LODCenterX") {
+                config.LODCenterX = std::stoi(value);
+            }
+            else if (key == "LODCenterZ") {
+                config.LODCenterZ = std::stoi(value);
+            }
             else if (key == "LOD0renderDistance") {
                 config.LOD0renderDistance = std::stoi(value);
             }
@@ -159,8 +167,8 @@ Config LoadConfig(const std::string& configFile) {
             else if (key == "useUnderwaterLOD") {
                 config.useUnderwaterLOD = std::stoi(value);
             }
-            else if (key == "importByChunk") {
-                config.importByChunk = (value == "1");
+            else if (key == "exportFullModel") {
+                config.exportFullModel = std::stoi(value);
             }
             else if (key == "importByBlockType") {
                 config.importByBlockType = (value == "1");
