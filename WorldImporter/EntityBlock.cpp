@@ -62,7 +62,7 @@ bool EntityBlock::IsLightBlock(const string& blockName, string& outTexturePath) 
 
 ModelData EntityBlock::GenerateLightBlockModel(const string& texturePath) {
     ModelData cubeModel;
-    float halfSize = 0.05f; // 0.1的一半
+    float halfSize = config.lightBlockSize;
 
     cubeModel.vertices = {
         // 前面 (front)

@@ -137,11 +137,20 @@ Config LoadConfig(const std::string& configFile) {
             else if (key == "exportLightBlock") {
                 config.exportLightBlock = std::stoi(value);
             }
+            else if (key == "exportLightBlockOnly") {
+                config.exportLightBlockOnly = std::stoi(value);
+            }
+            else if (key == "lightBlockSize") {
+                config.lightBlockSize = std::stoi(value);
+            }
             else if (key == "allowDoubleFace") {
                 config.allowDoubleFace = std::stoi(value);
             }
             else if (key == "activeLOD") {
                 config.activeLOD = std::stoi(value);
+            }
+            else if (key == "decimalPlaces") {
+                config.decimalPlaces = std::stoi(value);
             }
             else if (key == "isLODAutoCenter") {
                 config.isLODAutoCenter = std::stoi(value);

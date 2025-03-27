@@ -35,6 +35,8 @@ struct Config {
     bool strictDeduplication;//严格剔除面
     bool cullCave;//剔除洞穴
     bool exportLightBlock;//导出光源方块
+    bool exportLightBlockOnly;//仅导出光源方块
+    float lightBlockSize; //光源方块半径大小
     bool allowDoubleFace;//允许重叠面
     bool activeLOD; //使用LOD
     bool isLODAutoCenter; //是否自动计算LOD中心坐标
@@ -57,8 +59,8 @@ struct Config {
 
     Config()
         : worldPath(""), packagePath(""),solidBlocksFile("config\\jsons\\solids.json"), fluidsFile("config\\jsons\\fluids.json"),
-        minX(0), minY(0), minZ(0), maxX(0), maxY(0), maxZ(0), status(0), exportFullModel(false), partitionSize(4), decimalPlaces(2),
-        importByBlockType(false), useChunkPrecision(false), keepBoundary(false), strictDeduplication(true), cullCave(true), exportLightBlock(true), allowDoubleFace(false),
+        minX(0), minY(0), minZ(0), maxX(0), maxY(0), maxZ(0), status(0), exportFullModel(false), partitionSize(4), decimalPlaces(2), lightBlockSize(0.05f),
+        importByBlockType(false), useChunkPrecision(false), keepBoundary(false), strictDeduplication(true), cullCave(true), exportLightBlock(true), allowDoubleFace(false), exportLightBlockOnly(false),
         activeLOD(true), isLODAutoCenter(true), LOD0renderDistance(6), LOD1renderDistance(6), LOD2renderDistance(6), LOD3renderDistance(6),
         useUnderwaterLOD(true), pointCloudType(0), selectedGameVersion(""),
         versionConfigs() {

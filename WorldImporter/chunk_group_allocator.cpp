@@ -38,21 +38,29 @@ namespace ChunkGroupAllocator {
                             task.chunkZ = chunkZ;
                             task.sectionY = sectionY;
 
-                            if (distance <= LOD0distance) {
+                            if (config.activeLOD)
+                            {
+                                if (distance <= LOD0distance) {
+                                    task.lodLevel = 0.0f;
+                                }
+                                else if (distance <= LOD1distance) {
+                                    task.lodLevel = 1.0f;
+                                }
+                                else if (distance <= LOD2distance) {
+                                    task.lodLevel = 2.0f;
+                                }
+                                else if (distance <= LOD3distance) {
+                                    task.lodLevel = 4.0f;
+                                }
+                                else {
+                                    task.lodLevel = 8.0f;
+                                }
+                            }
+                            else
+                            {
                                 task.lodLevel = 0.0f;
                             }
-                            else if (distance <= LOD1distance) {
-                                task.lodLevel = 1.0f;
-                            }
-                            else if (distance <= LOD2distance) {
-                                task.lodLevel = 2.0f;
-                            }
-                            else if (distance <= LOD3distance) {
-                                task.lodLevel = 4.0f;
-                            }
-                            else {
-                                task.lodLevel = 8.0f;
-                            }
+                            
 
                             newGroup.tasks.push_back(task);
                         }

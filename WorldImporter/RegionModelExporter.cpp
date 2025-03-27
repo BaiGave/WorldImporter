@@ -197,22 +197,26 @@ void RegionModelExporter::LoadChunks(int chunkXStart, int chunkXEnd, int chunkZS
             for (int sectionY = sectionYStart; sectionY <= sectionYEnd; ++sectionY) {
                 int distance = sqrt((chunkX - config.LODCenterX) * (chunkX - config.LODCenterX) +
                     (chunkZ - config.LODCenterZ) * (chunkZ - config.LODCenterZ));
-                float chunkLOD = 1.0f;
-                if (distance <= LOD0renderDistance) {
-                    chunkLOD = 0.0f;
+                float chunkLOD = 0.0f;
+                if (config.activeLOD)
+                {
+                    if (distance <= LOD0renderDistance) {
+                        chunkLOD = 0.0f;
+                    }
+                    else if (distance <= LOD1renderDistance) {
+                        chunkLOD = 1.0f;
+                    }
+                    else if (distance <= LOD2renderDistance) {
+                        chunkLOD = 2.0f;
+                    }
+                    else if (distance <= LOD3renderDistance) {
+                        chunkLOD = 4.0f;
+                    }
+                    else {
+                        chunkLOD = 8.0f;
+                    }
                 }
-                else if (distance <= LOD1renderDistance) {
-                    chunkLOD = 1.0f;
-                }
-                else if (distance <= LOD2renderDistance) {
-                    chunkLOD = 2.0f;
-                }
-                else if (distance <= LOD3renderDistance) {
-                    chunkLOD = 4.0f;
-                }
-                else {
-                    chunkLOD = 8.0f;
-                }
+               
                 g_chunkLODs[std::make_tuple(chunkX, sectionY, chunkZ)] = chunkLOD;
             }
         }
@@ -257,6 +261,27 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
                 string blockName = GetBlockNameById(id);
                 if (blockName == "minecraft:air" ) continue;
 
+                if (config.exportLightBlockOnly)
+                {
+                    string processed = blockName;
+
+                    // 提取命名空间
+                    size_t colonPos = processed.find(':');
+                    string ns = "minecraft"; // 默认命名空间
+                    if (colonPos != string::npos) {
+                        ns = processed.substr(0, colonPos);
+                        processed = processed.substr(colonPos + 1);
+                    }
+
+                    // 提取方块ID和状态
+                    size_t bracketPos = processed.find('[');
+                    string LN = processed.substr(0, bracketPos);
+
+
+                    if (LN != "light") {
+                        continue;
+                    }
+                }
                 if (config.cullCave)
                 {
                     if (GetSkyLight(x, y, z) == -1)continue;
@@ -430,7 +455,6 @@ ModelData RegionModelExporter::GenerateLODChunkModel(int chunkX, int sectionY, i
                     if (GetSkyLight(x, y, z) == -1)
                         continue;
                 }
-
                 int id = -1;
                 int level=0;
                 BlockType type = LODManager::DetermineLODBlockTypeWithUpperCheck(x, y, z, lodBlockSize, &id, &level);
