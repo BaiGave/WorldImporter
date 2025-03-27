@@ -23,80 +23,55 @@ std::unordered_map<std::tuple<int, int, int>, float, TupleHash> g_chunkLODs;
 // 缓存方块ID到颜色的映射
 std::unordered_map<std::string, std::string> blockColorCache;
 
-
-std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, int z, const std::string& faceDirection, float gamma=2.0) {
+std::mutex blockColorCacheMutex;
+std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, int z, const std::string& faceDirection, float gamma = 2.0) {
     std::string ns = GetBlockNamespaceById(blockId);
     std::string blockName = GetBlockNameById(blockId);
-    // 标准化方块名称（去掉命名空间，处理状态）
     size_t colonPos = blockName.find(':');
     if (colonPos != std::string::npos) {
         blockName = blockName.substr(colonPos + 1);
     }
     ModelData blockModel;
-    // 判断当前方块是否是注册流体或已有level标记
     bool isFluid = (fluidDefinitions.find(currentBlock.GetNameAndNameSpaceWithoutState()) != fluidDefinitions.end());
     if (isFluid && currentBlock.level > -1) {
         AssignFluidMaterials(blockModel, currentBlock.name);
     }
     else {
-        // 处理其他方块
         blockModel = GetRandomModelFromCache(ns, blockName);
     }
-    // 构建缓存键，包含面方向信息
     std::string cacheKey = std::to_string(blockId) + ":" + faceDirection;
-
-
-
     std::string textureAverage;
 
-    // 先从缓存中获取纹理图片的平均颜色
-    if (blockColorCache.find(cacheKey) != blockColorCache.end()) {
-        textureAverage = blockColorCache[cacheKey];
-    }
-    else
+    // 线程安全的缓存访问
     {
-        // 根据面方向获取材质索引
+        std::lock_guard<std::mutex> lock(blockColorCacheMutex);
+        auto it = blockColorCache.find(cacheKey);
+        if (it != blockColorCache.end()) {
+            textureAverage = it->second;
+        }
+    }
+
+    if (textureAverage.empty()) {
         int materialIndex = -1;
         if (faceDirection == "none") {
-            // 如果面方向为none，取第一个材质
-            if (!blockModel.materialNames.empty()) {
-                materialIndex = 0;
-            }
+            if (!blockModel.materialNames.empty()) materialIndex = 0;
         }
         else {
-            // 根据面方向在faceNames中查找对应的材质索引
             for (size_t i = 0; i < blockModel.faceNames.size(); ++i) {
                 if (blockModel.faceNames[i] == faceDirection) {
-                    // 每个面的材质索引对应4个顶点，取第一个顶点的材质索引
                     materialIndex = blockModel.materialIndices[i / 4];
                     break;
                 }
             }
         }
 
-        // 如果没有找到材质索引，取第一个材质
-        if (materialIndex == -1 && !blockModel.materialNames.empty()) {
-            materialIndex = 0;
-        }
+        if (materialIndex == -1 && !blockModel.materialNames.empty()) materialIndex = 0;
+        if (materialIndex == -1) return "color#0.50 0.50 0.50";
 
-        // 如果没有材质信息，返回默认颜色
-        if (materialIndex == -1) {
-            return "color#0.500 0.500 0.500";
-        }
-
-        // 获取材质名称
         std::string materialName = blockModel.materialNames[materialIndex];
-
-
-
-        // 获取纹理路径
         std::string texturePath;
+        if (!blockModel.texturePaths.empty()) texturePath = blockModel.texturePaths[materialIndex];
 
-        if (!blockModel.texturePaths.empty()) {
-            texturePath = blockModel.texturePaths[materialIndex];
-        }
-
-        // 默认值：当纹理加载失败或无纹理路径时使用
         float r = 0.5f, g = 0.5f, b = 0.5f;
         if (!texturePath.empty()) {
             char buffer[MAX_PATH];
@@ -111,16 +86,11 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
             if (data) {
                 float sumR = 0, sumG = 0, sumB = 0;
                 int validPixelCount = 0;
-                int totalPixelCount = width * height;
-                for (int i = 0; i < totalPixelCount; ++i) {
-                    // 若有 alpha 通道且该像素 alpha 为 0，则跳过
-                    if (channels >= 4 && data[i * channels + 3] == 0)
-                        continue;
-                    // 先将原始 sRGB 值转换到 [0,1]
+                for (int i = 0; i < width * height; ++i) {
+                    if (channels >= 4 && data[i * channels + 3] == 0) continue;
                     float r_s = data[i * channels] / 255.0f;
                     float g_s = data[i * channels + 1] / 255.0f;
                     float b_s = data[i * channels + 2] / 255.0f;
-                    // sRGB 转换到线性空间
                     float r_lin = (r_s <= 0.04045f) ? (r_s / 12.92f) : pow((r_s + 0.055f) / 1.055f, 2.4f);
                     float g_lin = (g_s <= 0.04045f) ? (g_s / 12.92f) : pow((g_s + 0.055f) / 1.055f, 2.4f);
                     float b_lin = (b_s <= 0.04045f) ? (b_s / 12.92f) : pow((b_s + 0.055f) / 1.055f, 2.4f);
@@ -133,13 +103,9 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
                     float avgR_lin = sumR / validPixelCount;
                     float avgG_lin = sumG / validPixelCount;
                     float avgB_lin = sumB / validPixelCount;
-
-                    // 应用伽马校正（降低伽马）
                     avgR_lin = pow(avgR_lin, gamma);
                     avgG_lin = pow(avgG_lin, gamma);
                     avgB_lin = pow(avgB_lin, gamma);
-
-                    // 线性空间转换回 sRGB
                     r = (avgR_lin <= 0.0031308f) ? (avgR_lin * 12.92f) : (1.055f * pow(avgR_lin, 1.0f / 2.4f) - 0.055f);
                     g = (avgG_lin <= 0.0031308f) ? (avgG_lin * 12.92f) : (1.055f * pow(avgG_lin, 1.0f / 2.4f) - 0.055f);
                     b = (avgB_lin <= 0.0031308f) ? (avgB_lin * 12.92f) : (1.055f * pow(avgB_lin, 1.0f / 2.4f) - 0.055f);
@@ -148,57 +114,55 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
             }
         }
 
-        char avgColorStr[64];
-        snprintf(avgColorStr, sizeof(avgColorStr), "%.3f %.3f %.3f", r, g, b);
-        textureAverage = avgColorStr;
-        blockColorCache[cacheKey] = textureAverage;
+        // 根据配置的小数位数格式化颜色字符串
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(config.decimalPlaces);
+        oss << r << " " << g << " " << b;
+        textureAverage = oss.str();
+
+        // 更新缓存
+        {
+            std::lock_guard<std::mutex> lock(blockColorCacheMutex);
+            if (blockColorCache.find(cacheKey) == blockColorCache.end()) {
+                blockColorCache[cacheKey] = textureAverage;
+            }
+        }
     }
 
     char finalColorStr[128];
-    // 如果需要群系颜色混合，则每次都进行混合计算，不缓存混合后的结果
     if (blockModel.tintindex != -1) {
-        // 解析缓存的图片平均颜色
         float textureR, textureG, textureB;
         sscanf(textureAverage.c_str(), "%f %f %f", &textureR, &textureG, &textureB);
-        uint32_t hexColor;
-        // 获取当前坐标的群系颜色（十六进制），转换为 0-1 范围的 RGB
-        if (blockModel.tintindex == 2) {
-            hexColor = Biome::GetBiomeColor(x, y, z, BiomeColorType::Water);
-        }
-        else {
-            hexColor = Biome::GetBiomeColor(x, y, z, BiomeColorType::Foliage);
-        }
-
+        uint32_t hexColor = Biome::GetBiomeColor(x, y, z,
+            blockModel.tintindex == 2 ? BiomeColorType::Water : BiomeColorType::Foliage);
         float biomeR = ((hexColor >> 16) & 0xFF) / 255.0f;
         float biomeG = ((hexColor >> 8) & 0xFF) / 255.0f;
         float biomeB = (hexColor & 0xFF) / 255.0f;
-
-
-        // 正片叠底混合（乘法混合）：各通道相乘
         float finalR = biomeR * textureR;
         float finalG = biomeG * textureG;
         float finalB = biomeB * textureB;
 
+        // 根据配置的小数位数格式化最终颜色字符串
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(config.decimalPlaces);
         if (isFluid) {
-            // 流体格式：流体名-color#r g b
-            snprintf(finalColorStr, sizeof(finalColorStr), "%s-color#%.3f %.3f %.3f", currentBlock.GetNameAndNameSpaceWithoutState().c_str(), finalR, finalG, finalB);
+            oss << currentBlock.GetNameAndNameSpaceWithoutState().c_str() << "-color#" << finalR << " " << finalG << " " << finalB;
         }
         else {
-            snprintf(finalColorStr, sizeof(finalColorStr), "color#%.3f %.3f %.3f", finalR, finalG, finalB);
+            oss << "color#" << finalR << " " << finalG << " " << finalB;
         }
-        return std::string(finalColorStr);
+        return oss.str();
     }
     else {
-        // 不需要群系混合，直接返回并缓存纹理图片的平均颜色
         if (isFluid) {
-            snprintf(finalColorStr, sizeof(finalColorStr), "%s-color#%s", currentBlock.GetNameAndNameSpaceWithoutState().c_str(), textureAverage.c_str());
+            return currentBlock.GetNameAndNameSpaceWithoutState() + "-color#" + textureAverage;
         }
         else {
-            snprintf(finalColorStr, sizeof(finalColorStr), "color#%s", textureAverage.c_str());
+            return "color#" + textureAverage;
         }
-        return std::string(finalColorStr);
     }
 }
+
 float LODManager::GetChunkLODAtBlock(int x, int y, int z) {
     int chunkX, chunkZ, sectionY;
     blockToChunk(x, z, chunkX, chunkZ);
@@ -661,7 +625,7 @@ ModelData LODManager::GenerateBox(int x, int y, int z, int baseSize, float boxHe
         4, 7, 6, 5,      // 顶面
         8, 11, 10, 9,    // 北面
         12, 15, 14, 13,  // 南面
-        16, 17, 18, 19,  // 西面
+        16, 19, 18, 17,  // 西面
         20, 23, 22, 21   // 东方
     };
 

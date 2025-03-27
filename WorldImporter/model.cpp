@@ -1262,7 +1262,6 @@ ModelData MergeModelData(const ModelData& data1, const ModelData& data2) {
 
 // 以下方法用于合并两个模型数据，针对流体/水方块模型，对重复面做严格剔除：
 // 如果 mesh2 的面被包含在 mesh1 的某个面内，则跳过该面及其对应数据
-//
 ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2) {
     ModelData mergedData;
 

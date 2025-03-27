@@ -10,6 +10,7 @@
 #include <sstream>  // 用于 std::ostringstream
 #include <regex>
 #include <tuple>
+#include <future>
 #include <chrono>  // 新增：用于时间测量
 #include <iostream>  // 新增：用于输出时间
 #include "EntityBlock.h"
@@ -42,130 +43,147 @@ struct triple_hash {
 
 
 void RegionModelExporter::ExportModels(const string& outputName) {
-    int xStart = config.minX;
-    int xEnd = config.maxX;
-    int yStart = config.minY;
-    int yEnd = config.maxY;
-    int zStart = config.minZ;
-    int zEnd = config.maxZ;
+    // 初始化坐标范围
+    const int xStart = config.minX, xEnd = config.maxX;
+    const int yStart = config.minY, yEnd = config.maxY;
+    const int zStart = config.minZ, zEnd = config.maxZ;
 
-    // 定义半径范围（可以根据需要调整）
-    int LOD0renderDistance = config.LOD0renderDistance;
-    int LOD1renderDistance = config.LOD1renderDistance + LOD0renderDistance;
-    int LOD2renderDistance = config.LOD2renderDistance + LOD1renderDistance;
-    int LOD3renderDistance = config.LOD3renderDistance + LOD2renderDistance;
+    // 计算LOD范围
+    const int L0 = config.LOD0renderDistance;
+    const int L1 = L0 + config.LOD1renderDistance;
+    const int L2 = L1 + config.LOD2renderDistance;
+    const int L3 = L2 + config.LOD3renderDistance;
+
+    // 区块对齐处理
+    auto alignTo16 = [](int value) {
+        if (value % 16 == 0) return value;
+        return (value > 0) ? ((value + 15) / 16 * 16) : ((value - 15) / 16 * 16);
+        };
+
+    // 处理分组模型导出
+    auto DeduplicateModel = [](ModelData& model) {
+        ModelDeduplicator::DeduplicateVertices(model);
+        ModelDeduplicator::DeduplicateUV(model);
+        ModelDeduplicator::DeduplicateFaces(model);
+        };
 
     if (config.useChunkPrecision) {
-        auto alignTo16 = [](int value) -> int {
-            if (value % 16 == 0)
-                return value;
-            if (value > 0)
-                return ((value + 15) / 16) * 16;
-            else
-                return ((value - 15) / 16) * 16;
-            };
-
-        config.minX = alignTo16(xStart);
-        config.maxX = alignTo16(xEnd);
-        config.minY = alignTo16(yStart);
-        config.maxY = alignTo16(yEnd);
-        config.minZ = alignTo16(zStart);
-        config.maxZ = alignTo16(zEnd);
+        config.minX = alignTo16(xStart); config.maxX = alignTo16(xEnd);
+        config.minY = alignTo16(yStart); config.maxY = alignTo16(yEnd);
+        config.minZ = alignTo16(zStart); config.maxZ = alignTo16(zEnd);
     }
 
+    // 预处理阶段
     RegisterFluidTextures();
 
-    int chunkXStart, chunkXEnd, chunkZStart, chunkZEnd, sectionYStart, sectionYEnd;
+    // 计算区块坐标范围
+    int chunkXStart, chunkXEnd, chunkZStart, chunkZEnd;
     blockToChunk(xStart, zStart, chunkXStart, chunkZStart);
     blockToChunk(xEnd, zEnd, chunkXEnd, chunkZEnd);
+
+    int sectionYStart, sectionYEnd;
     blockYToSectionY(yStart, sectionYStart);
     blockYToSectionY(yEnd, sectionYEnd);
 
-    // 计算中心坐标
-    if (config.isLODAutoCenter)
-    {
-        // 计算中心坐标
+    // 自动计算LOD中心
+    if (config.isLODAutoCenter) {
         config.LODCenterX = (chunkXStart + chunkXEnd) / 2;
         config.LODCenterZ = (chunkZStart + chunkZEnd) / 2;
     }
 
+    // 加载区块数据
     LoadChunks(chunkXStart, chunkXEnd, chunkZStart, chunkZEnd,
-        sectionYStart, sectionYEnd,LOD0renderDistance, LOD1renderDistance, LOD2renderDistance, LOD3renderDistance);
+        sectionYStart, sectionYEnd, L0, L1, L2, L3);
 
     UpdateSkyLightNeighborFlags();
-
     ProcessBlockstateForBlocks(GetGlobalBlockPalette());
-
     Biome::ExportAllToPNG(xStart, zStart, xEnd, zEnd);
 
+    // 模型处理阶段
     ModelData finalMergedModel;
+    std::unordered_map<string, string> uniqueMaterials;
 
-    std::unordered_map<std::string, std::string> uniqueMaterials;
-    // 第一阶段：划分区块组并收集任务
-    auto chunkGroups = ChunkGroupAllocator::GenerateChunkGroups(
-        chunkXStart, chunkXEnd,
-        chunkZStart, chunkZEnd,
-        sectionYStart, sectionYEnd,
-        LOD0renderDistance, LOD1renderDistance,
-        LOD2renderDistance, LOD3renderDistance
-    );
+    // 生成区块组
+    const auto chunkGroups = ChunkGroupAllocator::GenerateChunkGroups(chunkXStart, chunkXEnd, chunkZStart, chunkZEnd,
+        sectionYStart, sectionYEnd, L0, L1, L2, L3);
 
-    // 第二阶段：按组生成并导出模型
-    for (const auto& group : chunkGroups) {
-        ModelData groupModel;
-
-        for (const auto& task : group.tasks) {
-            ModelData chunkModel;
-            if (task.lodLevel == 0.0f) {
-                chunkModel = GenerateChunkModel(task.chunkX, task.sectionY, task.chunkZ);
-            }
-            else {
-                chunkModel = GenerateLODChunkModel(task.chunkX, task.sectionY, task.chunkZ, task.lodLevel);
-            }
-
-            if (groupModel.vertices.empty()) {
-                groupModel = chunkModel;
-            }
-            else {
-                MergeModelsDirectly(groupModel, chunkModel);
-            }
+    auto processModel = [](const ChunkTask& task) -> ModelData {
+        return (task.lodLevel == 0.0f)
+            ? GenerateChunkModel(task.chunkX, task.sectionY, task.chunkZ)
+            : GenerateLODChunkModel(task.chunkX, task.sectionY, task.chunkZ, task.lodLevel);
+        };
+    std::mutex finalModelMutex;
+    std::mutex materialsMutex;
+    // 线程安全的合并操作
+    auto mergeToFinalModel = [&](ModelData&& model) {
+        std::lock_guard<std::mutex> lock(finalModelMutex);
+        if (finalMergedModel.vertices.empty()) {
+            finalMergedModel = std::move(model);
         }
+        else {
+            MergeModelsDirectly(finalMergedModel, model);
+        }
+        };
 
-        if (!groupModel.vertices.empty()) {
-            
+    // 线程安全的材质记录
+    auto recordMaterials = [&](const std::unordered_map<string, string>& newMaterials) {
+        std::lock_guard<std::mutex> lock(materialsMutex);
+        uniqueMaterials.insert(newMaterials.begin(), newMaterials.end());
+        };
 
-            if (config.exportFullModel) {
-                // 合并到完整模型
-                if (finalMergedModel.vertices.empty()) {
-                    finalMergedModel = groupModel;
+    // 创建线程池处理区块组
+    std::vector<std::future<void>> futures;
+    
+
+    for (const auto& group : chunkGroups) {
+        futures.push_back(std::async(std::launch::async, [&, group]() {
+            ModelData groupModel;
+            std::unordered_map<string, string> localMaterials;
+
+            // 合并组内所有区块模型
+            for (const auto& task : group.tasks) {
+                ModelData chunkModel = processModel(task);
+                if (groupModel.vertices.empty()) {
+                    groupModel = std::move(chunkModel);
                 }
                 else {
-                    MergeModelsDirectly(finalMergedModel, groupModel);
+                    MergeModelsDirectly(groupModel, chunkModel);
                 }
             }
-            else if (!config.exportFullModel && !groupModel.vertices.empty()) {
-                ModelDeduplicator::DeduplicateVertices(groupModel);
-                ModelDeduplicator::DeduplicateUV(groupModel);
-                ModelDeduplicator::DeduplicateFaces(groupModel);
 
-                // 生成分组文件名并导出
-                string groupFileName = outputName + "_x" + to_string(group.startX) + "_z" + to_string(group.startZ);
-                CreateMultiModelFiles(groupModel, groupFileName, uniqueMaterials, outputName); // 传递outputName作为共享mtl名
+            if (groupModel.vertices.empty()) return;
+
+            if (config.exportFullModel) {
+                // 合并到完整模型（线程安全）
+                mergeToFinalModel(std::move(groupModel));
             }
-        }
+            else {
+                DeduplicateModel(groupModel);
+
+                const string groupFileName = outputName +
+                    "_x" + to_string(group.startX) +
+                    "_z" + to_string(group.startZ);
+
+                // 创建模型文件并收集材质
+                CreateMultiModelFiles(groupModel, groupFileName, localMaterials, outputName);
+                recordMaterials(localMaterials);
+            }
+            }));
     }
 
-    // 导出完整模型
-    if (config.exportFullModel && !finalMergedModel.vertices.empty()) {
-        // 最终去重处理
-        ModelDeduplicator::DeduplicateVertices(finalMergedModel);
-        ModelDeduplicator::DeduplicateUV(finalMergedModel);
-        ModelDeduplicator::DeduplicateFaces(finalMergedModel);
-        CreateModelFiles(finalMergedModel, outputName);
-    }else if (!uniqueMaterials.empty()) {
-            createSharedMtlFile(uniqueMaterials, outputName); // 统一生成mtl
+    // 等待所有线程完成
+    for (auto& future : futures) {
+        future.wait();
     }
-    
+
+    // 最终导出处理
+    if (config.exportFullModel && !finalMergedModel.vertices.empty()) {
+        DeduplicateModel(finalMergedModel);
+        CreateModelFiles(finalMergedModel, outputName);
+    }
+    else if (!uniqueMaterials.empty()) {
+        createSharedMtlFile(uniqueMaterials, outputName);
+    }
 }
 
 void RegionModelExporter::LoadChunks(int chunkXStart, int chunkXEnd, int chunkZStart, int chunkZEnd,

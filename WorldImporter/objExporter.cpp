@@ -428,7 +428,8 @@ void createSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMate
                 std::istringstream iss(colorStr);
                 float r, g, b;
                 if (iss >> r >> g >> b) {
-                    mtlFile << "Kd " << std::fixed << std::setprecision(6)
+
+                    mtlFile << "Kd " << std::fixed << std::setprecision(config.decimalPlaces)
                         << r << " " << g << " " << b << "\n";
                 }
                 else {
@@ -512,7 +513,7 @@ void createMtlFile(const ModelData& data, const std::string& mtlFileName) {
                 std::istringstream iss(colorStr);
                 float r, g, b;
                 if (iss >> r >> g >> b) {
-                    mtlFile << "Kd " << std::fixed << std::setprecision(6)
+                    mtlFile << "Kd " << std::fixed << std::setprecision(config.decimalPlaces)
                         << r << " " << g << " " << b << "\n";
                 }
                 else {

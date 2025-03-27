@@ -48,6 +48,7 @@ struct Config {
 
     bool exportFullModel;  // 是否完整导入
     int partitionSize; //分割大小
+    int decimalPlaces; //lod群系颜色值小数精度 #待做
     bool importByBlockType;  // 是否按方块种类导入 #待做
     int pointCloudType;  // 实心或空心，0为实心，1为空心 #待做
     std::string importFilePath; // 导入文件路径 #待做
@@ -56,7 +57,7 @@ struct Config {
 
     Config()
         : worldPath(""), packagePath(""),solidBlocksFile("config\\jsons\\solids.json"), fluidsFile("config\\jsons\\fluids.json"),
-        minX(0), minY(0), minZ(0), maxX(0), maxY(0), maxZ(0), status(0), exportFullModel(false), partitionSize(4),
+        minX(0), minY(0), minZ(0), maxX(0), maxY(0), maxZ(0), status(0), exportFullModel(false), partitionSize(4), decimalPlaces(2),
         importByBlockType(false), useChunkPrecision(false), keepBoundary(false), strictDeduplication(true), cullCave(true), exportLightBlock(true), allowDoubleFace(false),
         activeLOD(true), isLODAutoCenter(true), LOD0renderDistance(6), LOD1renderDistance(6), LOD2renderDistance(6), LOD3renderDistance(6),
         useUnderwaterLOD(true), pointCloudType(0), selectedGameVersion(""),
