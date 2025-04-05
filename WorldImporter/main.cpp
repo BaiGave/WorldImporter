@@ -33,14 +33,10 @@ std::unordered_map<std::string, std::vector<FolderData>> saveFilesCache;
 // 新增：定义当前整合包的版本全局变量
 std::string currentSelectedGameVersion;
 
-void loadAndUpdateConfig() {
-    // 加载配置
-    config = LoadConfig("config\\config.json");
-}
 
 void init() {
     SetGlobalLocale();
-    loadAndUpdateConfig();
+    config = LoadConfig("config\\config.json");
     LoadSolidBlocks(config.solidBlocksFile);
     LoadFluidBlocks(config.fluidsFile);
     RegisterFluidTextures();
@@ -67,6 +63,7 @@ void exportPointCloud() {
 
 
 int main() {
+    auto start_time = high_resolution_clock::now();
     init();
     // 测量执行时间
     //auto start_time = high_resolution_clock::now();
@@ -91,18 +88,10 @@ int main() {
     //Biome::PrintAllRegisteredBiomes();
 
 
-    loadAndUpdateConfig();  // 重新加载和更新配置
     if (config.status == 1) {
-        auto start_time = high_resolution_clock::now();
         // 如果是 1，导出区域内所有方块模型
         RegionModelExporter::ExportModels("region_models");
-        auto end_time = high_resolution_clock::now();
-        auto duration = duration_cast<milliseconds>(end_time - start_time);
-        cout << "Total time: " << duration.count() << " milliseconds" << endl;
         
-        // 保存更新后的配置文件
-        
-        LoadConfig("config\\config.json");
     }
     else if (config.status == 2) {
         // 如果是 2，执行点云导出逻辑
@@ -112,5 +101,8 @@ int main() {
         // 如果是 0，执行整合包所有方块状态导出逻辑
         ProcessAllBlockstateVariants();
     }
+    auto end_time = high_resolution_clock::now();
+    auto duration = duration_cast<milliseconds>(end_time - start_time);
+    cout << "Total time: " << duration.count() << " milliseconds" << endl;
     return 0;
 }
