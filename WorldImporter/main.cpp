@@ -36,85 +36,6 @@ std::string currentSelectedGameVersion;
 void loadAndUpdateConfig() {
     // 加载配置
     config = LoadConfig("config\\config.json");
-
-    // 遍历 versionConfigs 中的所有内容
-    for (auto& pair : config.versionConfigs) {
-        std::string versionName = pair.first;          // 获取版本名称
-        VersionConfig& versionConfig = pair.second;    // 获取对应的 VersionConfig 引用
-
-        // 获取游戏文件夹路径
-        std::wstring gameFolderPath = string_to_wstring(versionConfig.gameFolderPath);
-
-        // 获取 mod 列表、资源包列表、保存文件
-        std::vector<std::string> mods;
-        std::vector<std::string> resourcePacks;
-        std::vector<std::string> saves;
-        std::string modloader;
-
-        // 获取 minecraft 版本
-        std::string minecraftVersion = GetMinecraftVersion(gameFolderPath, modloader);
-
-
-        mods = versionConfig.modList;
-        resourcePacks = versionConfig.resourcePackList;
-
-        
-        // 刷新 mod 列表、资源包列表和保存文件
-        GetModList(gameFolderPath, mods, modloader);
-        GetResourcePacks(gameFolderPath, resourcePacks);
-        GetSaveFiles(gameFolderPath, saves);
-
-        // 更新 versionConfig 中的配置
-        versionConfig.minecraftVersion = minecraftVersion;
-        versionConfig.modLoaderType = modloader;
-        versionConfig.modList = mods;
-        versionConfig.resourcePackList = resourcePacks;
-        versionConfig.saveGameList = saves;
-
-        // 更新后的配置赋值回 config
-        config.versionConfigs[versionName] = versionConfig;
-    }
-
-    
-    // 获取 mod 列表
-    std::vector<std::string> mods;
-    std::vector<std::string> resourcePacks;
-    std::vector<std::string> saves;
-
-    std::string modloader;
-    
-
-    // 假设游戏文件夹路径
-    std::wstring gameFolderPath = string_to_wstring(config.packagePath);
-    std::wstring FolderName = GetFolderNameFromPath(gameFolderPath);
-    std::string VersionName = wstring_to_string(FolderName);
-    std::string minecraftVersion = GetMinecraftVersion(gameFolderPath, modloader);
-
-    // 使用 operator[] 来避免异常
-    mods = config.versionConfigs[VersionName].modList;
-    resourcePacks = config.versionConfigs[VersionName].resourcePackList;
-    
-    GetModList(gameFolderPath, mods, modloader);
-    GetResourcePacks(gameFolderPath, resourcePacks);
-    GetSaveFiles(gameFolderPath, saves);
-    
-    // 更新 versionConfigs 中的配置
-    VersionConfig versionConfig;
-    versionConfig.gameFolderPath = wstring_to_string(gameFolderPath);
-    versionConfig.minecraftVersion = minecraftVersion;
-    versionConfig.modLoaderType = modloader;
-    versionConfig.modList = mods;
-    versionConfig.resourcePackList = resourcePacks;
-    versionConfig.saveGameList = saves;
-
-    config.versionConfigs[VersionName] = versionConfig;
-    // 保存更新后的配置文件
-    WriteConfig(config, "config\\config.json");
-
-    
-    // 获取当前整合包的版本
-    currentSelectedGameVersion = config.selectedGameVersion;
-
 }
 
 void init() {
@@ -142,13 +63,6 @@ void exportPointCloud() {
 
     cout << "Total time: " << duration.count() << " milliseconds" << endl;
 
-    // 在程序执行完成后，将 status 改为 1((待机) 并保存
-    config.status = 1;
-
-    // 保存更新后的配置文件
-    WriteConfig(config, "config\\config.json");
-
-    LoadConfig("config\\config.json");
 }
 
 
@@ -178,7 +92,6 @@ int main() {
 
 
     loadAndUpdateConfig();  // 重新加载和更新配置
-    
     if (config.status == 1) {
         auto start_time = high_resolution_clock::now();
         // 如果是 1，导出区域内所有方块模型
@@ -188,7 +101,6 @@ int main() {
         cout << "Total time: " << duration.count() << " milliseconds" << endl;
         
         // 保存更新后的配置文件
-        WriteConfig(config, "config\\config.json");
         
         LoadConfig("config\\config.json");
     }
