@@ -13,7 +13,6 @@
 #include "config.h"
 #include "texture.h"
 #include "GlobalCache.h"
-#include "version.h"
 #pragma once
 
 #define _USE_MATH_DEFINES

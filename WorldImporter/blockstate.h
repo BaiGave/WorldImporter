@@ -7,7 +7,6 @@
 #include <fstream>
 #include <iostream>
 #include "include/json.hpp"
-#include "version.h"
 #include "model.h"
 #include "block.h"
 #include "config.h"

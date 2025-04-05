@@ -11,7 +11,6 @@
 #include <codecvt>
 #include "global.h"
 #include "JarReader.h"
-#include "version.h"
 #include "blockstate.h"
 #include "model.h"
 #include "texture.h"
@@ -24,14 +23,6 @@ Config config;  // 定义全局变量
 
 using namespace std;
 using namespace chrono;
-
-std::unordered_map<std::string, std::vector<FolderData>> VersionCache;
-std::unordered_map<std::string, std::vector<FolderData>> modListCache;
-std::unordered_map<std::string, std::vector<FolderData>> resourcePacksCache;
-std::unordered_map<std::string, std::vector<FolderData>> saveFilesCache;
-
-// 新增：定义当前整合包的版本全局变量
-std::string currentSelectedGameVersion;
 
 
 void init() {
@@ -91,7 +82,6 @@ int main() {
     if (config.status == 1) {
         // 如果是 1，导出区域内所有方块模型
         RegionModelExporter::ExportModels("region_models");
-        
     }
     else if (config.status == 2) {
         // 如果是 2，执行点云导出逻辑

@@ -4,19 +4,12 @@
 #include <mutex>
 #include "include/json.hpp"
 #include "config.h"
-#include "version.h"
 #include "JarReader.h"
 
 // 前向声明依赖类型
-struct FolderData;
 class JarReader;
 
 // 版本配置全局变量（需在其他地方定义）
-extern std::string currentSelectedGameVersion;
-extern std::unordered_map<std::string, std::vector<FolderData>> VersionCache;
-extern std::unordered_map<std::string, std::vector<FolderData>> resourcePacksCache;
-extern std::unordered_map<std::string, std::vector<FolderData>> modListCache;
-extern std::unordered_map<std::string, std::vector<FolderData>> saveFilesCache;
 
 // 外部声明
 

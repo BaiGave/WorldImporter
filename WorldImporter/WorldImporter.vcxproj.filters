@@ -93,9 +93,6 @@
     <ClCompile Include="JarReader.cpp">
       <Filter>源文件\functions\tools</Filter>
     </ClCompile>
-    <ClCompile Include="version.cpp">
-      <Filter>源文件\functions\tools</Filter>
-    </ClCompile>
     <ClCompile Include="dat.cpp">
       <Filter>源文件\functions\nbt</Filter>
     </ClCompile>
@@ -159,9 +156,6 @@
       <Filter>头文件\export</Filter>
     </ClInclude>
     <ClInclude Include="JarReader.h">
-      <Filter>头文件\functions\tools</Filter>
-    </ClInclude>
-    <ClInclude Include="version.h">
       <Filter>头文件\functions\tools</Filter>
     </ClInclude>
     <ClInclude Include="dat.h">
