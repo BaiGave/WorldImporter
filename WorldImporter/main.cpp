@@ -9,7 +9,6 @@
 #include <latch>
 #include <locale> 
 #include <codecvt>
-#include "global.h"
 #include "JarReader.h"
 #include "blockstate.h"
 #include "model.h"

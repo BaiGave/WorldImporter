@@ -169,7 +169,6 @@
     <ClInclude Include="EntityBlock.h" />
     <ClInclude Include="fileutils.h" />
     <ClInclude Include="fluid.h" />
-    <ClInclude Include="global.h" />
     <ClInclude Include="GlobalCache.h" />
     <ClInclude Include="JarReader.h" />
     <ClInclude Include="LODManager.h" />
