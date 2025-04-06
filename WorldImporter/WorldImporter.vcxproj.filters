@@ -93,9 +93,6 @@
     <ClCompile Include="JarReader.cpp">
       <Filter>源文件\functions\tools</Filter>
     </ClCompile>
-    <ClCompile Include="version.cpp">
-      <Filter>源文件\functions\tools</Filter>
-    </ClCompile>
     <ClCompile Include="dat.cpp">
       <Filter>源文件\functions\nbt</Filter>
     </ClCompile>
@@ -161,14 +158,8 @@
     <ClInclude Include="JarReader.h">
       <Filter>头文件\functions\tools</Filter>
     </ClInclude>
-    <ClInclude Include="version.h">
-      <Filter>头文件\functions\tools</Filter>
-    </ClInclude>
     <ClInclude Include="dat.h">
       <Filter>头文件\functions\nbt</Filter>
-    </ClInclude>
-    <ClInclude Include="global.h">
-      <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="blockstate.h">
       <Filter>头文件\functions\json</Filter>

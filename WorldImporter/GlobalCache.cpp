@@ -39,9 +39,31 @@ struct TaskResult {
     std::unordered_map<std::string, nlohmann::json> localBiomes;
     std::unordered_map<std::string, std::vector<unsigned char>> localColormaps;
 };
+std::vector<std::wstring> listdir(const std::wstring& path) {
+    std::vector<std::wstring> files;
+
+    std::wstring wpath = path + L"\\*";
+
+    WIN32_FIND_DATAW findFileData;
+    HANDLE hFind = FindFirstFileW(wpath.c_str(), &findFileData);
+
+    if (hFind != INVALID_HANDLE_VALUE) {
+        do {
+            if (std::wstring(findFileData.cFileName) != L"." && std::wstring(findFileData.cFileName) != L"..") {
+                files.push_back(findFileData.cFileName);
+            }
+        } while (FindNextFileW(hFind, &findFileData));
+        FindClose(hFind);
+    }
+
+    return files;
+}
 
 // ========= 初始化实现 =========
 void InitializeAllCaches() {
+
+    
+
     std::call_once(GlobalCache::initFlag, []() {
         auto start = std::chrono::high_resolution_clock::now();
 
@@ -53,32 +75,31 @@ void InitializeAllCaches() {
                 GlobalCache::jarQueue.pop();
             }
             GlobalCache::jarOrder.clear();
-
-            // 添加模组（根据 currentSelectedGameVersion 填充队列和 jarOrder）
-            if (modListCache.count(currentSelectedGameVersion)) {
-                for (const auto& fd : modListCache[currentSelectedGameVersion]) {
-                    if (fd.namespaceName == "resourcePack") {
-                        if (resourcePacksCache.count(currentSelectedGameVersion)) {
-                            for (const auto& rfd : resourcePacksCache[currentSelectedGameVersion]) {
-                                GlobalCache::jarQueue.push(string_to_wstring(rfd.path));
-                                GlobalCache::jarOrder.push_back(rfd.namespaceName);
-                            }
-                        }
-                    }
-                    else if (fd.namespaceName == "vanilla") {
-                        if (VersionCache.count(currentSelectedGameVersion)) {
-                            for (const auto& vfd : VersionCache[currentSelectedGameVersion]) {
-                                GlobalCache::jarQueue.push(string_to_wstring(vfd.path));
-                                GlobalCache::jarOrder.push_back(vfd.namespaceName);
-                            }
-                        }
-                    }
-                    else {
-                        GlobalCache::jarQueue.push(string_to_wstring(fd.path));
-                        GlobalCache::jarOrder.push_back(fd.namespaceName);
-                    }
+            //从config中读取并添加到GlobalCache::jarQueue和GlobalCache::jarOrder
+            std::cout << std::endl;
+            std::cout << "正在初始化缓存..." << std::endl;
+            for (const auto& resourcepack : config.resourcepacksPaths){
+                std::cout << "  = 添加资源包: " << resourcepack << std::endl;
+                std::cout << "    - 资源包ID: " << "resource_" + wstring_to_string(GetFolderNameFromPath(string_to_wstring(resourcepack))) << std::endl;
+                GlobalCache::jarQueue.push(string_to_wstring(resourcepack));
+                GlobalCache::jarOrder.push_back("resource_" + wstring_to_string(GetFolderNameFromPath(string_to_wstring(resourcepack))));
+            }
+            for (const auto& mod : listdir(string_to_wstring(config.modsPath))) {
+                //判断是否以.jar结尾
+                if (wstring_to_string(mod).substr(wstring_to_string(mod).length() - 4) == ".jar") {
+                    std::cout << "  = 添加模组: " << config.modsPath + "\\" + wstring_to_string(mod) << std::endl;
+                    std::cout << "    - 模组ID: " << "mod_" + wstring_to_string(mod) << std::endl;
+                    GlobalCache::jarQueue.push(string_to_wstring(config.modsPath + "\\") + mod);
+                    GlobalCache::jarOrder.push_back("mod_" + wstring_to_string(mod));
+                }
+                else{
+                    std::cout << "X 跳过非jar结尾文件: " << wstring_to_string(mod) << std::endl;
                 }
             }
+            std::cout << "  = 添加原版jar文件: " << config.jarPath << std::endl;
+            std::cout << "    - 原版ID: " << "vanilla" << std::endl;
+            GlobalCache::jarQueue.push(string_to_wstring(config.jarPath));
+            GlobalCache::jarOrder.push_back("vanilla");
             };
 
         prepareQueue();

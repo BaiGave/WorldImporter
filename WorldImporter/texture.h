@@ -6,7 +6,6 @@
 #include <string>
 #include <mutex>
 #include "config.h"
-#include "version.h"
 #include "JarReader.h"
 #include "GlobalCache.h"
 
