@@ -37,6 +37,8 @@ Config LoadConfig(const std::string& configFile) {
     config.strictDeduplication = j["strictDeduplication"];
     config.cullCave = j["cullCave"];
     config.exportLightBlock = j["exportLightBlock"];
+    config.exportLightBlockOnly = j["exportLightBlockOnly"];
+    config.lightBlockSize = j["lightBlockSize"];
     config.allowDoubleFace = j["allowDoubleFace"];
     config.activeLOD = j["activeLOD"];
     config.isLODAutoCenter = j["isLODAutoCenter"];
