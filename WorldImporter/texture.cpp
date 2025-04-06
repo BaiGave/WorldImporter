@@ -121,6 +121,8 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
         std::vector<std::string> pbrSuffixes = { "_n", "_a", "_s" };
         for (const auto& suffix : pbrSuffixes) {
             std::vector<unsigned char> pbrTextureData;
+            nlohmann::json pbrMcmetaData;
+
             // 按照 GlobalCache::jarOrder 顺序查找 PBR 贴图数据
             {
                 std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
@@ -130,16 +132,37 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
                     auto pbrTextureIt = GlobalCache::textures.find(pbrCacheKey);
                     if (pbrTextureIt != GlobalCache::textures.end()) {
                         pbrTextureData = pbrTextureIt->second;
+
+                        // 获取 PBR 贴图的 .mcmeta 数据（如果存在）
+                        auto pbrMcmetaIt = GlobalCache::mcmetaCache.find(pbrCacheKey);
+                        if (pbrMcmetaIt != GlobalCache::mcmetaCache.end()) {
+                            pbrMcmetaData = pbrMcmetaIt->second;
+                        }
                         break;
                     }
                 }
             }
+
             if (!pbrTextureData.empty()) {
+                // 保存 PBR 贴图
                 std::string pbrFilePath = finalDir + "\\" + fileName + suffix + ".png";
                 std::ofstream pbrOutputFile(pbrFilePath, std::ios::binary);
                 if (pbrOutputFile.is_open()) {
                     pbrOutputFile.write(reinterpret_cast<const char*>(pbrTextureData.data()), pbrTextureData.size());
                     pbrOutputFile.close();
+
+                    // 保存 PBR 贴图的 .mcmeta 文件（如果存在）
+                    if (!pbrMcmetaData.empty()) {
+                        std::string pbrMcmetaFilePath = pbrFilePath + ".mcmeta";
+                        std::ofstream pbrMcmetaFile(pbrMcmetaFilePath);
+                        if (pbrMcmetaFile.is_open()) {
+                            pbrMcmetaFile << pbrMcmetaData.dump(4); // 格式化输出 JSON
+                            pbrMcmetaFile.close();
+                        }
+                        else {
+                            std::cerr << "Failed to save PBR .mcmeta file: " << pbrMcmetaFilePath << std::endl;
+                        }
+                    }
                 }
                 else {
                     std::cerr << "Failed to save PBR texture: " << pbrFilePath << std::endl;
