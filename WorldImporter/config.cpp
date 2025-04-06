@@ -21,6 +21,7 @@ Config LoadConfig(const std::string& configFile) {
     // Read and populate config fields from JSON
     config.worldPath = j["worldPath"];
     config.jarPath = j["jarPath"];
+    config.versionJsonPath = j["versionJsonPath"];
     config.modsPath = j["modsPath"];
     config.resourcepacksPaths = j["resourcepacksPaths"];
 
