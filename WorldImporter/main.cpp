@@ -76,8 +76,7 @@ int main() {
     // 导出图片
     //Biome::ExportToPNG(biomeMap, "biome_map.png",BiomeColorType::DryFoliage);
     //Biome::PrintAllRegisteredBiomes();
-
-
+    
     if (config.status == 1) {
         // 如果是 1，导出区域内所有方块模型
         RegionModelExporter::ExportModels("region_models");

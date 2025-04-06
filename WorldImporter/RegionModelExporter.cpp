@@ -73,8 +73,6 @@ void RegionModelExporter::ExportModels(const string& outputName) {
         config.minZ = alignTo16(zStart); config.maxZ = alignTo16(zEnd);
     }
 
-    // 预处理阶段
-    RegisterFluidTextures();
 
     // 计算区块坐标范围
     int chunkXStart, chunkXEnd, chunkZStart, chunkZEnd;

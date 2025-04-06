@@ -146,7 +146,7 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
         std::ostringstream oss;
         oss << std::fixed << std::setprecision(config.decimalPlaces);
         if (isFluid) {
-            oss << currentBlock.GetNameAndNameSpaceWithoutState().c_str() << "-color#" << finalR << " " << finalG << " " << finalB;
+            oss << "color#" << finalR << " " << finalG << " " << finalB << "-" << currentBlock.GetNameAndNameSpaceWithoutState().c_str();
         }
         else {
             oss << "color#" << finalR << " " << finalG << " " << finalB;
@@ -155,7 +155,7 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
     }
     else {
         if (isFluid) {
-            return currentBlock.GetNameAndNameSpaceWithoutState() + "-color#" + textureAverage;
+            return  + "color#" + textureAverage + "-" + currentBlock.GetNameAndNameSpaceWithoutState();
         }
         else {
             return "color#" + textureAverage;

@@ -412,12 +412,12 @@ void createSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMate
                 mtlFile << "illum 2\n";
             }
             // 处理纯颜色材质（支持流体格式：color#r g b-流体名 和普通格式：color#r g b）
-            else if (texturePath.find("color#") != std::string::npos || texturePath.find("-color#") != std::string::npos) {
+            else if (texturePath.find("color#") != std::string::npos || texturePath.find("-") != std::string::npos) {
                 std::string colorStr;
-                size_t pos = texturePath.find("-color#");
+                size_t pos = texturePath.find("-");
                 if (pos != std::string::npos) {
-                    // 流体材质格式，提取“-color#”后面的颜色部分
-                    colorStr = texturePath.substr(pos + std::string("-color#").size());
+                    // 流体材质格式，提取“-”前面的颜色部分
+                    colorStr = texturePath.substr(std::string("color#").size() , pos - std::string("color#").size());
                 }
                 else if (texturePath.find("color#") == 0) {
                     colorStr = texturePath.substr(std::string("color#").size());
@@ -497,12 +497,12 @@ void createMtlFile(const ModelData& data, const std::string& mtlFileName) {
                 mtlFile << "illum 2\n";
             }
             // 处理纯颜色材质（支持流体格式：color#r g b-流体名 和普通格式：color#r g b）
-            else if (texturePath.find("color#") != std::string::npos || texturePath.find("-color#") != std::string::npos) {
+            else if (texturePath.find("color#") != std::string::npos || texturePath.find("-") != std::string::npos) {
                 std::string colorStr;
-                size_t pos = texturePath.find("-color#");
+                size_t pos = texturePath.find("");
                 if (pos != std::string::npos) {
-                    // 流体材质格式，提取“-color#”后面的颜色部分
-                    colorStr = texturePath.substr(pos + std::string("-color#").size());
+                    // 流体材质格式，提取“-”前面的颜色部分
+                    colorStr = texturePath.substr(pos + std::string("color#").size() , pos - std::string("color#").size());
                 }
                 else if (texturePath.find("color#") == 0) {
                     colorStr = texturePath.substr(std::string("color#").size());
