@@ -76,14 +76,28 @@ void InitializeAllCaches() {
             }
             GlobalCache::jarOrder.clear();
             //从config中读取并添加到GlobalCache::jarQueue和GlobalCache::jarOrder
+            std::cout << std::endl;
+            std::cout << "正在初始化缓存..." << std::endl;
             for (const auto& resourcepack : config.resourcepacksPaths){
+                std::cout << "  = 添加资源包: " << resourcepack << std::endl;
+                std::cout << "    - 资源包ID: " << "resource_" + wstring_to_string(GetFolderNameFromPath(string_to_wstring(resourcepack))) << std::endl;
                 GlobalCache::jarQueue.push(string_to_wstring(resourcepack));
                 GlobalCache::jarOrder.push_back("resource_" + wstring_to_string(GetFolderNameFromPath(string_to_wstring(resourcepack))));
             }
             for (const auto& mod : listdir(string_to_wstring(config.modsPath))) {
-                GlobalCache::jarQueue.push(string_to_wstring(config.modsPath + "\\") + mod);
-                GlobalCache::jarOrder.push_back("mod_" + wstring_to_string(mod));
+                //判断是否以.jar结尾
+                if (wstring_to_string(mod).substr(wstring_to_string(mod).length() - 4) == ".jar") {
+                    std::cout << "  = 添加模组: " << config.modsPath + "\\" + wstring_to_string(mod) << std::endl;
+                    std::cout << "    - 模组ID: " << "mod_" + wstring_to_string(mod) << std::endl;
+                    GlobalCache::jarQueue.push(string_to_wstring(config.modsPath + "\\") + mod);
+                    GlobalCache::jarOrder.push_back("mod_" + wstring_to_string(mod));
+                }
+                else{
+                    std::cout << "X 跳过非jar结尾文件: " << wstring_to_string(mod) << std::endl;
+                }
             }
+            std::cout << "  = 添加原版jar文件: " << config.jarPath << std::endl;
+            std::cout << "    - 原版ID: " << "vanilla" << std::endl;
             GlobalCache::jarQueue.push(string_to_wstring(config.jarPath));
             GlobalCache::jarOrder.push_back("vanilla");
             };
