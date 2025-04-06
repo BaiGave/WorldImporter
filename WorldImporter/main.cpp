@@ -27,11 +27,11 @@ using namespace chrono;
 void init() {
     SetGlobalLocale();
     config = LoadConfig("config\\config.json");
+    InitializeAllCaches();
     LoadSolidBlocks(config.solidBlocksFile);
     LoadFluidBlocks(config.fluidsFile);
     RegisterFluidTextures();
     InitializeGlobalBlockPalette();
-    InitializeAllCaches();
 }
 
 void exportPointCloud() {

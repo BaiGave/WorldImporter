@@ -9,6 +9,8 @@
 #include <future>
 #include <queue>
 #include <atomic>
+#include "include/json.hpp"
+#include <fstream>
 // ========= 全局变量定义 =========
 namespace GlobalCache {
     // 缓存数据
@@ -39,6 +41,7 @@ struct TaskResult {
     std::unordered_map<std::string, nlohmann::json> localBiomes;
     std::unordered_map<std::string, std::vector<unsigned char>> localColormaps;
 };
+//========== 补充部分函数 ==========
 std::vector<std::wstring> listdir(const std::wstring& path) {
     std::vector<std::wstring> files;
 
@@ -59,10 +62,95 @@ std::vector<std::wstring> listdir(const std::wstring& path) {
     return files;
 }
 
+std::string GetLoadType(const std::wstring versionJsonPath) {
+    std::string modLoaderType;
+    // 以二进制模式打开文件
+    std::ifstream versionFile(versionJsonPath, std::ios::binary);
+    // 设置文件流的区域设置为 UTF-8
+    versionFile.imbue(std::locale("en_US.UTF-8"));
+
+    // 检查文件是否成功打开
+    bool hasVersionJson = versionFile.is_open();
+    // 用于存储解析后的 JSON 数据
+    nlohmann::json versionData;
+    // 标识是否为 Forge、Fabric 或 NeoForge 整合包
+    bool isForgePack = false, isFabricPack = false, isNeoForgePack = false;
+
+    if (hasVersionJson) {
+        try {
+            // 从文件中读取 JSON 数据
+            versionFile >> versionData;
+            // 关闭文件
+            versionFile.close();
+
+            // 解析 mod 加载器类型
+            if (versionData.contains("arguments") && versionData["arguments"].contains("game")) {
+                // 遍历 "game" 参数列表
+                for (const auto& arg : versionData["arguments"]["game"]) {
+                    if (arg.is_string()) {
+                        // 获取参数值
+                        std::string argStr = arg.get<std::string>();
+                        // 判断是否为 Forge 或 NeoForge 整合包
+                        if (argStr == "forgeclient") isForgePack = true;
+                        else if (argStr == "neoforgeclient") isNeoForgePack = true;
+                    }
+                }
+            }
+
+            // 检查 "mainClass" 字段以确定 mod 加载器类型
+            if (versionData.contains("mainClass")) {
+                std::string mainClass = versionData["mainClass"];
+                // 判断是否为 Fabric 或 Quilt 整合包
+                if (mainClass == "net.fabricmc.loader.impl.launch.knot.KnotClient" ||
+                    mainClass == "org.quiltmc.loader.impl.launch.knot.KnotClient") {
+                    isFabricPack = true;
+                }
+                // 判断是否为 Forge 整合包
+                else if (mainClass == "net.minecraftforge.bootstrap.ForgeBootstrap") {
+                    isForgePack = true;
+                }
+            }
+
+            // 根据解析结果设置 modLoaderType
+            if (isForgePack)       modLoaderType = "Forge";
+            else if (isNeoForgePack) modLoaderType = "NeoForge";
+            else if (isFabricPack)  modLoaderType = "Fabric";
+            else                   modLoaderType = "Vanilla";
+        }
+        catch (...) {
+            // 捕获解析异常并输出错误信息
+            std::cerr << "Failed to parse version.json, using fallback" << std::endl;
+            hasVersionJson = false;
+        }
+    }
+    return modLoaderType;
+}
+std::string GetModIdFromJar(std::wstring jarPath , std::string modLoaderType){
+    std::string modId;
+    try
+    {
+        // 使用 JarReader 处理 .jar 文件
+        JarReader jarReader(jarPath);
+
+        if (modLoaderType == "Fabric") {
+            modId = jarReader.getFabricModId();
+        }
+        else if (modLoaderType == "Forge") {
+            modId = jarReader.getForgeModId();
+        }
+        else if (modLoaderType == "NeoForge") {
+            modId = jarReader.getNeoForgeModId();
+        }
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "Error occurred: " << e.what() << std::endl;
+    }
+    return modId;
+}
 // ========= 初始化实现 =========
 void InitializeAllCaches() {
 
-    
 
     std::call_once(GlobalCache::initFlag, []() {
         auto start = std::chrono::high_resolution_clock::now();
@@ -75,31 +163,39 @@ void InitializeAllCaches() {
                 GlobalCache::jarQueue.pop();
             }
             GlobalCache::jarOrder.clear();
+            //获取modLoaderType
+            std::string modLoaderType = GetLoadType(string_to_wstring(config.versionJsonPath));
+            std::cout << std::endl;
+            std::cout << "加载器类型: " << modLoaderType << std::endl;
             //从config中读取并添加到GlobalCache::jarQueue和GlobalCache::jarOrder
             std::cout << std::endl;
             std::cout << "正在初始化缓存..." << std::endl;
             for (const auto& resourcepack : config.resourcepacksPaths){
+                std::string resourcepackname = wstring_to_string(GetFolderNameFromPath(string_to_wstring(resourcepack)));
+                std::string resourcepackid = resourcepackname.substr(0, resourcepackname.rfind("."));
                 std::cout << "  = 添加资源包: " << resourcepack << std::endl;
-                std::cout << "    - 资源包ID: " << "resource_" + wstring_to_string(GetFolderNameFromPath(string_to_wstring(resourcepack))) << std::endl;
+                std::cout << "    - 资源包ID: " << resourcepackid << std::endl;
                 GlobalCache::jarQueue.push(string_to_wstring(resourcepack));
-                GlobalCache::jarOrder.push_back("resource_" + wstring_to_string(GetFolderNameFromPath(string_to_wstring(resourcepack))));
+                GlobalCache::jarOrder.push_back(resourcepackid);
             }
             for (const auto& mod : listdir(string_to_wstring(config.modsPath))) {
                 //判断是否以.jar结尾
                 if (wstring_to_string(mod).substr(wstring_to_string(mod).length() - 4) == ".jar") {
+                    std::wstring modPath = string_to_wstring(config.modsPath + "\\") + mod;
+                    std::string modid = GetModIdFromJar(modPath , modLoaderType);
                     std::cout << "  = 添加模组: " << config.modsPath + "\\" + wstring_to_string(mod) << std::endl;
-                    std::cout << "    - 模组ID: " << "mod_" + wstring_to_string(mod) << std::endl;
-                    GlobalCache::jarQueue.push(string_to_wstring(config.modsPath + "\\") + mod);
-                    GlobalCache::jarOrder.push_back("mod_" + wstring_to_string(mod));
+                    std::cout << "    - 模组ID: " << modid << std::endl;
+                    GlobalCache::jarQueue.push(modPath);
+                    GlobalCache::jarOrder.push_back(modid);
                 }
                 else{
                     std::cout << "X 跳过非jar结尾文件: " << wstring_to_string(mod) << std::endl;
                 }
             }
             std::cout << "  = 添加原版jar文件: " << config.jarPath << std::endl;
-            std::cout << "    - 原版ID: " << "vanilla" << std::endl;
+            std::cout << "    - 原版ID: " << "minecraft" << std::endl;
             GlobalCache::jarQueue.push(string_to_wstring(config.jarPath));
-            GlobalCache::jarOrder.push_back("vanilla");
+            GlobalCache::jarOrder.push_back("minecraft");
             };
 
         prepareQueue();

@@ -24,6 +24,7 @@ struct VersionConfig {
 struct Config {
     std::string worldPath;  // Minecraft 世界路径
     std::string jarPath; //jar 路径
+    std::string versionJsonPath;
     std::string modsPath; // mods 路径
     std::vector<std::string> resourcepacksPaths; // 资源包路径
 
@@ -61,6 +62,7 @@ struct Config {
         :
         worldPath(""),
         jarPath(""),
+        versionJsonPath(""),
         modsPath(""),
         resourcepacksPaths({}),
 
