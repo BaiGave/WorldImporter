@@ -17,14 +17,66 @@
 #include "GlobalCache.h"
 #include "RegionModelExporter.h"
 #include "include/json.hpp"
+#include <windows.h>
+#include <string>
 
 Config config;  // 定义全局变量
 
 using namespace std;
 using namespace chrono;
 
+void DeleteDirectory(const std::wstring& path) {
+    WIN32_FIND_DATA findFileData;
+    HANDLE hFind = FindFirstFile((path + L"\\*").c_str(), &findFileData);
+    if (hFind != INVALID_HANDLE_VALUE) {
+        do {
+            if (wcscmp(findFileData.cFileName, L".") != 0 && wcscmp(findFileData.cFileName, L"..") != 0) {
+                std::wstring filePath = path + L"\\" + findFileData.cFileName;
+                if (findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                    DeleteDirectory(filePath); // 递归删除子目录
+                } else {
+                    // 解除文件占用并删除文件
+                    if (!DeleteFile(filePath.c_str())) {
+                        // 如果删除失败，尝试解除占用
+                        MoveFileEx(filePath.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+                    }
+                }
+            }
+        } while (FindNextFile(hFind, &findFileData) != 0);
+        FindClose(hFind);
+    }
+    // 删除空目录
+    RemoveDirectory(path.c_str());
+}
 
+void DeleteTexturesFolder() {
+    // 获取当前可执行文件所在的目录
+    wchar_t cwd[MAX_PATH];
+    if (GetModuleFileName(NULL, cwd, MAX_PATH) == 0) {
+        return;
+    }
+
+    // 提取目录路径
+    std::wstring exePath(cwd);
+    size_t lastSlash = exePath.find_last_of(L"\\/");
+    std::wstring exeDir = exePath.substr(0, lastSlash);
+
+    // 构建textures文件夹的路径
+    std::wstring texturesPath = exeDir + L"\\textures";
+    std::wstring biomeTexPath = exeDir + L"\\biomeTex";
+
+    // 删除textures文件夹
+    if (GetFileAttributes(texturesPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        DeleteDirectory(texturesPath);
+    }
+
+    // 删除biomeTex文件夹
+    if (GetFileAttributes(biomeTexPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        DeleteDirectory(biomeTexPath);
+    }
+}
 void init() {
+    DeleteTexturesFolder();
     SetGlobalLocale();
     config = LoadConfig("config\\config.json");
     InitializeAllCaches();
