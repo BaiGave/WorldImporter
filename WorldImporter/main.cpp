@@ -39,21 +39,27 @@ void DeleteTexturesFolder() {
 
     // 构建textures文件夹的路径
     std::wstring texturesPath = exeDir + L"\\textures";
+    std::wstring biomeTexPath = exeDir + L"\\biomeTex";
 
-    // 检查文件夹是否存在
-    DWORD fileAttributes = GetFileAttributes(texturesPath.c_str());
-    if (fileAttributes == INVALID_FILE_ATTRIBUTES) {
-        return;
+    // 删除textures文件夹
+    if (GetFileAttributes(texturesPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        SHFILEOPSTRUCT fileOp;
+        ZeroMemory(&fileOp, sizeof(fileOp));
+        fileOp.wFunc = FO_DELETE;
+        fileOp.pFrom = (texturesPath + L"\0").c_str(); // 必须以双空字符结尾
+        fileOp.fFlags = FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
+        SHFileOperation(&fileOp);
     }
 
-    // 删除文件夹及其内容
-    SHFILEOPSTRUCT fileOp;
-    ZeroMemory(&fileOp, sizeof(fileOp));
-    fileOp.wFunc = FO_DELETE;
-    fileOp.pFrom = (texturesPath + L"\0").c_str(); // 必须以双空字符结尾
-    fileOp.fFlags = FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
-
-    int result = SHFileOperation(&fileOp);
+    // 删除biomeTex文件夹
+    if (GetFileAttributes(biomeTexPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        SHFILEOPSTRUCT fileOp;
+        ZeroMemory(&fileOp, sizeof(fileOp));
+        fileOp.wFunc = FO_DELETE;
+        fileOp.pFrom = (biomeTexPath + L"\0").c_str(); // 必须以双空字符结尾
+        fileOp.fFlags = FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
+        SHFileOperation(&fileOp);
+    }
 }
 void init() {
     DeleteTexturesFolder();
