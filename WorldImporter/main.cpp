@@ -25,6 +25,30 @@ Config config;  // 定义全局变量
 using namespace std;
 using namespace chrono;
 
+void DeleteDirectory(const std::wstring& path) {
+    WIN32_FIND_DATA findFileData;
+    HANDLE hFind = FindFirstFile((path + L"\\*").c_str(), &findFileData);
+    if (hFind != INVALID_HANDLE_VALUE) {
+        do {
+            if (wcscmp(findFileData.cFileName, L".") != 0 && wcscmp(findFileData.cFileName, L"..") != 0) {
+                std::wstring filePath = path + L"\\" + findFileData.cFileName;
+                if (findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                    DeleteDirectory(filePath); // 递归删除子目录
+                } else {
+                    // 解除文件占用并删除文件
+                    if (!DeleteFile(filePath.c_str())) {
+                        // 如果删除失败，尝试解除占用
+                        MoveFileEx(filePath.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+                    }
+                }
+            }
+        } while (FindNextFile(hFind, &findFileData) != 0);
+        FindClose(hFind);
+    }
+    // 删除空目录
+    RemoveDirectory(path.c_str());
+}
+
 void DeleteTexturesFolder() {
     // 获取当前可执行文件所在的目录
     wchar_t cwd[MAX_PATH];
@@ -43,22 +67,12 @@ void DeleteTexturesFolder() {
 
     // 删除textures文件夹
     if (GetFileAttributes(texturesPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
-        SHFILEOPSTRUCT fileOp;
-        ZeroMemory(&fileOp, sizeof(fileOp));
-        fileOp.wFunc = FO_DELETE;
-        fileOp.pFrom = (texturesPath + L"\0").c_str(); // 必须以双空字符结尾
-        fileOp.fFlags = FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
-        SHFileOperation(&fileOp);
+        DeleteDirectory(texturesPath);
     }
 
     // 删除biomeTex文件夹
     if (GetFileAttributes(biomeTexPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
-        SHFILEOPSTRUCT fileOp;
-        ZeroMemory(&fileOp, sizeof(fileOp));
-        fileOp.wFunc = FO_DELETE;
-        fileOp.pFrom = (biomeTexPath + L"\0").c_str(); // 必须以双空字符结尾
-        fileOp.fFlags = FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
-        SHFileOperation(&fileOp);
+        DeleteDirectory(biomeTexPath);
     }
 }
 void init() {
