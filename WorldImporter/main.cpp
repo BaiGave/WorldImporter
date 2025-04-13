@@ -17,14 +17,46 @@
 #include "GlobalCache.h"
 #include "RegionModelExporter.h"
 #include "include/json.hpp"
+#include <windows.h>
+#include <string>
 
 Config config;  // 定义全局变量
 
 using namespace std;
 using namespace chrono;
 
+void DeleteTexturesFolder() {
+    // 获取当前可执行文件所在的目录
+    wchar_t cwd[MAX_PATH];
+    if (GetModuleFileName(NULL, cwd, MAX_PATH) == 0) {
+        return;
+    }
 
+    // 提取目录路径
+    std::wstring exePath(cwd);
+    size_t lastSlash = exePath.find_last_of(L"\\/");
+    std::wstring exeDir = exePath.substr(0, lastSlash);
+
+    // 构建textures文件夹的路径
+    std::wstring texturesPath = exeDir + L"\\textures";
+
+    // 检查文件夹是否存在
+    DWORD fileAttributes = GetFileAttributes(texturesPath.c_str());
+    if (fileAttributes == INVALID_FILE_ATTRIBUTES) {
+        return;
+    }
+
+    // 删除文件夹及其内容
+    SHFILEOPSTRUCT fileOp;
+    ZeroMemory(&fileOp, sizeof(fileOp));
+    fileOp.wFunc = FO_DELETE;
+    fileOp.pFrom = (texturesPath + L"\0").c_str(); // 必须以双空字符结尾
+    fileOp.fFlags = FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
+
+    int result = SHFileOperation(&fileOp);
+}
 void init() {
+    DeleteTexturesFolder();
     SetGlobalLocale();
     config = LoadConfig("config\\config.json");
     InitializeAllCaches();
