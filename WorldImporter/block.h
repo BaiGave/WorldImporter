@@ -3,8 +3,7 @@
 
 #include "config.h"
 #include "nbtutils.h"
-
-
+#include "model.h"
 #include <vector>
 #include <string>
 #include <unordered_map>
@@ -422,7 +421,6 @@ struct SectionCacheEntry {
     std::vector<int> biomeData;     // 生物群系数据
 };
 
-
 extern std::vector<Block> globalBlockPalette;
 extern std::unordered_map<std::tuple<int, int, int>, SectionCacheEntry, triple_hash> sectionCache;
 
@@ -430,7 +428,6 @@ extern std::unordered_map<std::tuple<int, int, int>, SectionCacheEntry, triple_h
 // 获取区块NBT数据的函数
 std::vector<char> GetChunkNBTData(const std::vector<char>& fileData, int x, int z);
 std::vector<char> getRegionFromCache(int regionX, int regionZ);
-
 
 void LoadAndCacheBlockData(int chunkX, int chunkZ);
 

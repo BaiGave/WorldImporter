@@ -13,7 +13,6 @@
 #include <future>
 #include <chrono>  // 新增：用于时间测量
 #include <iostream>  // 新增：用于输出时间
-#include "EntityBlock.h"
 #include "ModelDeduplicator.h"
 #include "chunk_group_allocator.h"
 
@@ -40,7 +39,8 @@ struct triple_hash {
         return h1 ^ (h2 << 1) ^ (h3 << 2);
     }
 };
-
+std::unordered_set<std::pair<int, int>, pair_hash> processedChunks; // 存储已处理的块的集合
+std::mutex entityCacheMutex; // 互斥量，确保线程安全
 
 void RegionModelExporter::ExportModels(const string& outputName) {
     // 初始化坐标范围
@@ -73,7 +73,6 @@ void RegionModelExporter::ExportModels(const string& outputName) {
         config.minZ = alignTo16(zStart); config.maxZ = alignTo16(zEnd);
     }
 
-
     // 计算区块坐标范围
     int chunkXStart, chunkXEnd, chunkZStart, chunkZEnd;
     blockToChunk(xStart, zStart, chunkXStart, chunkZStart);
@@ -95,6 +94,7 @@ void RegionModelExporter::ExportModels(const string& outputName) {
 
     UpdateSkyLightNeighborFlags();
     ProcessBlockstateForBlocks(GetGlobalBlockPalette());
+
     Biome::ExportAllToPNG(xStart, zStart, xEnd, zEnd);
 
     // 模型处理阶段
@@ -110,8 +110,10 @@ void RegionModelExporter::ExportModels(const string& outputName) {
             ? GenerateChunkModel(task.chunkX, task.sectionY, task.chunkZ)
             : GenerateLODChunkModel(task.chunkX, task.sectionY, task.chunkZ, task.lodLevel);
         };
+
     std::mutex finalModelMutex;
     std::mutex materialsMutex;
+
     // 线程安全的合并操作
     auto mergeToFinalModel = [&](ModelData&& model) {
         std::lock_guard<std::mutex> lock(finalModelMutex);
@@ -131,7 +133,6 @@ void RegionModelExporter::ExportModels(const string& outputName) {
 
     // 创建线程池处理区块组
     std::vector<std::future<void>> futures;
-    
 
     for (const auto& group : chunkGroups) {
         futures.push_back(std::async(std::launch::async, [&, group]() {
@@ -188,6 +189,12 @@ void RegionModelExporter::LoadChunks(int chunkXStart, int chunkXEnd, int chunkZS
     int sectionYStart, int sectionYEnd,
     int LOD0renderDistance, int LOD1renderDistance,
     int LOD2renderDistance, int LOD3renderDistance) {
+    // 扩大区块范围，使其比将要导入的区块大一圈
+    chunkXStart--;
+    chunkXEnd++;
+    chunkZStart--;
+    chunkZEnd++;
+
     // 加载所有相关的分块和分段
     for (int chunkX = chunkXStart; chunkX <= chunkXEnd; ++chunkX) {
         for (int chunkZ = chunkZStart; chunkZ <= chunkZEnd; ++chunkZ) {
@@ -214,7 +221,7 @@ void RegionModelExporter::LoadChunks(int chunkXStart, int chunkXEnd, int chunkZS
                         chunkLOD = 8.0f;
                     }
                 }
-               
+
                 g_chunkLODs[std::make_tuple(chunkX, sectionY, chunkZ)] = chunkLOD;
             }
         }
@@ -235,6 +242,8 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
     int blockXStart = chunkX * 16;
     int blockZStart = chunkZ * 16;
     int blockYStart = sectionY * 16;
+   
+    
     // 遍历区块内的每个方块
     for (int x = blockXStart; x < blockXStart + 16; ++x) {
         for (int z = blockZStart; z < blockZStart + 16; ++z) {
@@ -417,6 +426,36 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
         }
     }
 
+    
+    auto chunkKey = std::make_pair(chunkX, chunkZ);
+    {
+        std::lock_guard<std::mutex> lock(entityCacheMutex);
+        if (processedChunks.find(chunkKey) != processedChunks.end()) {
+            return chunkModel;
+        }
+    }
+
+    if (entityBlockCache.find(chunkKey) != entityBlockCache.end()) {
+        const auto& entityBlocks = entityBlockCache[chunkKey];
+        for (const auto& entity : entityBlocks) {
+            ModelData EntityModel;
+            if (entity != nullptr) {
+                EntityModel = entity->GenerateModel();
+                entity->PrintDetails();
+                if (chunkModel.vertices.empty()) {
+                    chunkModel = EntityModel;
+                }
+                else {
+                    MergeModelsDirectly(chunkModel, EntityModel);
+                }
+            }
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(entityCacheMutex);
+        processedChunks.insert(chunkKey);
+    }
     return chunkModel;
 }
 

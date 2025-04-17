@@ -96,7 +96,7 @@ NbtTagPtr readListTag(const std::vector<char>& data, size_t& index);
 // 函数声明：读取COMPOUND类型标签并更新索引位置
 NbtTagPtr readCompoundTag(const std::vector<char>& data, size_t& index);
 
-
+std::vector<int> readIntArray(const std::vector<char>& payload);
 // 帮助函数：将字节数组转换为可读的字符串
 std::string bytesToString(const std::vector<char>& payload);
 

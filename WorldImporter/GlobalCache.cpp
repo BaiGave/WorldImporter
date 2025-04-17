@@ -165,16 +165,11 @@ void InitializeAllCaches() {
             GlobalCache::jarOrder.clear();
             //获取modLoaderType
             std::string modLoaderType = GetLoadType(string_to_wstring(config.versionJsonPath));
-            std::cout << std::endl;
-            std::cout << "加载器类型: " << modLoaderType << std::endl;
             //从config中读取并添加到GlobalCache::jarQueue和GlobalCache::jarOrder
-            std::cout << std::endl;
             std::cout << "正在初始化缓存..." << std::endl;
             for (const auto& resourcepack : config.resourcepacksPaths){
                 std::string resourcepackname = wstring_to_string(GetFolderNameFromPath(string_to_wstring(resourcepack)));
                 std::string resourcepackid = resourcepackname.substr(0, resourcepackname.rfind("."));
-                std::cout << "  = 添加资源包: " << resourcepack << std::endl;
-                std::cout << "    - 资源包ID: " << resourcepackid << std::endl;
                 GlobalCache::jarQueue.push(string_to_wstring(resourcepack));
                 GlobalCache::jarOrder.push_back(resourcepackid);
             }
@@ -183,17 +178,10 @@ void InitializeAllCaches() {
                 if (wstring_to_string(mod).substr(wstring_to_string(mod).length() - 4) == ".jar") {
                     std::wstring modPath = string_to_wstring(config.modsPath + "\\") + mod;
                     std::string modid = GetModIdFromJar(modPath , modLoaderType);
-                    std::cout << "  = 添加模组: " << config.modsPath + "\\" + wstring_to_string(mod) << std::endl;
-                    std::cout << "    - 模组ID: " << modid << std::endl;
                     GlobalCache::jarQueue.push(modPath);
                     GlobalCache::jarOrder.push_back(modid);
                 }
-                else{
-                    std::cout << "X 跳过非jar结尾文件: " << wstring_to_string(mod) << std::endl;
-                }
             }
-            std::cout << "  = 添加原版jar文件: " << config.jarPath << std::endl;
-            std::cout << "    - 原版ID: " << "minecraft" << std::endl;
             GlobalCache::jarQueue.push(string_to_wstring(config.jarPath));
             GlobalCache::jarOrder.push_back("minecraft");
             };

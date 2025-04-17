@@ -1,3 +1,4 @@
+// MODEL_H.h
 #ifndef MODEL_H
 #define MODEL_H
 
@@ -125,6 +126,8 @@ ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2);
 void MergeModelsDirectly(ModelData& data1, const ModelData& data2);
 
 void ApplyPositionOffset(ModelData& model, int x, int y, int z);
+
+void ApplyDoublePositionOffset(ModelData& model, double x, double y, double z);
 // exe路径获取
 std::string getExecutableDir();
 //---------------- JSON处理 ----------------
@@ -135,5 +138,7 @@ nlohmann::json LoadParentModel(const std::string& namespaceName,
     nlohmann::json& currentModelJson);
 nlohmann::json MergeModelJson(const nlohmann::json& parentModelJson,
     const nlohmann::json& currentModelJson);
-
+// 新增声明（固定旋转中心为0.5）
+void ApplyRotationToVertices(std::vector<float>& vertices, float rx, float ry, float rz);
+void ApplyScaleToVertices(std::vector<float>& vertices, float sx, float sy, float sz);
 #endif // MODEL_H

@@ -487,6 +487,22 @@ NbtTagPtr readCompoundTag(const std::vector<char>& data, size_t& index) {
     return compoundTag;
 }
 
+
+// 将 payload 字节数组转换为 int 列表（大端顺序，每 4 个字节为一个 int）
+std::vector<int> readIntArray(const std::vector<char>& payload) {
+    std::vector<int> result;
+    // 确保字节数是 4 的倍数
+    if (payload.size() % 4 != 0) {
+        // 根据需要处理错误情况，这里可以抛异常或记录错误
+        // 例如：throw std::runtime_error("Invalid payload size for int array conversion.");
+    }
+    for (size_t i = 0; i < payload.size(); i += 4) {
+        int value = (payload[i] << 24) | (payload[i + 1] << 16) | (payload[i + 2] << 8) | (payload[i + 3]);
+        result.push_back(value);
+    }
+    return result;
+}
+
 //-------------------------------基础方法---------------------------------------------
 
 

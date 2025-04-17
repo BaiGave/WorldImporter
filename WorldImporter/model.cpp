@@ -1,6 +1,6 @@
 #include "model.h"
 #include "fileutils.h"
-#include "EntityBlock.h"
+#include "SpecialBlock.h"
 #include <Windows.h>   
 #include <iostream>
 #include <fstream>
@@ -30,6 +30,78 @@ std::string getExecutableDir() {
 }
 
 //---------------- 几何变换 ----------------
+// 应用缩放（以0.5,0.5,0.5为中心）
+void ApplyScaleToVertices(std::vector<float>& vertices, float sx, float sy, float sz) {
+    constexpr float center = 0.5f;
+    for (size_t i = 0; i < vertices.size(); i += 3) {
+        // 平移至中心点相对坐标
+        float x = vertices[i] - center;
+        float y = vertices[i + 1] - center;
+        float z = vertices[i + 2] - center;
+
+        // 应用缩放
+        x *= sx;
+        y *= sy;
+        z *= sz;
+
+        // 平移回原坐标系
+        vertices[i] = x + center;
+        vertices[i + 1] = y + center;
+        vertices[i + 2] = z + center;
+    }
+}
+
+// 应用旋转（以0.5,0.5,0.5为中心，按X->Y->Z轴顺序）
+void ApplyRotationToVertices(std::vector<float>& vertices, float rx, float ry, float rz) {
+    constexpr float center = 0.5f;
+
+    // 转换角度为弧度（按原始值直接使用，若需/16则改为 rx/16.0f）
+    const float radX = rx * (M_PI / 180.0f);
+    const float radY = ry * (M_PI / 180.0f);
+    const float radZ = rz * (M_PI / 180.0f);
+
+    // 预计算三角函数值
+    const float cosX = cos(radX), sinX = sin(radX);
+    const float cosY = cos(radY), sinY = sin(radY);
+    const float cosZ = cos(radZ), sinZ = sin(radZ);
+
+    for (size_t i = 0; i < vertices.size(); i += 3) {
+        // 平移至中心点相对坐标
+        float x = vertices[i] - center;
+        float y = vertices[i + 1] - center;
+        float z = vertices[i + 2] - center;
+
+        // 按X轴旋转（与element处理逻辑一致）
+        if (rx != 0.0f) {
+            float new_y = y * cosX - z * sinX;
+            float new_z = y * sinX + z * cosX;
+            y = new_y;
+            z = new_z;
+        }
+
+        // 按Y轴旋转（与element处理逻辑一致）
+        if (ry != 0.0f) {
+            float new_x = x * cosY + z * sinY;
+            float new_z = -x * sinY + z * cosY;
+            x = new_x;
+            z = new_z;
+        }
+
+        // 按Z轴旋转（与element处理逻辑一致）
+        if (rz != 0.0f) {
+            float new_x = x * cosZ - y * sinZ;
+            float new_y = x * sinZ + y * cosZ;
+            x = new_x;
+            y = new_y;
+        }
+
+        // 平移回原坐标系
+        vertices[i] = x + center;
+        vertices[i + 1] = y + center;
+        vertices[i + 2] = z + center;
+    }
+}
+
 // 旋转函数
 void ApplyRotationToVertices(std::vector<float>& vertices, int rotationX, int rotationY) {
     // 参数校验
@@ -367,6 +439,14 @@ void ApplyRotationToFaceDirections(std::vector<std::string>& faceDirections, int
 }
 
 void ApplyPositionOffset(ModelData& model, int x, int y, int z) {
+    for (size_t i = 0; i < model.vertices.size(); i += 3) {
+        model.vertices[i] += x;    // X坐标偏移
+        model.vertices[i + 1] += y;  // Y坐标偏移
+        model.vertices[i + 2] += z;  // Z坐标偏移
+    }
+}
+
+void ApplyDoublePositionOffset(ModelData& model, double x, double y, double z) {
     for (size_t i = 0; i < model.vertices.size(); i += 3) {
         model.vertices[i] += x;    // X坐标偏移
         model.vertices[i + 1] += y;  // Y坐标偏移
@@ -1027,7 +1107,7 @@ ModelData ProcessModelData(const nlohmann::json& modelJson, const std::string& b
     }
     else {
         // 当模型中没有 "elements" 字段时，生成实体方块模型
-        data = EntityBlock::GenerateEntityBlockModel(blockName);
+        data = SpecialBlock::GenerateSpecialBlockModel(blockName);
     }
     
 

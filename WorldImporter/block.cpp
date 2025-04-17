@@ -6,6 +6,7 @@
 #include <memory>
 #include "block.h"
 #include "model.h"
+#include "EntityBlock.h"
 #include "blockstate.h"
 #include "nbtutils.h"
 #include "biome.h"
@@ -50,7 +51,7 @@ struct triple_hash {
 // --------------------------------------------------------------------------------
 // 统一的缓存表
 std::unordered_map<std::tuple<int, int, int>, SectionCacheEntry, triple_hash> sectionCache;
-
+std::unordered_map<std::pair<int, int>, std::vector<std::shared_ptr<EntityBlock>>, pair_hash> entityBlockCache;
 // 高度图缓存（键为 chunkX 和 chunkZ）
 std::unordered_map<std::pair<int, int>, std::vector<char>, pair_hash> regionCache;
 std::unordered_map<std::pair<int, int>, std::unordered_map<std::string, std::vector<int>>, pair_hash> heightMapCache;
@@ -172,6 +173,8 @@ void UpdateSkyLightNeighborFlags() {
     }
 }
 
+
+
 // --------------------------------------------------------------------------------
 // 方块相关核心函数
 // --------------------------------------------------------------------------------
@@ -292,6 +295,243 @@ void ProcessSection(int chunkX, int chunkZ, int sectionY, const NbtTagPtr& secti
         std::move(biomeData)
     };
 }
+
+void ProcessEntityBlocks(int chunkX, int chunkZ, const NbtTagPtr& blockEntitiesTag) {
+    std::vector<std::shared_ptr<EntityBlock>> entityBlocks;
+
+    for (const auto& entityTag : blockEntitiesTag->children) {
+        // 提取基础信息
+        auto idTag = getChildByName(entityTag, "id");
+        auto xTag = getChildByName(entityTag, "x");
+        auto yTag = getChildByName(entityTag, "y");
+        auto zTag = getChildByName(entityTag, "z");
+
+        std::string id;
+        int x = 0, y = 0, z = 0;
+        if (idTag && idTag->type == TagType::STRING) {
+            id = std::string(idTag->payload.begin(), idTag->payload.end());
+        }
+        if (xTag && xTag->type == TagType::INT) {
+            x = bytesToInt(xTag->payload);
+        }
+        if (yTag && yTag->type == TagType::INT) {
+            y = bytesToInt(yTag->payload);
+        }
+        if (zTag && zTag->type == TagType::INT) {
+            z = bytesToInt(zTag->payload);
+        }
+
+        // 创建实体
+        std::shared_ptr<EntityBlock> entityBlock;
+
+        // 在解析每个 blockTag 时创建 YuushyaBlockEntry 并填充数据
+        if (id == "yuushya:showblockentity") {
+            auto yuushyaEntity = std::make_shared<YuushyaShowBlockEntity>();
+            yuushyaEntity->id = id;
+            yuushyaEntity->x = x;
+            yuushyaEntity->y = y;
+            yuushyaEntity->z = z;
+
+            auto blocksTag = getChildByName(entityTag, "Blocks");
+            if (blocksTag && blocksTag->type == TagType::LIST) {
+                for (const auto& blockTag : blocksTag->children) {
+                    if (blockTag && blockTag->type == TagType::COMPOUND) {
+                        YuushyaBlockEntry entry;
+
+                        // 解析 BlockState
+                        auto blockStateTag = getChildByName(blockTag, "BlockState");
+                        if (blockStateTag && blockStateTag->type == TagType::COMPOUND) {
+                            std::string blockName;
+                            auto nameTag = getChildByName(blockStateTag, "Name");
+                            if (nameTag && nameTag->type == TagType::STRING) {
+                                blockName = std::string(nameTag->payload.begin(), nameTag->payload.end());
+                            }
+
+                            // 解析 Properties
+                            auto propertiesTag = getChildByName(blockStateTag, "Properties");
+                            if (propertiesTag && propertiesTag->type == TagType::COMPOUND) {
+                                std::string propertiesStr;
+                                for (const auto& prop : propertiesTag->children) {
+                                    if (!propertiesStr.empty()) propertiesStr += ",";
+                                    propertiesStr += prop->name + ":" + std::string(prop->payload.begin(), prop->payload.end());
+                                }
+                                if (!propertiesStr.empty()) {
+                                    blockName += "[" + propertiesStr + "]";
+                                }
+                            }
+
+                            // 转换为全局 ID
+                            static std::unordered_map<std::string, int> globalBlockMap;
+                            if (!blockName.empty()) {
+                                auto it = globalBlockMap.find(blockName);
+                                if (it != globalBlockMap.end()) {
+                                    entry.blockid = it->second;
+                                }
+                                else {
+                                    entry.blockid = static_cast<int>(globalBlockPalette.size());
+                                    globalBlockPalette.emplace_back(Block(blockName));
+                                    globalBlockMap[blockName] = entry.blockid;
+                                }
+                            }
+                        }
+
+                        // 解析其他属性
+                        auto showPosTag = getChildByName(blockTag, "ShowPos");
+                        if (showPosTag && showPosTag->type == TagType::LIST) {
+                            for (const auto& pos : showPosTag->children) {
+                                entry.showPos.push_back(bytesToDouble(pos->payload));
+                            }
+                        }
+
+                        auto showRotationTag = getChildByName(blockTag, "ShowRotation");
+                        if (showRotationTag && showRotationTag->type == TagType::LIST) {
+                            for (const auto& rot : showRotationTag->children) {
+                                entry.showRotation.push_back(bytesToFloat(rot->payload));
+                            }
+                        }
+
+                        auto showScalesTag = getChildByName(blockTag, "ShowScales");
+                        if (showScalesTag && showScalesTag->type == TagType::LIST) {
+                            for (const auto& scale : showScalesTag->children) {
+                                entry.showScales.push_back(bytesToFloat(scale->payload));
+                            }
+                        }
+
+                        auto isShownTag = getChildByName(blockTag, "isShown");
+                        if (isShownTag && isShownTag->type == TagType::BYTE) {
+                            entry.isShown = bytesToByte(isShownTag->payload);
+                        }
+
+                        auto slotTag = getChildByName(blockTag, "Slot");
+                        if (slotTag && slotTag->type == TagType::BYTE) {
+                            entry.slot = bytesToByte(slotTag->payload);
+                        }
+
+                        yuushyaEntity->blocks.push_back(entry);
+                    }
+                }
+            }
+
+            // 解析 ControlSlot 和 keepPacked
+            auto controlSlotTag = getChildByName(entityTag, "ControlSlot");
+            if (controlSlotTag) yuushyaEntity->controlSlot = bytesToByte(controlSlotTag->payload);
+
+            auto keepPackedTag = getChildByName(entityTag, "keepPacked");
+            if (keepPackedTag) yuushyaEntity->keepPacked = bytesToByte(keepPackedTag->payload);
+
+            entityBlocks.push_back(yuushyaEntity);
+        }
+        else if (id == "littletiles:tiles") {
+            auto littleTilesEntity = std::make_shared<LittleTilesTilesEntity>();
+            littleTilesEntity->id = id;
+            littleTilesEntity->x = x;
+            littleTilesEntity->y = y;
+            littleTilesEntity->z = z;
+
+            // 解析 content 标签
+            auto contentTag = getChildByName(entityTag, "content");
+            if (contentTag && contentTag->type == TagType::COMPOUND) {
+                // 获取 tiles 标签，tiles 是一个 CompoundTag
+                auto tilesTag = getChildByName(contentTag, "tiles");
+                if (tilesTag && tilesTag->type == TagType::COMPOUND) {
+                    // 遍历 tiles 复合标签中的每个键，例如 "minecraft:granite"、"minecraft:stone"
+                    for (const auto& tileGroupTag : tilesTag->children) {
+                        // 确保子标签类型为 ListTag
+                        if (tileGroupTag->type != TagType::LIST)
+                            continue;
+
+                        // 使用子标签的 name 作为默认的 blockName
+                        std::string blockName = tileGroupTag->name;
+                        // 新建一个 tile 条目
+                        LittleTilesTileEntry tileEntry;
+                        tileEntry.blockName = blockName;
+
+                        // 标记：第一个 IntArrayTag 作为颜色，其余均作为 box
+                        bool isFirstArray = true;
+                        // 遍历 ListTag 下的每个子节点，均为 IntArrayTag
+                        for (const auto& intArrayTag : tileGroupTag->children) {
+                            if (intArrayTag->type != TagType::INT_ARRAY)
+                                continue;
+
+                            // 解析 payload 为 int 数组
+                            std::vector<int> values = readIntArray(intArrayTag->payload);
+                            if (isFirstArray) {
+                                // 第一个数组作为颜色数据
+                                tileEntry.color = values;
+                                isFirstArray = false;
+                            }
+                            else {
+                               
+                                // 其他数组作为 box 数据
+                                // 预期每个 box 应为 7 个 int
+                                if (values.size() == 7) {
+                                    // 辅助：把一个字节拆成 [高半字节, 低半字节]
+                                    auto splitNibble = [](unsigned char b) {
+                                        return std::vector<int>{ (b >> 4) & 0x0F, b & 0x0F };
+                                        };
+
+                                    // 在 box 处理逻辑里，拿到 intArrayTag->payload
+                                    const auto& pl = intArrayTag->payload;
+
+                                    unsigned char b0 = pl[3];
+                                    unsigned char b1 = pl[2];
+                                    unsigned char b2 = pl[1];
+
+                                    // 拆半字节
+                                    auto d0 = splitNibble(b0);   // 对应你要的 0x16 → [1,6]
+                                    auto d1 = splitNibble(b1);   // 对应 0x13 → [1,3]
+                                    auto d2 = splitNibble(b2);   // 对应 0x63 → [6,3]
+
+                                    // 把它们拼进去
+                                    std::vector<int> transformed;
+                                    transformed.insert(transformed.end(), d0.begin(), d0.end());
+                                    transformed.insert(transformed.end(), d1.begin(), d1.end());
+                                    transformed.insert(transformed.end(), d2.begin(), d2.end());
+
+
+                                    // 接着追加后面 6 个 int（原始顺序不变）
+                                    for (size_t i = 1; i < values.size(); ++i) {
+                                        transformed.push_back(values[i]);
+                                    }
+
+                                    // 现在 transformed 应该包含 12 个数字
+                                    tileEntry.boxDataList.push_back(transformed);
+                                }
+                                else {
+                                    // 如果数据不是 7 个 int，则直接保存原始数据，或根据需求做额外处理
+                                    tileEntry.boxDataList.push_back(values);
+                                }
+                            }
+                        }
+                        // 将解析得到的 tileEntry 添加到实体中
+                        littleTilesEntity->tiles.push_back(tileEntry);
+                    }
+                }
+            }
+            // 将解析完成后的 littletiles 实体加入实体列表
+            entityBlocks.push_back(littleTilesEntity);
+        
+        }
+        else {
+            // 其他实体只存储基础信息
+            auto basicEntity = std::make_shared<YuushyaShowBlockEntity>();
+            basicEntity->id = id;
+            basicEntity->x = x;
+            basicEntity->y = y;
+            basicEntity->z = z;
+            // 存入缓存
+            entityBlocks.push_back(basicEntity);
+        }
+
+
+    }
+
+    // 存入缓存
+    auto chunkKey = std::make_pair(chunkX, chunkZ);
+    entityBlockCache[chunkKey] = entityBlocks;
+}
+
+
 // 修改 LoadAndCacheBlockData，使其处理整个 chunk 的所有子区块
 void LoadAndCacheBlockData(int chunkX, int chunkZ) {
     // 计算区域坐标
@@ -308,7 +548,7 @@ void LoadAndCacheBlockData(int chunkX, int chunkZ) {
 
     auto yPosTag = getChildByName(tag, "yPos");
     if (yPosTag && yPosTag->type == TagType::INT) {
-        minSectionY = static_cast<int>(yPosTag->payload[0]);
+        minSectionY = bytesToInt(yPosTag->payload);
     }
     // 处理高度图
     auto heightMapsTag = getChildByName(tag, "Heightmaps");
@@ -329,6 +569,11 @@ void LoadAndCacheBlockData(int chunkX, int chunkZ) {
                 heightMapCache[std::make_pair(chunkX, chunkZ)][mapType] = heights;
             }
         }
+    }
+    //提取实体方块
+    auto blockEntitiesTag = getChildByName(tag, "block_entities");
+    if (blockEntitiesTag && blockEntitiesTag->type == TagType::LIST) {
+        ProcessEntityBlocks(chunkX, chunkZ, blockEntitiesTag); // 处理实体方块
     }
 
     // 提取所有子区块

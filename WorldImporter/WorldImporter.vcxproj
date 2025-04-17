@@ -143,6 +143,7 @@
     <ClCompile Include="dat.cpp" />
     <ClCompile Include="decompressor.cpp" />
     <ClCompile Include="EntityBlock.cpp" />
+    <ClCompile Include="SpecialBlock.cpp" />
     <ClCompile Include="fileutils.cpp" />
     <ClCompile Include="fluid.cpp" />
     <ClCompile Include="GlobalCache.cpp" />
@@ -167,6 +168,7 @@
     <ClInclude Include="dat.h" />
     <ClInclude Include="decompressor.h" />
     <ClInclude Include="EntityBlock.h" />
+    <ClInclude Include="SpecialBlock.h" />
     <ClInclude Include="fileutils.h" />
     <ClInclude Include="fluid.h" />
     <ClInclude Include="GlobalCache.h" />

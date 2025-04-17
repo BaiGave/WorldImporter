@@ -114,7 +114,7 @@
     <ClCompile Include="objExporter.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="EntityBlock.cpp">
+    <ClCompile Include="SpecialBlock.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="fluid.cpp">
@@ -127,6 +127,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="chunk_group_allocator.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="EntityBlock.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
@@ -179,7 +182,7 @@
     <ClInclude Include="objExporter.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="EntityBlock.h">
+    <ClInclude Include="SpecialBlock.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="fluid.h">
@@ -192,6 +195,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="chunk_group_allocator.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="EntityBlock.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

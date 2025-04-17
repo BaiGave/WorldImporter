@@ -2,14 +2,16 @@
 #include <cmath>
 #include <algorithm>
 #include <iostream>
-#include <sstream> 
+#include <sstream>
 #include "block.h"
+#include <unordered_map>
+#include <mutex>
 
 using namespace std;
 
 // 模型缓存（假设有一个全局缓存 Map）
 static std::unordered_map<int, ModelData> fluidModelCache;
-
+static std::mutex fluidModelCacheMutex; // Mutex to protect the cache
 
 float getHeight(int level) {
     if (level == 0)
@@ -113,9 +115,12 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
     for (int level : fluidLevels) {
         key = (key << 3) ^ (level + (level << 5));
     }
+
+    // Lock the mutex to safely access the cache
+    std::lock_guard<std::mutex> lock(fluidModelCacheMutex);
+
     // 检查缓存中是否存在该模型
     if (fluidModelCache.find(key) != fluidModelCache.end()) {
-
         return fluidModelCache[key]; // 返回缓存中的模型
     }
 
@@ -128,8 +133,6 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
     float northwestHeight = getHeight(northwestLevel);
     float southeastHeight = getHeight(southeastLevel);
     float southwestHeight = getHeight(southwestLevel);
-
-    
 
     // 计算四个上顶点的高度
     float h_nw = getCornerHeight(currentHeight, northwestHeight, northHeight, westHeight) / 16.0f;
