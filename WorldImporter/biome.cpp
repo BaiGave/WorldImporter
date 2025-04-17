@@ -455,6 +455,7 @@ int Biome::CalculateColorFromColormap(const std::string& filePath,
     if (filePath.empty()) {
         return 0x00FF00; // 错误颜色
     }
+
     // 修改1：去掉强制RGBA参数（原第5个参数4改为0）
     int width, height, channels;
     unsigned char* data = stbi_load(filePath.c_str(),
@@ -488,24 +489,33 @@ int Biome::CalculateColorFromColormap(const std::string& filePath,
     }
 
     // 坐标计算保持不变
+    // 修改4：动态计算像素偏移
     int x = static_cast<int>((1.0f - adjTemperature) * 255.0f);
     int y = static_cast<int>((1.0f - adjDownfall) * 255.0f);
+
+    // 修改坐标计算，将y轴翻转，使得右下角为原点
     x = BiomeUtils::clamp(x, 0, 255);
     y = BiomeUtils::clamp(y, 0, 255);
-    y = 255 - y; // 保持Y轴翻转
+    y = 255 - y; // 保持Y轴翻转，使得y轴从下往上增加
+    x = 255 - x; // 将x轴反
 
-    // 修改4：动态计算像素偏移
+    // 计算像素偏移
     const size_t pixelOffset = (y * width + x) * channels;
+
 
     // 修改5：根据通道数提取颜色
     uint8_t r = data[pixelOffset];
     uint8_t g = data[pixelOffset + (channels >= 2 ? 1 : 0)]; // 单通道时复用R
     uint8_t b = data[pixelOffset + (channels >= 3 ? 2 : 0)]; // 双通道时复用R
 
+
     stbi_image_free(data);
 
     return (r << 16) | (g << 8) | b;
 }
+
+
+
 
 bool Biome::ExportToPNG(const std::vector<std::vector<int>>& biomeMap,
     const std::string& filename,
