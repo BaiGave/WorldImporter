@@ -513,16 +513,27 @@ int Biome::CalculateColorFromColormap(const std::string& filePath,
     adjDownfall = adjDownfall * adjTemperature;
     
     // 计算在颜色图中的坐标
-    // 注意：颜色图的原点在左上角，而代码中定义的原点可能不同
-    // 根据图片说明：以颜色图的右下角为原点，温度值从右往左递增，降水值从下往上递增
-    int x = static_cast<int>((1.0f - adjTemperature) * 255.0f);
-    int y = static_cast<int>((1.0f - adjDownfall) * 255.0f);
+    // 颜色图以右下角为原点：温度从右往左递增(1->0)，降水从下往上递增(1->0)
+    // 但图片坐标系以左上角为原点：x从左往右递增(0->255)，y从上往下递增(0->255)
+    
+    // 温度映射：温度1.0对应x=0，温度0.0对应x=255
+    int tempCoord = static_cast<int>((1.0f - adjTemperature) * 255.0f);
+    
+    // 降水映射：降水1.0对应y=0，降水0.0对应y=255
+    int downfallCoord = static_cast<int>((1.0f - adjDownfall) * 255.0f);
     
     // 确保坐标在有效范围内
-    x = BiomeUtils::clamp(x, 0, 255);
-    y = BiomeUtils::clamp(y, 0, 255);
+    tempCoord = BiomeUtils::clamp(tempCoord, 0, 255);
+    downfallCoord = BiomeUtils::clamp(downfallCoord, 0, 255);
+    
+    // 在图片坐标系中，我们需要转换坐标
+    // x：直接使用温度映射（已经是从左往右的递增）
+    int x = tempCoord;
+    
+    // y：直接使用降水映射（已经是从上往下的递增）
+    int y = downfallCoord;
 
-    // 计算像素偏移
+    // 计算像素偏移 - 使用图片坐标系
     const size_t pixelOffset = (y * width + x) * channels;
 
     // 根据图片通道数提取颜色
