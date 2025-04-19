@@ -197,9 +197,9 @@ void Biome::ExportAllToPNG(int minX, int minZ, int maxX, int maxZ) {
     auto biomeMap = GenerateBiomeMap(minX, minZ, maxX, maxZ);
     // 导出图片
     Biome::ExportToPNG(biomeMap, "foliage.png", BiomeColorType::Foliage);
+    Biome::ExportToPNG(biomeMap, "dry_foliage.png", BiomeColorType::DryFoliage);
     Biome::ExportToPNG(biomeMap, "water.png", BiomeColorType::Water);
     Biome::ExportToPNG(biomeMap, "grass.png", BiomeColorType::Grass);
-    Biome::ExportToPNG(biomeMap, "dryfoliage.png", BiomeColorType::DryFoliage);
     Biome::ExportToPNG(biomeMap, "waterFog.png", BiomeColorType::WaterFog);
     Biome::ExportToPNG(biomeMap, "fog.png", BiomeColorType::Fog);
     Biome::ExportToPNG(biomeMap, "sky.png", BiomeColorType::Sky);
@@ -246,14 +246,31 @@ BiomeColors Biome::ParseBiomeColors(const nlohmann::json& biomeJson) {
         colors.sky = effects.value("sky_color", 0x84ECFF);
         colors.water = effects.value("water_color", 0x3F76E4);
         colors.waterFog = effects.value("water_fog_color", 0x050533);
+        
         // 统一处理植物颜色
         colors.foliage = ParseColorWithFallback("foliage_color", "foliage");
-        colors.dryFoliage = ParseColorWithFallback("dry_foliage_color", "foliage", 1.2f, 0.8f);
+        
+        // 干旱植物颜色处理 - 优先检查是否有直接颜色值
+        int directDryFoliageColor = effects.value("dry_foliage_color", -1);
+        if (directDryFoliageColor != -1) {
+            // 如果有直接颜色值，直接使用
+            colors.dryFoliage = directDryFoliageColor;
+        } else {
+            // 尝试使用dry_foliage.png文件
+            auto dryFoliageColormap = GetColormapData("minecraft", "dry_foliage");
+            if (!dryFoliageColormap.empty()) {
+                // 如果找到dry_foliage.png，使用它来计算颜色
+                colors.dryFoliage = CalculateColorFromColormap(dryFoliageColormap,
+                    colors.adjTemperature,
+                    colors.adjDownfall);
+            } else {
+                // 如果没有找到dry_foliage.png，回退到使用foliage.png和调整参数
+                colors.dryFoliage = ParseColorWithFallback("dry_foliage_color", "foliage", 1.2f, 0.8f);
+            }
+        }
+        
         colors.grass = ParseColorWithFallback("grass_color", "grass");
-
     }
-
-
 
     return colors;
 }
@@ -456,7 +473,7 @@ int Biome::CalculateColorFromColormap(const std::string& filePath,
         return 0x00FF00; // 错误颜色
     }
 
-    // 修改1：去掉强制RGBA参数（原第5个参数4改为0）
+    // 加载图片数据
     int width, height, channels;
     unsigned char* data = stbi_load(filePath.c_str(),
         &width,
@@ -470,7 +487,7 @@ int Biome::CalculateColorFromColormap(const std::string& filePath,
         return 0x00FF00;
     }
 
-    // 修改2：仅验证尺寸，允许不同通道数
+    // 验证尺寸
     if (width != 256 || height != 256) {
         std::cerr << "Invalid colormap size: " << filePath
             << " (expected 256x256, got "
@@ -479,7 +496,7 @@ int Biome::CalculateColorFromColormap(const std::string& filePath,
         return 0x00FF00;
     }
 
-    // 修改3：根据实际通道数处理颜色数据
+    // 确保有足够的颜色通道
     const bool hasColorChannels = (channels >= 3);
     if (!hasColorChannels) {
         std::cerr << "Unsupported channel format: " << filePath
@@ -488,26 +505,30 @@ int Biome::CalculateColorFromColormap(const std::string& filePath,
         return 0x00FF00;
     }
 
-    // 坐标计算保持不变
-    // 修改4：动态计算像素偏移
+    // 温度和降水值钳位到0.0~1.0范围
+    adjTemperature = BiomeUtils::clamp(adjTemperature, 0.0f, 1.0f);
+    adjDownfall = BiomeUtils::clamp(adjDownfall, 0.0f, 1.0f);
+    
+    // 将降水值乘以温度值，确保在下三角形区域内
+    adjDownfall = adjDownfall * adjTemperature;
+    
+    // 计算在颜色图中的坐标
+    // 注意：颜色图的原点在左上角，而代码中定义的原点可能不同
+    // 根据图片说明：以颜色图的右下角为原点，温度值从右往左递增，降水值从下往上递增
     int x = static_cast<int>((1.0f - adjTemperature) * 255.0f);
     int y = static_cast<int>((1.0f - adjDownfall) * 255.0f);
-
-    // 修改坐标计算，将y轴翻转，使得右下角为原点
+    
+    // 确保坐标在有效范围内
     x = BiomeUtils::clamp(x, 0, 255);
     y = BiomeUtils::clamp(y, 0, 255);
-    y = 255 - y; // 保持Y轴翻转，使得y轴从下往上增加
-    x = 255 - x; // 将x轴反
 
     // 计算像素偏移
     const size_t pixelOffset = (y * width + x) * channels;
 
-
-    // 修改5：根据通道数提取颜色
+    // 根据图片通道数提取颜色
     uint8_t r = data[pixelOffset];
     uint8_t g = data[pixelOffset + (channels >= 2 ? 1 : 0)]; // 单通道时复用R
     uint8_t b = data[pixelOffset + (channels >= 3 ? 2 : 0)]; // 双通道时复用R
-
 
     stbi_image_free(data);
 
