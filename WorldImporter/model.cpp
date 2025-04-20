@@ -848,8 +848,11 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                     return true;
                 };
 
-            // 用于记录需要覆盖 uv 的信息，key 为保留面的名称
+            // 用于记录需要覆盖 uv 的信息
             std::vector<std::string> facesToRemove;
+            // 创建映射，记录哪个面被哪个面替代，键是被移除的面名称，值是保留的面名称
+            std::unordered_map<std::string, std::string> faceReplacementMap;
+            
             for (const auto& faceEntry : elementVertices) {
                 const std::string& faceName = faceEntry.first;
                 std::string opposite = getOppositeFace(faceName);
@@ -861,9 +864,11 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                         // 根据 faceName 判断移除哪一面
                         if (faceName == "south" || faceName == "west" || faceName == "down") {
                             facesToRemove.push_back(faceName);
+                            faceReplacementMap[faceName] = opposite; // 记录面替换关系
                         }
                         else {
                             facesToRemove.push_back(opposite);
+                            faceReplacementMap[opposite] = faceName; // 记录面替换关系
                         }
                     }
                 }
@@ -880,10 +885,29 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
             // 遍历每个面的数据，判断面是否存在，如果存在则处理
             for (auto& face : faces.items()) {
                 std::string faceName = face.key();
+                
+                // 如果当前面已被移除但有替代面，则检查是否需要使用替代面的UV
+                std::string replacementFace;
+                bool useReplacement = false;
+                
+                if (elementVertices.find(faceName) == elementVertices.end()) {
+                    // 当前面已被移除，检查是否有替代面
+                    auto replacementIt = faceReplacementMap.find(faceName);
+                    if (replacementIt != faceReplacementMap.end()) {
+                        // 有替代面，并且替代面存在
+                        replacementFace = replacementIt->second;
+                        if (elementVertices.find(replacementFace) != elementVertices.end() && 
+                            faces.find(replacementFace) != faces.end()) {
+                            // 使用替代面
+                            useReplacement = true;
+                        }
+                    }
+                }
 
-                if (elementVertices.find(faceName) != elementVertices.end()) {
-
-                    auto faceVertices = elementVertices[faceName];
+                if (elementVertices.find(faceName) != elementVertices.end() || useReplacement) {
+                    // 处理当前面或替代面
+                    auto faceVertices = useReplacement ? elementVertices[replacementFace] : elementVertices[faceName];
+                    
                     // ======== 面重叠处理逻辑 ========
                     if (faceVertices.size() >= 3) {
                         // 计算法线方向
@@ -987,35 +1011,46 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                         if (it != textureKeyToMaterialIndex.end()) {
                             data.materialIndices[faceId] = it->second;
                         }
+                        
+                        // 判断使用哪个面的UV数据
+                        nlohmann::json faceData = face.value();
+                        std::string actualFaceName = faceName;
+                        
+                        // 如果是使用替代面，且需要保留当前面的UV
+                        if (useReplacement) {
+                            // 我们继续使用原始面的UV设置
+                            actualFaceName = faceName;
+                        }
+                        
                         std::vector<float> uvRegion;
-                        if (faceName == "down")
+                        if (actualFaceName == "down")
                         {
                             uvRegion = { x1 * 16, (1 - z2) * 16, x2 * 16, (1 - z1) * 16 };
                         }
-                        else if (faceName == "up")
+                        else if (actualFaceName == "up")
                         {
                             uvRegion = { x1 * 16, z1 * 16, x2 * 16, z2 * 16 };
                         }
-                        else if (faceName == "north")
+                        else if (actualFaceName == "north")
                         {
                             uvRegion = { (1 - x2) * 16, (1 - y2) * 16, (1 - x1) * 16, (1 - y1) * 16 };
                         }
-                        else if (faceName == "south")
+                        else if (actualFaceName == "south")
                         {
                             uvRegion = { x1 * 16, (1 - y2) * 16, x2 * 16, (1 - y1) * 16 };
                         }
-                        else if (faceName == "west")
+                        else if (actualFaceName == "west")
                         {
                             uvRegion = { z1 * 16, (1 - y2) * 16, z2 * 16, (1 - y1) * 16 };
                         }
-                        else if (faceName == "east")
+                        else if (actualFaceName == "east")
                         {
                             uvRegion = { (1 - z2) * 16, (1 - y2) * 16, (1 - z1) * 16, (1 - y1) * 16 };
                         }
 
                         // 如果 JSON 中存在 uv 则使用其数据
-                        if (face.value().contains("uv")) {
-                            auto uv = face.value()["uv"];
+                        if (faceData.contains("uv")) {
+                            auto uv = faceData["uv"];
                            
                             uvRegion = {
                                 uv[0].get<float>(),
@@ -1024,17 +1059,66 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                                 uv[3].get<float>()
                             };
                         }
+                        // 如果是使用替代面，则检查替代面是否有自定义UV
+                        else if (useReplacement && faces.find(replacementFace) != faces.end()) {
+                            auto replacementFaceData = faces[replacementFace];
+                            if (replacementFaceData.contains("uv")) {
+                                auto uv = replacementFaceData["uv"];
+                                
+                                uvRegion = {
+                                    uv[0].get<float>(),
+                                    uv[1].get<float>(),
+                                    uv[2].get<float>(),
+                                    uv[3].get<float>()
+                                };
+                            }
+                        }
                   
                         std::array<int, 4> uvIndices;
-                        // 计算四个 UV 坐标点（注意这里直接使用 uvRegion 进行转换）
+                        
+                        // 检测UV区域是否有镜像翻转
+                        bool flipX = uvRegion[0] > uvRegion[2]; // X方向镜像
+                        bool flipY = uvRegion[1] > uvRegion[3]; // Y方向镜像
+                        
+                        // 确保UV坐标范围正确（起点小于终点）
+                        if (flipX) {
+                            std::swap(uvRegion[0], uvRegion[2]);
+                        }
+                        if (flipY) {
+                            std::swap(uvRegion[1], uvRegion[3]);
+                        }
+                        
+                        // 计算四个 UV 坐标点（左下，左上，右上，右下）
                         std::vector<std::vector<float>> uvCoords = {
-                            {uvRegion[2] / 16.0f, 1 - uvRegion[3] / 16.0f},
-                            {uvRegion[2] / 16.0f, 1 - uvRegion[1] / 16.0f},
-                            {uvRegion[0] / 16.0f, 1 - uvRegion[1] / 16.0f},
-                            {uvRegion[0] / 16.0f, 1 - uvRegion[3] / 16.0f}
+                            {uvRegion[0] / 16.0f, 1.0f - uvRegion[3] / 16.0f}, // 左下
+                            {uvRegion[0] / 16.0f, 1.0f - uvRegion[1] / 16.0f}, // 左上
+                            {uvRegion[2] / 16.0f, 1.0f - uvRegion[1] / 16.0f}, // 右上
+                            {uvRegion[2] / 16.0f, 1.0f - uvRegion[3] / 16.0f}  // 右下
                         };
+                        
+                        // 应用镜像翻转（如果需要）
+                        if (flipX) {
+                            // 水平镜像：交换左右顶点
+                            std::swap(uvCoords[0], uvCoords[3]); // 交换左下和右下
+                            std::swap(uvCoords[1], uvCoords[2]); // 交换左上和右上
+                        }
+                        if (flipY) {
+                            // 垂直镜像：交换上下顶点
+                            std::swap(uvCoords[0], uvCoords[1]); // 交换左下和左上
+                            std::swap(uvCoords[3], uvCoords[2]); // 交换右下和右上
+                        }
 
-                        int rotation = face.value().value("rotation", 0);
+                        // 确定使用哪个面的旋转值
+                        int rotation = 0;
+                        if (useReplacement && faces.find(replacementFace) != faces.end()) {
+                            // 使用替代面的旋转值
+                            auto replacementFaceData = faces[replacementFace];
+                            rotation = replacementFaceData.value("rotation", 0);
+                        } else {
+                            // 使用原始面的旋转值
+                            rotation = faceData.value("rotation", 0);
+                        }
+                        
                         int steps = ((rotation % 360) + 360) % 360 / 90;
 
                         if (steps != 0) {
