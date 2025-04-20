@@ -683,28 +683,78 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
             float x2 = to[0].get<float>() / 16.0f;
             float y2 = to[1].get<float>() / 16.0f;
             float z2 = to[2].get<float>() / 16.0f;
+            
+            // 检测是否为"极薄"区块
+            constexpr float THIN_THRESHOLD = 0.01f; // 1/100 方块单位的阈值
+            bool isThinX = std::abs(x2 - x1) < THIN_THRESHOLD;
+            bool isThinY = std::abs(y2 - y1) < THIN_THRESHOLD;
+            bool isThinZ = std::abs(z2 - z1) < THIN_THRESHOLD;
+            
             // 生成基础顶点数据
             std::unordered_map<std::string, std::vector<std::vector<float>>> elementVertices;
-            // 遍历元素的面，动态生成顶点数据
-            for (auto& face : faces.items()) {
-                std::string faceName = face.key();
-                if (faceName == "north") {
-                    elementVertices[faceName] = { {x1, y1, z1}, {x1, y2, z1}, {x2, y2, z1}, {x2, y1, z1} };
+            
+            // 对于极薄区块，只生成一个面
+            if (isThinX || isThinY || isThinZ) {
+                // 根据薄的维度确定生成哪个面
+                if (isThinX) {
+                    // X方向极薄，只保留东面或西面
+                    if (x1 <= 0.01f) {
+                        // 靠近西边界，只保留西面
+                        elementVertices["west"] = { {x1, y1, z2}, {x1, y2, z2}, {x1, y2, z1}, {x1, y1, z1} };
+                    } else {
+                        // 否则保留东面
+                        elementVertices["east"] = { {x2, y1, z1}, {x2, y2, z1}, {x2, y2, z2}, {x2, y1, z2} };
+                    }
+                } else if (isThinY) {
+                    // Y方向极薄，只保留顶面或底面
+                    if (y1 <= 0.01f) {
+                        // 靠近底部，只保留底面
+                        elementVertices["down"] = { {x2, y1, z2}, {x1, y1, z2}, {x1, y1, z1}, {x2, y1, z1} };
+                    } else {
+                        // 否则保留顶面
+                        elementVertices["up"] = { {x1, y2, z1}, {x1, y2, z2}, {x2, y2, z2}, {x2, y2, z1} };
+                    }
+                } else if (isThinZ) {
+                    // Z方向极薄，只保留南面或北面
+                    if (z1 <= 0.01f) {
+                        // 靠近北边界，只保留北面
+                        elementVertices["north"] = { {x1, y1, z1}, {x1, y2, z1}, {x2, y2, z1}, {x2, y1, z1} };
+                    } else {
+                        // 否则保留南面
+                        elementVertices["south"] = { {x2, y1, z2}, {x2, y2, z2}, {x1, y2, z2}, {x1, y1, z2} };
+                    }
                 }
-                else if (faceName == "south") {
-                    elementVertices[faceName] = { {x2, y1, z2}, {x2, y2, z2}, {x1, y2, z2}, {x1, y1, z2} };
+                
+                // 从faces中查找我们保留的面的数据
+                for (auto& faceEntry : elementVertices) {
+                    // 如果faces中没有对应的面定义，移除此面
+                    if (faces.find(faceEntry.first) == faces.end()) {
+                        elementVertices.erase(faceEntry.first);
+                    }
                 }
-                else if (faceName == "east") {
-                    elementVertices[faceName] = { {x2, y1, z1}, {x2, y2, z1}, {x2, y2, z2}, {x2, y1, z2} };
-                }
-                else if (faceName == "west") {
-                    elementVertices[faceName] = { {x1, y1, z2}, {x1, y2, z2}, {x1, y2, z1}, {x1, y1, z1} };
-                }
-                else if (faceName == "up") {
-                    elementVertices[faceName] = { {x1, y2, z1}, {x1, y2, z2}, {x2, y2, z2}, {x2, y2, z1} };
-                }
-                else if (faceName == "down") {
-                    elementVertices[faceName] = { {x2, y1, z2}, {x1, y1, z2}, {x1, y1, z1}, {x2, y1, z1} };
+            } else {
+                // 正常厚度的区块，按常规方式生成所有面
+                // 遍历元素的面，动态生成顶点数据
+                for (auto& face : faces.items()) {
+                    std::string faceName = face.key();
+                    if (faceName == "north") {
+                        elementVertices[faceName] = { {x1, y1, z1}, {x1, y2, z1}, {x2, y2, z1}, {x2, y1, z1} };
+                    }
+                    else if (faceName == "south") {
+                        elementVertices[faceName] = { {x2, y1, z2}, {x2, y2, z2}, {x1, y2, z2}, {x1, y1, z2} };
+                    }
+                    else if (faceName == "east") {
+                        elementVertices[faceName] = { {x2, y1, z1}, {x2, y2, z1}, {x2, y2, z2}, {x2, y1, z2} };
+                    }
+                    else if (faceName == "west") {
+                        elementVertices[faceName] = { {x1, y1, z2}, {x1, y2, z2}, {x1, y2, z1}, {x1, y1, z1} };
+                    }
+                    else if (faceName == "up") {
+                        elementVertices[faceName] = { {x1, y2, z1}, {x1, y2, z2}, {x2, y2, z2}, {x2, y2, z1} };
+                    }
+                    else if (faceName == "down") {
+                        elementVertices[faceName] = { {x2, y1, z2}, {x1, y1, z2}, {x1, y1, z1}, {x2, y1, z1} };
+                    }
                 }
             }
 
