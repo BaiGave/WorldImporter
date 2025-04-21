@@ -5,7 +5,6 @@
 #include <stdexcept>
 #include <windows.h>
 #include <locale>
-#include <codecvt>
 #include <random>
 #include "block.h"   // 需要 Block 相关逻辑
 #include "blockstate.h" // 需要 ProcessBlockstateJson
@@ -350,16 +349,36 @@ void printBytes(const std::vector<char>& data) {
     std::cout << std::endl;
 }
 
-// 将 wstring 转换为 UTF-8 编码的 string
+// 使用Windows API实现UTF-8转换，替换弃用的codecvt
 std::string wstring_to_string(const std::wstring& wstr) {
-    std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
-    return converter.to_bytes(wstr);
+    if (wstr.empty()) return "";
+    
+    // 计算所需的缓冲区大小
+    int size_needed = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.size(), nullptr, 0, nullptr, nullptr);
+    
+    // 创建输出字符串
+    std::string result(size_needed, 0);
+    
+    // 执行转换
+    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.size(), &result[0], size_needed, nullptr, nullptr);
+    
+    return result;
 }
 
-// 将 string 转换为 UTF-8 编码的 wstring
+// 使用Windows API实现UTF-8转换，替换弃用的codecvt
 std::wstring string_to_wstring(const std::string& str) {
-    std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
-    return converter.from_bytes(str);
+    if (str.empty()) return L"";
+    
+    // 计算所需的缓冲区大小
+    int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), nullptr, 0);
+    
+    // 创建输出宽字符串
+    std::wstring result(size_needed, 0);
+    
+    // 执行转换
+    MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), &result[0], size_needed);
+    
+    return result;
 }
 
 // 将std::wstring转换为Windows系统默认的多字节编码（通常为 GBK 或 ANSI）

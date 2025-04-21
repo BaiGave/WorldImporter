@@ -50,10 +50,10 @@ ModelData YuushyaShowBlockEntity::GenerateModel() const {
         ModelData blockModel = GetRandomModelFromCache(ns, blockName);
 
         // 应用变换顺序：缩放 -> 旋转 -> 平移
-        ApplyRotationToVertices(blockModel.vertices, rx, ry, rz);
+        ApplyRotationToVertices(std::span<float>(blockModel.vertices.data(), blockModel.vertices.size()), rx, ry, rz);
 
         ApplyDoublePositionOffset(blockModel, tx, ty, tz);
-        ApplyScaleToVertices(blockModel.vertices, sx, sy, sz);
+        ApplyScaleToVertices(std::span<float>(blockModel.vertices.data(), blockModel.vertices.size()), sx, sy, sz);
 
         // 合并模型
         if (mainModel.vertices.empty()) mainModel = blockModel;

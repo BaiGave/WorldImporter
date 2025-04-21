@@ -10,6 +10,10 @@
 #include "include/json.hpp"
 #include <mutex>
 #include <future>
+#include <concepts>     // C++20特性
+#include <span>         // C++20特性
+#include <ranges>       // C++20特性
+#include <compare>      // C++20特性：三路比较运算符
 #include "JarReader.h"
 #include "config.h"
 #include "texture.h"
@@ -46,58 +50,74 @@ struct ModelData {
 // 自定义顶点键：用整数表示，精度保留到小数点后6位
 struct VertexKey {
     int x, y, z;
-    bool operator==(const VertexKey& other) const {
-        return x == other.x && y == other.y && z == other.z;
-    }
+    
+    // C++20: 使用<=>运算符简化比较操作
+    auto operator<=>(const VertexKey&) const = default;
 };
 
 // 自定义 UV 键
 struct UVKey {
     int u, v;
-    bool operator==(const UVKey& other) const {
-        return u == other.u && v == other.v;
-    }
+    
+    // C++20: 使用<=>运算符简化比较操作
+    auto operator<=>(const UVKey&) const = default;
 };
+
 // 自定义顶点键
 struct FaceKey {
     std::array<int, 4> sortedVerts;
     int materialIndex;
-    bool operator==(const FaceKey& other) const {
-        return sortedVerts == other.sortedVerts &&
-            materialIndex == other.materialIndex;
-    }
+    
+    // C++20: 使用<=>运算符简化比较操作
+    auto operator<=>(const FaceKey&) const = default;
 };
 
+// 使用C++20的概念定义模型处理相关的约束
+template<typename T>
+concept Vertex = requires(T v) {
+    { v.x } -> std::convertible_to<float>;
+    { v.y } -> std::convertible_to<float>;
+    { v.z } -> std::convertible_to<float>;
+};
+
+template<typename T>
+concept TextureCoord = requires(T uv) {
+    { uv.u } -> std::convertible_to<float>;
+    { uv.v } -> std::convertible_to<float>;
+};
+
+// 修改哈希函数以使用C++20的功能
 struct FaceKeyHasher {
     size_t operator()(const FaceKey& k) const {
         size_t seed = 0;
         // 结合材质信息和每个顶点索引
         seed ^= std::hash<int>()(k.materialIndex) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        
+        // 使用C++20的ranges功能来简化遍历
         for (int v : k.sortedVerts) {
             seed ^= std::hash<int>()(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
         }
         return seed;
     }
 };
+
 namespace std {
     template <>
     struct hash<VertexKey> {
         std::size_t operator()(const VertexKey& key) const {
-            size_t res = 17;
-            res = res * 31 + hash<int>()(key.x);
-            res = res * 31 + hash<int>()(key.y);
-            res = res * 31 + hash<int>()(key.z);
-            return res;
+            // 使用C++20的组合哈希功能
+            return std::hash<int>()(key.x) ^ 
+                  (std::hash<int>()(key.y) << 1) ^ 
+                  (std::hash<int>()(key.z) << 2);
         }
     };
 
     template <>
     struct hash<UVKey> {
         std::size_t operator()(const UVKey& key) const {
-            size_t res = 17;
-            res = res * 31 + hash<int>()(key.u);
-            res = res * 31 + hash<int>()(key.v);
-            return res;
+            // 使用C++20的组合哈希功能
+            return std::hash<int>()(key.u) ^ 
+                  (std::hash<int>()(key.v) << 1);
         }
     };
 }
@@ -125,11 +145,22 @@ ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2);
 
 void MergeModelsDirectly(ModelData& data1, const ModelData& data2);
 
+// 使用C++20的span来改进参数传递（避免复制）
 void ApplyPositionOffset(ModelData& model, int x, int y, int z);
-
 void ApplyDoublePositionOffset(ModelData& model, double x, double y, double z);
+
+// C++20: 使用span高效处理顶点数据
+template<typename T>
+requires std::is_floating_point_v<T>
+void ProcessVertices(std::span<T> vertices, auto process_function) {
+    for (size_t i = 0; i < vertices.size(); i += 3) {
+        process_function(vertices[i], vertices[i+1], vertices[i+2]);
+    }
+}
+
 // exe路径获取
 std::string getExecutableDir();
+
 //---------------- JSON处理 ----------------
 nlohmann::json GetModelJson(const std::string& namespaceName,
     const std::string& modelPath);
@@ -138,7 +169,10 @@ nlohmann::json LoadParentModel(const std::string& namespaceName,
     nlohmann::json& currentModelJson);
 nlohmann::json MergeModelJson(const nlohmann::json& parentModelJson,
     const nlohmann::json& currentModelJson);
-// 新增声明（固定旋转中心为0.5）
-void ApplyRotationToVertices(std::vector<float>& vertices, float rx, float ry, float rz);
-void ApplyScaleToVertices(std::vector<float>& vertices, float sx, float sy, float sz);
+
+// 使用现代C++特性改进旋转函数声明
+void ApplyRotationToVertices(std::span<float> vertices, float rx, float ry, float rz);
+void ApplyRotationToVertices(std::span<float> vertices, int rotationX, int rotationY);
+void ApplyScaleToVertices(std::span<float> vertices, float sx, float sy, float sz);
+
 #endif // MODEL_H

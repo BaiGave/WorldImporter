@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <omp.h>
 #include <chrono>
+#include <span>
 
 using namespace std::chrono;  
 
@@ -31,7 +32,7 @@ std::string getExecutableDir() {
 
 //---------------- 几何变换 ----------------
 // 应用缩放（以0.5,0.5,0.5为中心）
-void ApplyScaleToVertices(std::vector<float>& vertices, float sx, float sy, float sz) {
+void ApplyScaleToVertices(std::span<float> vertices, float sx, float sy, float sz) {
     constexpr float center = 0.5f;
     for (size_t i = 0; i < vertices.size(); i += 3) {
         // 平移至中心点相对坐标
@@ -52,7 +53,7 @@ void ApplyScaleToVertices(std::vector<float>& vertices, float sx, float sy, floa
 }
 
 // 应用旋转（以0.5,0.5,0.5为中心，按X->Y->Z轴顺序）
-void ApplyRotationToVertices(std::vector<float>& vertices, float rx, float ry, float rz) {
+void ApplyRotationToVertices(std::span<float> vertices, float rx, float ry, float rz) {
     constexpr float center = 0.5f;
 
     // 转换角度为弧度（按原始值直接使用，若需/16则改为 rx/16.0f）
@@ -102,8 +103,8 @@ void ApplyRotationToVertices(std::vector<float>& vertices, float rx, float ry, f
     }
 }
 
-// 旋转函数
-void ApplyRotationToVertices(std::vector<float>& vertices, int rotationX, int rotationY) {
+// 旋转函数 - 使用整数参数的版本，C++20版本
+void ApplyRotationToVertices(std::span<float> vertices, int rotationX, int rotationY) {
     // 参数校验
     if (vertices.size() % 3 != 0) {
         throw std::invalid_argument("Invalid vertex data size");
@@ -169,6 +170,7 @@ void ApplyRotationToVertices(std::vector<float>& vertices, int rotationX, int ro
         z += 0.5f;
     }
 }
+
 // 带旋转中心的UV旋转（内联优化）
 static inline void fastRotateUV(float& u, float& v, float cosA, float sinA) {
     constexpr float centerU = 0.5f;
@@ -1261,7 +1263,10 @@ ModelData ProcessModelJson(const std::string& namespaceName, const std::string& 
     if (cacheIt != modelCache.end()) {
         // 从缓存中获取原始模型数据
         ModelData cachedModel = cacheIt->second;
-        ApplyRotationToVertices(cachedModel.vertices, rotationX, rotationY);
+        if (rotationX != 0 || rotationY != 0) {
+            // 使用C++20的span进行函数调用
+            ApplyRotationToVertices(std::span<float>(cachedModel.vertices.data(), cachedModel.vertices.size()), rotationX, rotationY);
+        }
         if (uvlock)
         {
             ApplyRotationToUV(cachedModel, rotationX, rotationY);
@@ -1287,7 +1292,10 @@ ModelData ProcessModelJson(const std::string& namespaceName, const std::string& 
     // 将原始数据存入缓存（不包含旋转）
     modelCache[cacheKey] = modelData;
 
-    ApplyRotationToVertices(modelData.vertices, rotationX, rotationY);
+    if (rotationX != 0 || rotationY != 0) {
+        // 如果指定了旋转，则应用旋转
+        ApplyRotationToVertices(std::span<float>(modelData.vertices.data(), modelData.vertices.size()), rotationX, rotationY);
+    }
     if (uvlock)
     {
         ApplyRotationToUV(modelData, rotationX, rotationY);
