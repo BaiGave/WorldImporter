@@ -1,9 +1,22 @@
-﻿#include <iostream>
-#include <unordered_map>
-#include "include/json.hpp"
-#include <string>
-#include <sstream>
+﻿// --- C++ 标准库头文件 ---
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <fstream>
+#include <iostream>
+#include <locale>
 #include <memory>
+#include <random>
+#include <sstream>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+// --- 第三方库头文件 ---
+#include "include/json.hpp"
+
+// --- 项目头文件 ---
+#include "config.h"
 #include "block.h"
 #include "model.h"
 #include "EntityBlock.h"
@@ -13,47 +26,26 @@
 #include "fileutils.h"
 #include "decompressor.h"
 #include "coord_conversion.h"
-#include "config.h"
-#include <chrono>
-#include <fstream>
-#include <locale>
-#include <random>
-#include <algorithm>  // added for find_if
-#include <array>
+#include "hash_utils.h"
 
 using namespace std;
-
-
-// 自定义哈希函数，用于std::pair<int, int>
-struct pair_hash {
-    template <class T1, class T2>
-    std::size_t operator ()(const std::pair<T1, T2>& p) const {
-        auto h1 = std::hash<T1>{}(p.first);
-        auto h2 = std::hash<T2>{}(p.second);
-        return h1 ^ (h2 << 1);
-    }
-};
-
-// 自定义哈希函数，用于std::pair<int, int, int>
-struct triple_hash {
-    template <class T1, class T2, class T3>
-    std::size_t operator ()(const std::tuple<T1, T2, T3>& t) const {
-        auto h1 = std::hash<T1>{}(std::get<0>(t));
-        auto h2 = std::hash<T2>{}(std::get<1>(t));
-        auto h3 = std::hash<T3>{}(std::get<2>(t));
-        return h1 ^ (h2 << 1) ^ (h3 << 2);
-    }
-};
 
 // --------------------------------------------------------------------------------
 // 文件缓存相关对象
 // --------------------------------------------------------------------------------
-// 统一的缓存表
-std::unordered_map<std::tuple<int, int, int>, SectionCacheEntry, triple_hash> sectionCache;
-std::unordered_map<std::pair<int, int>, std::vector<std::shared_ptr<EntityBlock>>, pair_hash> entityBlockCache;
-// 高度图缓存（键为 chunkX 和 chunkZ）
-std::unordered_map<std::pair<int, int>, std::vector<char>, pair_hash> regionCache;
-std::unordered_map<std::pair<int, int>, std::unordered_map<std::string, std::vector<int>>, pair_hash> heightMapCache;
+// 统一的缓存表（预留桶数量，减少 rehash）
+std::unordered_map<std::tuple<int, int, int>, SectionCacheEntry, triple_hash> sectionCache(4096);
+// 添加静态邻居偏移数组，避免重复构造
+static const std::array<std::tuple<int,int,int>,6> kSectionNeighborOffsets = {{
+    {1, 0, 0}, {-1, 0, 0},
+    {0, 1, 0}, {0, -1, 0},
+    {0, 0, 1}, {0, 0, -1}
+}};
+// 实体方块缓存
+std::unordered_map<std::pair<int, int>, std::vector<std::shared_ptr<EntityBlock>>, pair_hash> entityBlockCache(1024);
+// 区域和高度图缓存（预留桶减少 rehash）
+std::unordered_map<std::pair<int, int>, std::vector<char>, pair_hash> regionCache(1024);
+std::unordered_map<std::pair<int, int>, std::unordered_map<std::string, std::vector<int>>, pair_hash> heightMapCache(1024);
 std::vector<Block> globalBlockPalette;
 std::unordered_set<std::string> solidBlocks;
 std::unordered_set<std::string> fluidBlocks;
@@ -62,22 +54,21 @@ std::unordered_map<std::string, FluidInfo> fluidDefinitions;
 // 文件操作相关函数
 // --------------------------------------------------------------------------------
 std::vector<int> decodeHeightMap(const std::vector<int64_t>& data) {
-    // 根据数据长度自动判断存储格式
-    int bitsPerEntry = (data.size() == 37) ? 9 : 8; // 主世界37个long用9bit，其他32个用8bit
+    // 预分配256个高度值，避免多次重分配
+    std::vector<int> heights;
+    heights.reserve(256);
+    // 根据数据长度动态判断存储格式
+    int bitsPerEntry = (data.size() == 37) ? 9 : 8;
     int entriesPerLong = 64 / bitsPerEntry;
     int mask = (1 << bitsPerEntry) - 1;
-    std::vector<int> heights;
-
     for (const auto& longVal : data) {
         int64_t value = reverseEndian(longVal);
         for (int i = 0; i < entriesPerLong; ++i) {
-            int height = static_cast<int>((value >> (i * bitsPerEntry)) & mask);
-            heights.push_back(height);
+            heights.push_back(static_cast<int>((value >> (i * bitsPerEntry)) & mask));
             if (heights.size() >= 256) break;
         }
         if (heights.size() >= 256) break;
     }
-
     heights.resize(256);
     return heights;
 }
@@ -115,21 +106,19 @@ std::vector<char> GetChunkNBTData(const std::vector<char>& fileData, int x, int 
     }
 }
 
-std::vector<char> getRegionFromCache(int regionX, int regionZ) {
+const std::vector<char>& getRegionFromCache(int regionX, int regionZ) {
     // 创建区域缓存的键值
     auto regionKey = std::make_pair(regionX, regionZ);
-
-    // 检查区域是否已缓存
-    if (regionCache.find(regionKey) == regionCache.end()) {
-        // 若未缓存，从磁盘读取区域文件
+    // 使用查找避免重复哈希
+    auto it = regionCache.find(regionKey);
+    if (it == regionCache.end()) {
+        // 若未缓存，从磁盘读取区域文件并插入缓存
         std::vector<char> fileData = ReadFileToMemory(config.worldPath, regionX, regionZ);
-        // 将区域文件数据存入缓存
-        regionCache[regionKey] = fileData;
-        return regionCache[regionKey];
+        auto result = regionCache.emplace(regionKey, std::move(fileData));
+        it = result.first;
     }
-
     // 返回缓存中的区域文件数据
-    return regionCache[regionKey];
+    return it->second;
 }
 
 void UpdateSkyLightNeighborFlags() {
@@ -145,29 +134,23 @@ void UpdateSkyLightNeighborFlags() {
         }
     }
 
-    // 检查邻居
+    // 检查邻居，并更新skyLightData为单元素-2，使用assign避免重新分配
     for (auto& entry : needsUpdate) {
         int chunkX = std::get<0>(entry.first);
         int chunkZ = std::get<1>(entry.first);
         int sectionY = std::get<2>(entry.first);
         bool hasLightNeighbor = false;
-
-        const std::vector<std::tuple<int, int, int>> directions = {
-            {chunkX + 1, chunkZ,   sectionY}, {chunkX - 1, chunkZ,   sectionY},
-            {chunkX,   chunkZ + 1, sectionY}, {chunkX,   chunkZ - 1, sectionY},
-            {chunkX,   chunkZ,   sectionY + 1}, {chunkX,   chunkZ,   sectionY - 1}
-        };
-
-        for (const auto& dir : directions) {
-            if (sectionCache.count(dir) && sectionCache[dir].skyLight.size() == 4096) {
+        for (const auto& offset : kSectionNeighborOffsets) {
+            auto dir = std::make_tuple(chunkX + std::get<0>(offset), chunkZ + std::get<1>(offset), sectionY + std::get<2>(offset));
+            auto it = sectionCache.find(dir);
+            if (it != sectionCache.end() && it->second.skyLight.size() == 4096) {
                 hasLightNeighbor = true;
                 break;
             }
         }
-
         if (hasLightNeighbor) {
             auto& skyLightData = sectionCache[entry.first].skyLight;
-            skyLightData = std::vector<int>{ -2 };
+            skyLightData.assign(1, -2);
         }
     }
 }
@@ -213,7 +196,7 @@ void ProcessSection(int chunkX, int chunkZ, int sectionY, const NbtTagPtr& secti
         }
         else {
             int idx = static_cast<int>(globalBlockPalette.size());
-            globalBlockPalette.emplace_back(Block(blockName));
+            globalBlockPalette.emplace_back(blockName);
             globalBlockMap[blockName] = idx;
             globalBlockData.push_back(idx);
         }
@@ -259,24 +242,24 @@ void ProcessSection(int chunkX, int chunkZ, int sectionY, const NbtTagPtr& secti
     auto processLightData = [&](const std::string& lightType, std::vector<int>& lightData) {
         auto lightTag = getChildByName(sectionTag, lightType);
         if (lightTag && lightTag->type == TagType::BYTE_ARRAY) {
-            const std::vector<char>& rawData = lightTag->payload;
-            lightData.resize(4096, 0);
-            int rawDataSize = rawData.size();
-
-            for (int yzx = 0; yzx < 4096; ++yzx) {
-                int byteIndex = yzx >> 1;
-                if (byteIndex >= rawDataSize) {
-                    lightData[yzx] = 0;
-                    continue;
-                }
-                uint8_t byteVal = static_cast<uint8_t>(rawData[byteIndex]);
-                lightData[yzx] = (yzx & 1) ? (byteVal >> 4) & 0xF : byteVal & 0xF;
+            // 批量解析，每个原始字节产生2个光照值
+            const auto& rawData = lightTag->payload;
+            size_t rawSize = rawData.size();
+            lightData.resize(4096);
+            size_t pairs = std::fmin(rawSize, size_t(2048));
+            for (size_t i = 0; i < pairs; ++i) {
+                uint8_t byteVal = static_cast<uint8_t>(rawData[i]);
+                lightData[2*i]   = byteVal & 0xF;
+                lightData[2*i+1] = (byteVal >> 4) & 0xF;
+            }
+            if (pairs * 2 < 4096) {
+                std::memset(lightData.data() + pairs * 2, 0, (4096 - pairs * 2) * sizeof(int));
             }
         }
         else {
             lightData = { -1 };
         }
-        };
+    };
 
     std::vector<int> skyLightData;
     processLightData("SkyLight", skyLightData);
@@ -287,11 +270,11 @@ void ProcessSection(int chunkX, int chunkZ, int sectionY, const NbtTagPtr& secti
     int adjustedSectionY = AdjustSectionY(sectionY);
     auto blockKey = std::make_tuple(chunkX, chunkZ, adjustedSectionY);
     sectionCache[blockKey] = {
-        std::move(skyLightData), // 使用 move 语义减少拷贝开销
-        std::move(blockLightData),
-        std::move(blockPalette),
-        std::move(globalBlockData),
-        std::move(biomeData)
+        std::move(skyLightData),      // skyLight
+        std::move(blockLightData),    // blockLight
+        std::move(globalBlockData),   // blockData
+        std::move(biomeData),         // biomeData
+        std::move(blockPalette)       // blockPalette
     };
 }
 
@@ -368,7 +351,7 @@ void ProcessEntityBlocks(int chunkX, int chunkZ, const NbtTagPtr& blockEntitiesT
                                 }
                                 else {
                                     entry.blockid = static_cast<int>(globalBlockPalette.size());
-                                    globalBlockPalette.emplace_back(Block(blockName));
+                                    globalBlockPalette.emplace_back(blockName);
                                     globalBlockMap[blockName] = entry.blockid;
                                 }
                             }
@@ -538,7 +521,7 @@ void LoadAndCacheBlockData(int chunkX, int chunkZ) {
     chunkToRegion(chunkX, chunkZ, regionX, regionZ);
 
     // 获取区域数据
-    std::vector<char> regionData = getRegionFromCache(regionX, regionZ);
+    const auto& regionData = getRegionFromCache(regionX, regionZ);
 
     // 获取区块数据
     std::vector<char> chunkData = GetChunkNBTData(regionData, mod32(chunkX), mod32(chunkZ));

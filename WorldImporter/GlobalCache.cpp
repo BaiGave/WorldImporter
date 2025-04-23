@@ -233,18 +233,15 @@ void InitializeAllCaches() {
 
         // 根据硬件并发数创建线程池
         const unsigned numThreads = std::max<unsigned>(1, std::thread::hardware_concurrency());
-        std::vector<std::future<void>> futures;
+        std::vector<std::thread> threads;
+        threads.reserve(numThreads);
         GlobalCache::stopFlag.store(false);
-
         for (unsigned i = 0; i < numThreads; ++i) {
-            futures.emplace_back(std::async(std::launch::async, worker));
+            threads.emplace_back(worker);
         }
-        for (auto& f : futures) {
-            try {
-                f.get();
-            }
-            catch (const std::exception& e) {
-                std::cerr << "Thread error: " << e.what() << std::endl;
+        for (auto& t : threads) {
+            if (t.joinable()) {
+                t.join();
             }
         }
         GlobalCache::stopFlag.store(true);

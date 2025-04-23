@@ -171,6 +171,7 @@
     <ClInclude Include="dat.h" />
     <ClInclude Include="decompressor.h" />
     <ClInclude Include="EntityBlock.h" />
+    <ClInclude Include="hash_utils.h" />
     <ClInclude Include="SpecialBlock.h" />
     <ClInclude Include="fileutils.h" />
     <ClInclude Include="fluid.h" />

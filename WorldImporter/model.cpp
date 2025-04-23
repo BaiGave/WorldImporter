@@ -256,21 +256,18 @@ void ApplyRotationToUV(ModelData& modelData, int rotationX, int rotationY) {
 
     // 预处理面类型
     std::vector<FaceType> faceTypes;
-    faceTypes.reserve(modelData.faceNames.size());
-    for (const auto& name : modelData.faceNames) {
-        if (name == "up") faceTypes.push_back(UP);
-        else if (name == "down") faceTypes.push_back(DOWN);
-        else if (name == "north") faceTypes.push_back(NORTH);
-        else if (name == "south") faceTypes.push_back(SOUTH);
-        else if (name == "west") faceTypes.push_back(WEST);
-        else if (name == "east") faceTypes.push_back(EAST);
-        else faceTypes.push_back(UNKNOWN);
+    size_t faceCount = modelData.faces.size() / 4; // 每4个顶点构成一个面
+    faceTypes.reserve(faceCount);
+    
+    for (size_t i = 0; i < faceCount; ++i) {
+        FaceType faceType = GetFaceTypeByIndex(i * 4);
+        faceTypes.push_back(faceType);
     }
 
     // 根据旋转组合处理UV旋转
     auto getCase = [rotationX, rotationY]() {
         return std::to_string(rotationX) + "-" + std::to_string(rotationY);
-        };
+    };
 
     // OpenMP并行处理
 #pragma omp parallel for
@@ -1216,7 +1213,6 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                     for (int i = 0; i < 4; ++i) {
                         data.faceDirections.push_back(faceDirection);
                     }
-                    data.faceNames.push_back(faceName);
                     faceId++;
                 }
 
@@ -1459,12 +1455,6 @@ ModelData MergeModelData(const ModelData& data1, const ModelData& data2) {
     mergedData.faceDirections.insert(mergedData.faceDirections.end(),
         data2.faceDirections.begin(), data2.faceDirections.end());
 
-    mergedData.faceNames.reserve(data1.faceNames.size() + data2.faceNames.size());
-    mergedData.faceNames.insert(mergedData.faceNames.end(),
-        data1.faceNames.begin(), data1.faceNames.end());
-    mergedData.faceNames.insert(mergedData.faceNames.end(),
-        data2.faceNames.begin(), data2.faceNames.end());
-
     if (data1.tintindex != -1)
     {
         mergedData.tintindex = data1.tintindex;
@@ -1584,10 +1574,10 @@ ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2) {
             mergedData.texturePaths.push_back(data2.texturePaths[i]);
         }
     }
-    // 先拷贝 data1 的面对应的材质索引、面朝向和面名称
+    // 先拷贝 data1 的面对应的材质索引、面朝向
     mergedData.materialIndices = data1.materialIndices;
     mergedData.faceDirections = data1.faceDirections;
-    mergedData.faceNames = data1.faceNames;
+    // 移除对faceNames的引用
 
     //------------------------ 阶段4：网格体1面数据处理 ------------------------
     // 直接将 data1 的面（及 UV 面）数据进行重映射后加入 mergedData
@@ -1828,6 +1818,32 @@ void MergeModelsDirectly(ModelData& data1, const ModelData& data2) {
         data1.materialIndices.push_back(
             (original_idx != -1) ? materialIndexMap[original_idx] : -1
         );
+    }
+}
+
+// 辅助函数：将字符串方向转换为FaceType枚举
+FaceType StringToFaceType(const std::string& dirString) {
+    if (dirString == "down") return FaceType::DOWN;
+    if (dirString == "up") return FaceType::UP;
+    if (dirString == "north") return FaceType::NORTH;
+    if (dirString == "south") return FaceType::SOUTH;
+    if (dirString == "west") return FaceType::WEST;
+    if (dirString == "east") return FaceType::EAST;
+    return FaceType::UNKNOWN;
+}
+
+// 辅助函数：根据面索引获取面方向 (每4个顶点构成一个面)
+FaceType GetFaceTypeByIndex(size_t faceIndex) {
+    // 标准立方体模型的面顺序通常是：底面、顶面、北面、南面、西面、东面
+    size_t normalizedIndex = faceIndex / 4; // 每个面由4个顶点索引组成
+    switch (normalizedIndex % 6) {
+        case 0: return FaceType::DOWN;  // 底面
+        case 1: return FaceType::UP;    // 顶面
+        case 2: return FaceType::NORTH; // 北面
+        case 3: return FaceType::SOUTH; // 南面
+        case 4: return FaceType::WEST;  // 西面
+        case 5: return FaceType::EAST;  // 东面
+        default: return FaceType::UNKNOWN;
     }
 }
 

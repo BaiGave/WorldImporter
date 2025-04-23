@@ -43,8 +43,7 @@ struct ModelData {
 
     short tintindex;
 
-    std::vector<std::string> faceDirections; // 每个面的方向 faceDirections 4个一组代表一个面
-    std::vector<std::string> faceNames;       // 每个面的名称
+    std::vector<std::string> faceDirections;      // 每个面的剔除方向信息，每个面一项
 };
 
 // 自定义顶点键：用整数表示，精度保留到小数点后6位
@@ -123,6 +122,12 @@ namespace std {
 }
 
 enum FaceType { UP, DOWN, NORTH, SOUTH, WEST, EAST, UNKNOWN };
+
+// 辅助函数：将字符串方向转换为FaceType枚举
+FaceType StringToFaceType(const std::string& dirString);
+
+// 辅助函数：根据面索引获取面方向 (每4个顶点构成一个面)
+FaceType GetFaceTypeByIndex(size_t faceIndex);
 
 //---------------- 缓存管理 ----------------
 static std::mutex cacheMutex;

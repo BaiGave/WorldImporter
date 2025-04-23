@@ -56,8 +56,12 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
             if (!blockModel.materialNames.empty()) materialIndex = 0;
         }
         else {
-            for (size_t i = 0; i < blockModel.faceNames.size(); ++i) {
-                if (blockModel.faceNames[i] == faceDirection) {
+            // 将字符串方向转换为枚举
+            FaceType targetType = StringToFaceType(faceDirection);
+            
+            // 查找匹配的面
+            for (size_t i = 0; i < blockModel.faces.size(); i += 4) {
+                if (GetFaceTypeByIndex(i) == targetType) {
                     materialIndex = blockModel.materialIndices[i / 4];
                     break;
                 }

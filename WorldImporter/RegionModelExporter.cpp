@@ -13,32 +13,16 @@
 #include <future>
 #include <chrono>  // 新增：用于时间测量
 #include <iostream>  // 新增：用于输出时间
+#include <thread>
+#include <atomic>
 #include "ModelDeduplicator.h"
 #include "chunk_group_allocator.h"
+#include <utility> // 支持 std::move
+#include "hash_utils.h"
 
 using namespace std;
 using namespace std::chrono;  // 新增：方便使用 chrono
 
-// 自定义哈希函数，用于std::pair<int, int>
-struct pair_hash {
-    template <class T1, class T2>
-    std::size_t operator ()(const std::pair<T1, T2>& p) const {
-        auto h1 = std::hash<T1>{}(p.first);
-        auto h2 = std::hash<T2>{}(p.second);
-        return h1 ^ (h2 << 1);
-    }
-};
-
-// 自定义哈希函数，用于std::pair<int, int, int>
-struct triple_hash {
-    template <class T1, class T2, class T3>
-    std::size_t operator ()(const std::tuple<T1, T2, T3>& t) const {
-        auto h1 = std::hash<T1>{}(std::get<0>(t));
-        auto h2 = std::hash<T2>{}(std::get<1>(t));
-        auto h3 = std::hash<T3>{}(std::get<2>(t));
-        return h1 ^ (h2 << 1) ^ (h3 << 2);
-    }
-};
 std::unordered_set<std::pair<int, int>, pair_hash> processedChunks; // 存储已处理的块的集合
 std::mutex entityCacheMutex; // 互斥量，确保线程安全
 
@@ -88,6 +72,14 @@ void RegionModelExporter::ExportModels(const string& outputName) {
         config.LODCenterZ = (chunkZStart + chunkZEnd) / 2;
     }
 
+    // Optimize performance: reserve g_chunkLODs to avoid rehashing
+    {
+        size_t effectiveXCount = (chunkXEnd - chunkXStart + 1) + 2;
+        size_t effectiveZCount = (chunkZEnd - chunkZStart + 1) + 2;
+        size_t secCount = sectionYEnd - sectionYStart + 1;
+        g_chunkLODs.reserve(effectiveXCount * effectiveZCount * secCount);
+    }
+
     // 加载区块数据
     LoadChunks(chunkXStart, chunkXEnd, chunkZStart, chunkZEnd,
         sectionYStart, sectionYEnd, L0, L1, L2, L3);
@@ -132,47 +124,47 @@ void RegionModelExporter::ExportModels(const string& outputName) {
         };
 
     // 创建线程池处理区块组
-    std::vector<std::future<void>> futures;
+    {
+        unsigned numThreads = std::max<unsigned>(1, std::thread::hardware_concurrency());
+        std::atomic<size_t> groupIndex{0};
+        std::vector<std::thread> threads;
+        threads.reserve(numThreads);
 
-    for (const auto& group : chunkGroups) {
-        futures.push_back(std::async(std::launch::async, [&, group]() {
-            ModelData groupModel;
-            std::unordered_map<string, string> localMaterials;
+        for (unsigned i = 0; i < numThreads; ++i) {
+            threads.emplace_back([&]() {
+                while (true) {
+                    size_t idx = groupIndex.fetch_add(1);
+                    if (idx >= chunkGroups.size()) break;
+                    const auto& group = chunkGroups[idx];
+                    ModelData groupModel;
+                    std::unordered_map<string, string> localMaterials;
 
-            // 合并组内所有区块模型
-            for (const auto& task : group.tasks) {
-                ModelData chunkModel = processModel(task);
-                if (groupModel.vertices.empty()) {
-                    groupModel = std::move(chunkModel);
+                    // 合并组内所有区块模型
+                    for (const auto& task : group.tasks) {
+                        ModelData chunkModel = processModel(task);
+                        if (groupModel.vertices.empty()) {
+                            groupModel = std::move(chunkModel);
+                        } else {
+                            MergeModelsDirectly(groupModel, chunkModel);
+                        }
+                    }
+                    if (groupModel.vertices.empty()) continue;
+                    if (config.exportFullModel) {
+                        mergeToFinalModel(std::move(groupModel));
+                    } else {
+                        DeduplicateModel(groupModel);
+                        const string groupFileName = outputName +
+                            "_x" + to_string(group.startX) +
+                            "_z" + to_string(group.startZ);
+                        CreateMultiModelFiles(groupModel, groupFileName, localMaterials, outputName);
+                        recordMaterials(localMaterials);
+                    }
                 }
-                else {
-                    MergeModelsDirectly(groupModel, chunkModel);
-                }
-            }
-
-            if (groupModel.vertices.empty()) return;
-
-            if (config.exportFullModel) {
-                // 合并到完整模型（线程安全）
-                mergeToFinalModel(std::move(groupModel));
-            }
-            else {
-                DeduplicateModel(groupModel);
-
-                const string groupFileName = outputName +
-                    "_x" + to_string(group.startX) +
-                    "_z" + to_string(group.startZ);
-
-                // 创建模型文件并收集材质
-                CreateMultiModelFiles(groupModel, groupFileName, localMaterials, outputName);
-                recordMaterials(localMaterials);
-            }
-            }));
-    }
-
-    // 等待所有线程完成
-    for (auto& future : futures) {
-        future.wait();
+            });
+        }
+        for (auto& t : threads) {
+            if (t.joinable()) t.join();
+        }
     }
 
     // 最终导出处理
@@ -189,6 +181,12 @@ void RegionModelExporter::LoadChunks(int chunkXStart, int chunkXEnd, int chunkZS
     int sectionYStart, int sectionYEnd,
     int LOD0renderDistance, int LOD1renderDistance,
     int LOD2renderDistance, int LOD3renderDistance) {
+    // Optimize performance: precompute squared LOD distances
+    int L0d2 = LOD0renderDistance * LOD0renderDistance;
+    int L1d2 = LOD1renderDistance * LOD1renderDistance;
+    int L2d2 = LOD2renderDistance * LOD2renderDistance;
+    int L3d2 = LOD3renderDistance * LOD3renderDistance;
+
     // 扩大区块范围，使其比将要导入的区块大一圈
     chunkXStart--;
     chunkXEnd++;
@@ -199,22 +197,24 @@ void RegionModelExporter::LoadChunks(int chunkXStart, int chunkXEnd, int chunkZS
     for (int chunkX = chunkXStart; chunkX <= chunkXEnd; ++chunkX) {
         for (int chunkZ = chunkZStart; chunkZ <= chunkZEnd; ++chunkZ) {
             LoadAndCacheBlockData(chunkX, chunkZ);
+            int dx = chunkX - config.LODCenterX;
+            int dz = chunkZ - config.LODCenterZ;
+            int dist2 = dx * dx + dz * dz;
             for (int sectionY = sectionYStart; sectionY <= sectionYEnd; ++sectionY) {
-                int distance = sqrt((chunkX - config.LODCenterX) * (chunkX - config.LODCenterX) +
-                    (chunkZ - config.LODCenterZ) * (chunkZ - config.LODCenterZ));
+                // Optimize performance: use squared distance
                 float chunkLOD = 0.0f;
                 if (config.activeLOD)
                 {
-                    if (distance <= LOD0renderDistance) {
+                    if (dist2 <= L0d2) {
                         chunkLOD = 0.0f;
                     }
-                    else if (distance <= LOD1renderDistance) {
+                    else if (dist2 <= L1d2) {
                         chunkLOD = 1.0f;
                     }
-                    else if (distance <= LOD2renderDistance) {
+                    else if (dist2 <= L2d2) {
                         chunkLOD = 2.0f;
                     }
-                    else if (distance <= LOD3renderDistance) {
+                    else if (dist2 <= L3d2) {
                         chunkLOD = 4.0f;
                     }
                     else {
@@ -231,6 +231,10 @@ void RegionModelExporter::LoadChunks(int chunkXStart, int chunkXEnd, int chunkZS
 
 ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int chunkZ) {
     ModelData chunkModel;
+    // Optimize: static map for neighbor direction to index
+    static const std::unordered_map<std::string, int> neighborIndexMap = {
+        {"down", 1}, {"up", 0}, {"north", 4}, {"south", 5}, {"west", 2}, {"east", 3}
+    };
     int xStart = config.minX;
     int xEnd = config.maxX;
     int yStart = config.minY;
@@ -247,7 +251,6 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
     // 遍历区块内的每个方块
     for (int x = blockXStart; x < blockXStart + 16; ++x) {
         for (int z = blockZStart; z < blockZStart + 16; ++z) {
-            int currentY = GetHeightMapY(x, z, "WORLD_SURFACE")-64;
             for (int y = blockYStart; y < blockYStart + 16; ++y) {
                 
                 // 检查当前方块是否在导出区域内
@@ -343,24 +346,7 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
                 
                 // 剔除被遮挡的面
                 std::vector<int> validFaceIndices;
-                const std::unordered_map<std::string, int> directionToNeighborIndex = {
-                    {"down", 1},  // 假设neighbors[1]对应下方
-                    {"up", 0},    // neighbors[0]对应上方
-                    {"north", 4}, // neighbors[4]对应北
-                    {"south", 5}, // neighbors[5]对应南
-                    {"west", 2},  // neighbors[2]对应西
-                    {"east", 3}   // neighbors[3]对应东
-                };
-
-                // 检查faceDirections是否已初始化
-                if (blockModel.faceDirections.empty()) {
-                    continue;
-                }
-
-                // 检查faces大小是否为4的倍数
-                if (blockModel.faces.size() % 4 != 0) {
-                    throw std::runtime_error("faces size is not a multiple of 4");
-                }
+                validFaceIndices.reserve(blockModel.faces.size() / 4);
 
                 // 遍历所有面（每4个顶点索引构成一个面）
                 for (size_t faceIdx = 0; faceIdx < blockModel.faces.size() / 4; ++faceIdx) {
@@ -375,8 +361,8 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
                         validFaceIndices.push_back(faceIdx);
                     }
                     else {
-                        auto it = directionToNeighborIndex.find(dir);
-                        if (it != directionToNeighborIndex.end()) {
+                        auto it = neighborIndexMap.find(dir);
+                        if (it != neighborIndexMap.end()) {
                             int neighborIdx = it->second;
                             if (!neighbors[neighborIdx]) { // 如果邻居存在（非空气），跳过该面
                                 continue;
@@ -389,6 +375,11 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
 
                 // 重建面数据（顶点、UV、材质）
                 ModelData filteredModel;
+                filteredModel.faces.reserve(validFaceIndices.size() * 4);
+                filteredModel.uvFaces.reserve(validFaceIndices.size() * 4);
+                filteredModel.materialIndices.reserve(validFaceIndices.size());
+                filteredModel.faceDirections.reserve(validFaceIndices.size());
+
                 for (int faceIdx : validFaceIndices) {
                     // 提取原面数据（4个顶点索引）
                     for (int i = 0; i < 4; ++i) {
@@ -408,7 +399,7 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
                 filteredModel.texturePaths = blockModel.texturePaths;
 
                 // 使用过滤后的模型
-                blockModel = filteredModel;
+                blockModel = std::move(filteredModel);
             
 
                 

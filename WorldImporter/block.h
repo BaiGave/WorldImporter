@@ -1,22 +1,26 @@
-#ifndef BLOCK_H
-#define BLOCK_H
+#pragma once
 
-#include "config.h"
-#include "nbtutils.h"
-#include "model.h"
-#include <vector>
+// C++ 标准库头文件
+#include <algorithm>
+#include <array>
+#include <cctype>
+#include <cstdint>
+#include <regex>
 #include <string>
+#include <string_view>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
-#include <iostream>
-#include <tuple>
-#include <utility>
-#include <cctype>  // for tolower
-#include <regex>   // for regex matching
+#include <vector>
+
+// 项目头文件
+#include "config.h"
+#include "model.h"
+#include "nbtutils.h"
+#include "hash_utils.h"
+
 extern Config config;
-// 自定义哈希函数声明
-extern struct pair_hash;
-extern struct triple_hash;
+// 引入统一的哈希函数头文件，提供 pair_hash 和 triple_hash
 
 extern std::unordered_set<std::string> solidBlocks; // 改为哈希表
 extern std::unordered_set<std::string> fluidBlocks;
@@ -33,32 +37,38 @@ struct FluidInfo {
 };
 extern std::unordered_map<std::string, FluidInfo> fluidDefinitions;
 
-struct Block {
+struct alignas(16) Block {
     std::string name;
+    int8_t level;
     bool air;
-    int level;
 
-    Block(const std::string& name) : name(name), air(true), level(-1) {
-        size_t bracketPos = name.find('[');
-        std::string baseName = (bracketPos != std::string::npos) ?
-            name.substr(0, bracketPos) : name;
+    Block(const std::string& name) : name(name), level(-1), air(true) {
+        // 用 string_view 减少 substr 拷贝，仅对 baseName 做一次 std::string 构造
+        std::string_view fullName(name);
+        size_t bracketPos = fullName.find('[');
+        std::string_view baseNameView = (bracketPos != std::string_view::npos) ?
+            fullName.substr(0, bracketPos) : fullName;
+        std::string baseName(baseNameView);
 
-        // 解析方块状态属性
+        // 解析方块状态属性 (用 string_view 减少拷贝)
         std::unordered_map<std::string, std::string> states;
-        if (bracketPos != std::string::npos) {
-            std::string stateStr = name.substr(bracketPos + 1, name.find(']') - bracketPos - 1);
+        if (bracketPos != std::string_view::npos) {
+            size_t closePos = fullName.find(']', bracketPos + 1);
+            std::string_view stateStrView = fullName.substr(bracketPos + 1, closePos - bracketPos - 1);
             size_t start = 0;
-            while (true) {
-                size_t end = stateStr.find(',', start);
-                std::string pair = (end == std::string::npos) ?
-                    stateStr.substr(start) : stateStr.substr(start, end - start);
-
-                size_t eqPos = pair.find(':');
-                if (eqPos != std::string::npos) {
-                    states[pair.substr(0, eqPos)] = pair.substr(eqPos + 1);
+            while (start < stateStrView.size()) {
+                size_t end = stateStrView.find(',', start);
+                std::string_view pairView = (end == std::string_view::npos) ?
+                    stateStrView.substr(start) :
+                    stateStrView.substr(start, end - start);
+                size_t eqPos = pairView.find(':');
+                if (eqPos != std::string_view::npos) {
+                    states.emplace(
+                        std::string(pairView.substr(0, eqPos)),
+                        std::string(pairView.substr(eqPos + 1))
+                    );
                 }
-
-                if (end == std::string::npos) break;
+                if (end == std::string_view::npos) break;
                 start = end + 1;
             }
         }
@@ -117,7 +127,7 @@ struct Block {
 
 
     }
-    Block(const std::string& name, bool air) : name(name), air(air), level(-1) {}
+    Block(const std::string& name, bool air) : name(name), level(-1), air(air) {}
 
     // 方法：获取命名空间部分
     std::string GetNamespace() const {
@@ -413,12 +423,13 @@ struct Block {
     }
 };
 
-struct SectionCacheEntry {
+struct alignas(16) SectionCacheEntry {
+    // 把频繁访问的大数组放在前面，减少访存跨缓存行
     std::vector<int> skyLight;      // 天空光照数据
     std::vector<int> blockLight;    // 方块光照数据
-    std::vector<std::string> blockPalette; // 方块调色板
     std::vector<int> blockData;     // 方块数据
     std::vector<int> biomeData;     // 生物群系数据
+    std::vector<std::string> blockPalette; // 方块调色板 (相对较小)
 };
 
 extern std::vector<Block> globalBlockPalette;
@@ -427,7 +438,7 @@ extern std::unordered_map<std::tuple<int, int, int>, SectionCacheEntry, triple_h
 
 // 获取区块NBT数据的函数
 std::vector<char> GetChunkNBTData(const std::vector<char>& fileData, int x, int z);
-std::vector<char> getRegionFromCache(int regionX, int regionZ);
+const std::vector<char>& getRegionFromCache(int regionX, int regionZ);
 
 void LoadAndCacheBlockData(int chunkX, int chunkZ);
 
@@ -468,5 +479,3 @@ std::vector<Block> GetGlobalBlockPalette();
 void InitializeGlobalBlockPalette();
 
 
-
-#endif  // BLOCK_H
