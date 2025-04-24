@@ -2,6 +2,9 @@
 #include "ModelDeduplicator.h"
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <tuple>
+#include <climits>
 
 void ModelDeduplicator::DeduplicateVertices(ModelData& data) {
     std::unordered_map<VertexKey, int> vertexMap;
@@ -132,4 +135,211 @@ void ModelDeduplicator::DeduplicateFaces(ModelData& data) {
     }
 
     data.faces.swap(newFaces);
+}
+
+// Greedy mesh 算法：合并相邻同材质、相同方向的面以减少面数
+void ModelDeduplicator::GreedyMesh(ModelData& data) {
+    if (data.faces.empty()) return;
+    // 区域临时结构
+    struct Region {
+        FaceType dir;
+        int material;
+        float plane;
+        int aaxis, baxis;
+        float a0, a1, b0, b1;
+        float u0, v0, u1, v1;
+    };
+    // 提取所有区域
+    std::vector<Region> regions;
+    regions.reserve(data.faces.size());
+    for (const auto& face : data.faces) {
+        std::array<std::array<float,3>,4> vs;
+        for (int i = 0; i < 4; ++i) {
+            int vidx = face.vertexIndices[i];
+            vs[i][0] = data.vertices[vidx*3];
+            vs[i][1] = data.vertices[vidx*3+1];
+            vs[i][2] = data.vertices[vidx*3+2];
+        }
+        std::array<std::array<float,2>,4> uvs;
+        for (int i = 0; i < 4; ++i) {
+            int uvidx = face.uvIndices[i];
+            uvs[i][0] = data.uvCoordinates[uvidx*2];
+            uvs[i][1] = data.uvCoordinates[uvidx*2+1];
+        }
+        int daxis, aaxis, baxis;
+        switch(face.faceDirection) {
+            case UP:    daxis=1; aaxis=0; baxis=2; break;
+            case DOWN:  daxis=1; aaxis=0; baxis=2; break;
+            case NORTH: daxis=2; aaxis=0; baxis=1; break;
+            case SOUTH: daxis=2; aaxis=0; baxis=1; break;
+            case WEST:  daxis=0; aaxis=2; baxis=1; break;
+            case EAST:  daxis=0; aaxis=2; baxis=1; break;
+            default: continue;
+        }
+        float plane = vs[0][daxis];
+        float a0 = vs[0][aaxis], a1 = a0;
+        float b0 = vs[0][baxis], b1 = b0;
+        for (int i = 1; i < 4; ++i) {
+            a0 = std::fmin(a0, vs[i][aaxis]);
+            a1 = std::fmax(a1, vs[i][aaxis]);
+            b0 = std::fmin(b0, vs[i][baxis]);
+            b1 = std::fmax(b1, vs[i][baxis]);
+        }
+        float u0 = uvs[0][0], u1 = u0;
+        float v0 = uvs[0][1], v1 = v0;
+        for (int i = 1; i < 4; ++i) {
+            u0 = std::fmin(u0, uvs[i][0]);
+            u1 = std::fmax(u1, uvs[i][0]);
+            v0 = std::fmin(v0, uvs[i][1]);
+            v1 = std::fmax(v1, uvs[i][1]);
+        }
+        regions.push_back({face.faceDirection, face.materialIndex, plane,
+                           aaxis, baxis, a0, a1, b0, b1, u0, v0, u1, v1});
+    }
+    // 分组
+    std::map<std::tuple<FaceType, int, float>, std::vector<Region>> groups;
+    for (auto& r : regions) {
+        groups[{r.dir, r.material, r.plane}].push_back(r);
+    }
+    // 合并
+    std::vector<Region> merged;
+    // 二维贪心合并：最大化沿 a 轴和 b 轴方向的矩形合并
+    for (auto& kv : groups) {
+        auto& regs = kv.second;
+        if (regs.empty()) continue;
+        // 计算 a、b 轴范围
+        int minA = INT_MAX, minB = INT_MAX, maxA = INT_MIN, maxB = INT_MIN;
+        float du = regs[0].u1 - regs[0].u0;
+        float dv = regs[0].v1 - regs[0].v0;
+        for (auto& r : regs) {
+            int a0i = int(r.a0), a1i = int(r.a1);
+            int b0i = int(r.b0), b1i = int(r.b1);
+            minA = std::min(minA, a0i);
+            minB = std::min(minB, b0i);
+            maxA = std::max(maxA, a1i);
+            maxB = std::max(maxB, b1i);
+        }
+        int width = maxA - minA;
+        int height = maxB - minB;
+        // 构建占位图
+        std::vector<std::vector<bool>> mask(height, std::vector<bool>(width, false));
+        for (auto& r : regs) {
+            int a0i = int(r.a0) - minA;
+            int b0i = int(r.b0) - minB;
+            int w = int(r.a1 - r.a0);
+            int h = int(r.b1 - r.b0);
+            for (int y = 0; y < h; ++y)
+                for (int x = 0; x < w; ++x)
+                    mask[b0i + y][a0i + x] = true;
+        }
+        std::vector<std::vector<bool>> used(height, std::vector<bool>(width, false));
+        // 扫描出最大矩形
+        for (int by = 0; by < height; ++by) {
+            for (int ax = 0; ax < width; ++ax) {
+                if (!mask[by][ax] || used[by][ax]) continue;
+                // 横向扩展宽度
+                int w = 1;
+                while (ax + w < width && mask[by][ax + w] && !used[by][ax + w]) ++w;
+                // 纵向扩展高度
+                int h = 1;
+                bool ok = true;
+                while (by + h < height && ok) {
+                    for (int xx = 0; xx < w; ++xx) {
+                        if (!mask[by + h][ax + xx] || used[by + h][ax + xx]) { ok = false; break; }
+                    }
+                    if (ok) ++h;
+                }
+                // 标记已使用
+                for (int y = 0; y < h; ++y)
+                    for (int x = 0; x < w; ++x)
+                        used[by + y][ax + x] = true;
+                // 生成合并区域
+                Region nr = regs[0];
+                nr.a0 = float(minA + ax);
+                nr.a1 = nr.a0 + w;
+                nr.b0 = float(minB + by);
+                nr.b1 = nr.b0 + h;
+                nr.u0 = regs[0].u0 + du * ax;
+                nr.u1 = nr.u0 + du * w;
+                nr.v0 = regs[0].v0 + dv * by;
+                nr.v1 = nr.v0 + dv * h;
+                merged.push_back(nr);
+            }
+        }
+    }
+    // 构建新网格
+    ModelData newData;
+    newData.materials = data.materials;
+    for (auto& r : merged) {
+        int daxis, aaxis, baxis;
+        switch (r.dir) {
+            case UP:    daxis=1; aaxis=0; baxis=2; break;
+            case DOWN:  daxis=1; aaxis=0; baxis=2; break;
+            case NORTH: daxis=2; aaxis=0; baxis=1; break;
+            case SOUTH: daxis=2; aaxis=0; baxis=1; break;
+            case WEST:  daxis=0; aaxis=2; baxis=1; break;
+            case EAST:  daxis=0; aaxis=2; baxis=1; break;
+            default: continue;
+        }
+        std::array<std::array<float,3>,4> pts;
+        // 按下左、下右、上右、上左顺序设置顶点
+        auto setPt = [&](int idx, float a, float b) {
+            pts[idx][daxis] = r.plane;
+            pts[idx][aaxis] = a;
+            pts[idx][baxis] = b;
+        };
+        setPt(0, r.a0, r.b0);
+        setPt(1, r.a1, r.b0);
+        setPt(2, r.a1, r.b1);
+        setPt(3, r.a0, r.b1);
+        // 计算合并区域的 UV 重复范围，避免贴图拉伸
+        float du = r.u1 - r.u0;
+        float dv = r.v1 - r.v0;
+        float aw = r.a1 - r.a0; // 区域宽度（世界单位）
+        float bh = r.b1 - r.b0; // 区域高度（世界单位）
+        std::array<std::array<float,2>,4> uvRect = {{
+            {r.u0,                  r.v0},
+            {r.u0 + du * aw,        r.v0},
+            {r.u0 + du * aw,        r.v0 + dv * bh},
+            {r.u0,                  r.v0 + dv * bh}
+        }};
+        int baseV = newData.vertices.size() / 3;
+        int baseUV = newData.uvCoordinates.size() / 2;
+        Face nf; nf.materialIndex = r.material; nf.faceDirection = r.dir;
+        for (int i = 0; i < 4; ++i) {
+            newData.vertices.push_back(pts[i][0]);
+            newData.vertices.push_back(pts[i][1]);
+            newData.vertices.push_back(pts[i][2]);
+            nf.vertexIndices[i] = baseV + i;
+            newData.uvCoordinates.push_back(uvRect[i][0]);
+            newData.uvCoordinates.push_back(uvRect[i][1]);
+            nf.uvIndices[i] = baseUV + i;
+        }
+        newData.faces.push_back(nf);
+    }
+    // 保留 DO_NOT_CULL 和 UNKNOWN 方位的面，避免丢失无法合并的植物面
+    for (const auto& face : data.faces) {
+        if (face.faceDirection == DO_NOT_CULL || face.faceDirection == UNKNOWN) {
+            Face nf = face;
+            int baseV = newData.vertices.size() / 3;
+            int baseUV = newData.uvCoordinates.size() / 2;
+            for (int i = 0; i < 4; ++i) {
+                int vidx = face.vertexIndices[i];
+                newData.vertices.push_back(data.vertices[vidx*3]);
+                newData.vertices.push_back(data.vertices[vidx*3+1]);
+                newData.vertices.push_back(data.vertices[vidx*3+2]);
+                nf.vertexIndices[i] = baseV + i;
+                int uvidx = face.uvIndices[i];
+                newData.uvCoordinates.push_back(data.uvCoordinates[uvidx*2]);
+                newData.uvCoordinates.push_back(data.uvCoordinates[uvidx*2+1]);
+                nf.uvIndices[i] = baseUV + i;
+            }
+            newData.faces.push_back(nf);
+        }
+    }
+    // 替换原数据
+    data.vertices = std::move(newData.vertices);
+    data.uvCoordinates = std::move(newData.uvCoordinates);
+    data.faces = std::move(newData.faces);
+    data.materials = std::move(newData.materials);
 }

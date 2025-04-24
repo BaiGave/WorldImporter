@@ -25,13 +25,15 @@
 #ifndef M_PI
 #define M_PI 3.14159265358979323846264338327950288
 #endif
-enum FaceType { UP, DOWN, NORTH, SOUTH, WEST, EAST, DO_NOT_CULL, UNKNOWN };
+enum  FaceType{
+    UP, DOWN, NORTH, SOUTH, WEST, EAST, DO_NOT_CULL, UNKNOWN
+};
 
 //---------------- 材质信息定义 ----------------
 struct Material {
     std::string name;       // 材质名称
     std::string texturePath;// 纹理路径
-    short tintIndex;        // tint 索引
+    int8_t  tintIndex;        // tint 索引
 };
 
 //---------------- 数据类型定义 ----------------

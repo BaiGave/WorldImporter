@@ -49,6 +49,8 @@ void RegionModelExporter::ExportModels(const string& outputName) {
         ModelDeduplicator::DeduplicateVertices(model);
         ModelDeduplicator::DeduplicateUV(model);
         ModelDeduplicator::DeduplicateFaces(model);
+        ModelDeduplicator::GreedyMesh(model);
+        
         };
 
     if (config.useChunkPrecision) {
@@ -98,10 +100,17 @@ void RegionModelExporter::ExportModels(const string& outputName) {
         sectionYStart, sectionYEnd, L0, L1, L2, L3);
 
     auto processModel = [](const ChunkTask& task) -> ModelData {
-        return (task.lodLevel == 0.0f)
-            ? GenerateChunkModel(task.chunkX, task.sectionY, task.chunkZ)
-            : GenerateLODChunkModel(task.chunkX, task.sectionY, task.chunkZ, task.lodLevel);
-        };
+        // 如果 LOD0renderDistance 为 0 且是普通区块，跳过生成
+        if (config.LOD0renderDistance == 0 && task.lodLevel == 0.0f) {
+            // LOD0 禁用时，将中央区块按 LOD1 生成
+            return GenerateLODChunkModel(task.chunkX, task.sectionY, task.chunkZ, 1.0f);
+        }
+        if (task.lodLevel == 0.0f) {
+            return GenerateChunkModel(task.chunkX, task.sectionY, task.chunkZ);
+        } else {
+            return GenerateLODChunkModel(task.chunkX, task.sectionY, task.chunkZ, task.lodLevel);
+        }
+    };
 
     std::mutex finalModelMutex;
     std::mutex materialsMutex;

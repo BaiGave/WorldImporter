@@ -1849,6 +1849,48 @@ ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2) {
 }
 
 void MergeModelsDirectly(ModelData& data1, const ModelData& data2) {
+    // 优化：预分配并按倍增扩容，减少内存重分配
+    {
+        size_t oldV = data1.vertices.size();
+        size_t addV = data2.vertices.size();
+        size_t needV = oldV + addV;
+        size_t capV = data1.vertices.capacity();
+        if (needV > capV) {
+            size_t newCapV = capV * 2 > needV ? capV * 2 : needV;
+            data1.vertices.reserve(newCapV);
+        }
+    }
+    {
+        size_t oldUV = data1.uvCoordinates.size();
+        size_t addUV = data2.uvCoordinates.size();
+        size_t needUV = oldUV + addUV;
+        size_t capUV = data1.uvCoordinates.capacity();
+        if (needUV > capUV) {
+            size_t newCapUV = capUV * 2 > needUV ? capUV * 2 : needUV;
+            data1.uvCoordinates.reserve(newCapUV);
+        }
+    }
+    {
+        size_t oldMat = data1.materials.size();
+        size_t addMat = data2.materials.size();
+        size_t needMat = oldMat + addMat;
+        size_t capMat = data1.materials.capacity();
+        if (needMat > capMat) {
+            size_t newCapMat = capMat * 2 > needMat ? capMat * 2 : needMat;
+            data1.materials.reserve(newCapMat);
+        }
+    }
+    {
+        size_t oldF = data1.faces.size();
+        size_t addF = data2.faces.size();
+        size_t needF = oldF + addF;
+        size_t capF = data1.faces.capacity();
+        if (needF > capF) {
+            size_t newCapF = capF * 2 > needF ? capF * 2 : needF;
+            data1.faces.reserve(newCapF);
+        }
+    }
+
     // 顶点偏移
     const size_t vertexOffset = data1.vertices.size() / 3;
 
