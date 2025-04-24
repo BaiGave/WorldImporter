@@ -30,11 +30,12 @@ Config config;  // 定义全局变量
 using namespace std;
 using namespace chrono;
 // C++20 概念定义示例
+// 使用SFINAE实现类型约束
 template<typename T>
 concept Numeric = std::is_arithmetic_v<T>;
 
-// 使用概念的函数模板示例
-template<Numeric T>
+// 使用SFINAE的函数模板示例
+template<typename T, typename = IsNumeric<T>>
 T add(T a, T b) {
     return a + b;
 }

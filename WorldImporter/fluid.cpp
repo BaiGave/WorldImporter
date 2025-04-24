@@ -6,6 +6,7 @@
 #include "block.h"
 #include <unordered_map>
 #include <mutex>
+#include "model.h"
 
 using namespace std;
 
@@ -182,43 +183,45 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
         1.0f, h_ne, 0.0f  // 23
     };
 
-    // 修改面索引：除北面和西面外其它面采用反转顶点顺序，使得法线指向正确
-    model.faces = {
-        // 下面 (bottom)： 0,3,2,1
-        0, 3, 2, 1,
-        // 顶面 (top)： 4,7,6,5
-        4, 7, 6, 5,
-        // 北面 (north)：保持不变
-        8, 11, 10, 9,
-        // 南面 (south)： 12,15,14,13
-        12, 13, 14, 15,
-        // 西面 (west)：保持不变
-        16, 17, 18, 19,
-        // 东面 (east)： 20,23,22,21
-        20, 23, 22, 21
-    };
-    model.uvFaces = model.faces;
-
-    if (aboveLevel < 0) {
-        model.faceDirections = {
-            "down", "down", "down", "down",    // 下面
-            "DO_NOT_CULL", "DO_NOT_CULL", "DO_NOT_CULL", "DO_NOT_CULL",            // 上面
-            "north", "north", "north", "north",// 北面
-            "south", "south", "south", "south",// 南面
-            "west", "west", "west", "west",    // 西面
-            "east", "east", "east", "east"     // 东面
-        };
-    }
-    else {
-        model.faceDirections = {
-            "down", "down", "down", "down",    // 下面
-            "up", "up", "up", "up",            // 上面
-            "north", "north", "north", "north",// 北面
-            "south", "south", "south", "south",// 南面
-            "west", "west", "west", "west",    // 西面
-            "east", "east", "east", "east"     // 东面
-        };
-    }
+    // 创建模型的六个面（底面，顶面，北面，南面，西面，东面）
+    model.faces.resize(6);
+    
+    // 底面 (y-)
+    model.faces[0].vertexIndices = { 0, 3, 2, 1 };
+    model.faces[0].uvIndices = { 0, 3, 2, 1 };
+    model.faces[0].faceDirection = DOWN;
+    model.faces[0].materialIndex = 0; // still材质
+    
+    // 顶面 (y+)
+    model.faces[1].vertexIndices = { 4, 7, 6, 5 };
+    model.faces[1].uvIndices = { 4, 7, 6, 5 };
+    // 根据上方方块决定顶面是否剔除
+    model.faces[1].faceDirection = (aboveLevel < 0) ? DO_NOT_CULL : UP;
+    model.faces[1].materialIndex = 1; // flow材质
+    
+    // 北面 (z-)
+    model.faces[2].vertexIndices = { 8, 11, 10, 9 };
+    model.faces[2].uvIndices = { 8, 11, 10, 9 };
+    model.faces[2].faceDirection = NORTH;
+    model.faces[2].materialIndex = 1; // flow材质
+    
+    // 南面 (z+)
+    model.faces[3].vertexIndices = { 12, 13, 14, 15 };
+    model.faces[3].uvIndices = { 12, 13, 14, 15 };
+    model.faces[3].faceDirection = SOUTH;
+    model.faces[3].materialIndex = 1; // flow材质
+    
+    // 西面 (x-)
+    model.faces[4].vertexIndices = { 16, 17, 18, 19 };
+    model.faces[4].uvIndices = { 16, 17, 18, 19 };
+    model.faces[4].faceDirection = WEST;
+    model.faces[4].materialIndex = 1; // flow材质
+    
+    // 东面 (x+)
+    model.faces[5].vertexIndices = { 20, 23, 22, 21 };
+    model.faces[5].uvIndices = { 20, 23, 22, 21 };
+    model.faces[5].faceDirection = EAST;
+    model.faces[5].materialIndex = 1; // flow材质
 
     float v_nw = 1 - (h_nw) / 32.0f;
     float v_ne = 1 - (h_ne) / 32.0f;
@@ -240,10 +243,6 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
         0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_se, 0.0f, v_ne
     };
 
-    // 材质设置
-    model.materialNames = { "minecraft:block/water_still", "minecraft:block/water_flow" };
-    model.texturePaths = { "textures/minecraft/block/water_still.png", "textures/minecraft/block/water_flow.png" };
-
     if (currentLevel == 0 || currentLevel == 8) {
         model.uvCoordinates = {
             // 下面
@@ -259,7 +258,11 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
             // 东面
             0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_se , 0.0f, v_ne
         };
-        model.materialIndices = { 0, 0, 1, 1, 1, 1 };
+        
+        // 设置材质索引
+        for (int i = 0; i < 6; i++) {
+            model.faces[i].materialIndex = (i == 0 || i == 1) ? 0 : 1; // 前两个面用still材质，其他用flow材质
+        }
     }
     else {
         // 计算梯度和旋转角度
@@ -360,8 +363,28 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
                 model.uvCoordinates[i + 7] = v3;
             }
         }
-        model.materialIndices = { 0, 1, 1, 1, 1, 1 };
+        
+        // 设置材质索引
+        model.faces[0].materialIndex = 0; // 底面使用still材质
+        for (int i = 1; i < 6; i++) {
+            model.faces[i].materialIndex = 1; // 其他面使用flow材质
+        }
     }
+
+    // 添加材质
+    // 静止水材质（still）- 用于顶部和底部
+    Material stillMaterial;
+    stillMaterial.name = "water_still";
+    stillMaterial.texturePath = "textures/minecraft/block/water_still.png";
+    stillMaterial.tintIndex = 2; // 水的色调索引
+
+    // 流动水材质（flow）- 用于侧面
+    Material flowMaterial;
+    flowMaterial.name = "water_flow"; 
+    flowMaterial.texturePath = "textures/minecraft/block/water_flow.png";
+    flowMaterial.tintIndex = 2; // 水的色调索引
+
+    model.materials = { stillMaterial, flowMaterial };
 
     fluidModelCache[key] = model;
     return model;
@@ -369,11 +392,17 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
 
 void AssignFluidMaterials(ModelData& model, const std::string& fluidId) {
     if (fluidId.find("minecraft:water") != string::npos) {
-        model.tintindex = 2;
+        // 为所有材质设置水的着色索引
+        for (auto& material : model.materials) {
+            material.tintIndex = 2;
+        }
     }
     else
     {
-        model.tintindex = -1;
+        // 为所有材质设置无着色
+        for (auto& material : model.materials) {
+            material.tintIndex = -1;
+        }
     }
     // 提取基础 ID 和状态值（如果有多个状态值）
     std::string baseId;
@@ -431,24 +460,24 @@ void AssignFluidMaterials(ModelData& model, const std::string& fluidId) {
     const FluidInfo& fluidInfo = fluidIt->second;
     std::string fluidName = fluidIt->first;
     // 清空旧数据
-    model.materialNames.clear();
-    model.texturePaths.clear();
+    model.materials.clear();
 
-    // 设置材质路径
-    model.materialNames = {
-        fluidInfo.folder + "/" + fluidName + fluidInfo.still_texture,
-        fluidInfo.folder + "/" + fluidName + fluidInfo.flow_texture
-    };
-
-    // 构建纹理路径
+    // 解析命名空间
     size_t colonPos = baseId.find(':');
     std::string ns = (colonPos != std::string::npos) ? baseId.substr(0, colonPos) : "";
-    fluidName = (colonPos != std::string::npos) ? fluidName.substr(colonPos + 1) : fluidName;
-
-    model.texturePaths = {
-        "textures/" + ns + "/" + fluidInfo.folder + "/" + fluidName + fluidInfo.still_texture + ".png",
-        "textures/" + ns + "/" + fluidInfo.folder + "/" + fluidName + fluidInfo.flow_texture + ".png"
-    };
-
+    std::string pureName = (colonPos != std::string::npos) ? fluidName.substr(colonPos + 1) : fluidName;
     
+    // 创建静止流体材质
+    Material stillFluid;
+    stillFluid.name = fluidInfo.folder + "/" + fluidName + fluidInfo.still_texture;
+    stillFluid.texturePath = "textures/" + ns + "/" + fluidInfo.folder + "/" + pureName + fluidInfo.still_texture + ".png";
+    stillFluid.tintIndex = (fluidName.find("water") != std::string::npos) ? 2 : -1;
+    
+    // 创建流动流体材质
+    Material flowFluid;
+    flowFluid.name = fluidInfo.folder + "/" + fluidName + fluidInfo.flow_texture;
+    flowFluid.texturePath = "textures/" + ns + "/" + fluidInfo.folder + "/" + pureName + fluidInfo.flow_texture + ".png";
+    flowFluid.tintIndex = (fluidName.find("water") != std::string::npos) ? 2 : -1;
+    
+    model.materials = { stillFluid, flowFluid };
 }

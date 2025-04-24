@@ -50,30 +50,32 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
         }
     }
 
+    // 声明materialIndex变量，使其在整个函数中可见
+    int materialIndex = -1;
+    
     if (textureAverage.empty()) {
-        int materialIndex = -1;
         if (faceDirection == "none") {
-            if (!blockModel.materialNames.empty()) materialIndex = 0;
+            if (!blockModel.materials.empty()) materialIndex = 0;
         }
         else {
             // 将字符串方向转换为枚举
             FaceType targetType = StringToFaceType(faceDirection);
             
             // 查找匹配的面
-            for (size_t i = 0; i < blockModel.faces.size(); i += 4) {
-                if (GetFaceTypeByIndex(i) == targetType) {
-                    materialIndex = blockModel.materialIndices[i / 4];
+            for (size_t i = 0; i < blockModel.faces.size(); i++) {
+                if (blockModel.faces[i].faceDirection == targetType) {
+                    materialIndex = blockModel.faces[i].materialIndex;
                     break;
                 }
             }
         }
 
-        if (materialIndex == -1 && !blockModel.materialNames.empty()) materialIndex = 0;
+        if (materialIndex == -1 && !blockModel.materials.empty()) materialIndex = 0;
         if (materialIndex == -1) return "color#0.50 0.50 0.50";
 
-        std::string materialName = blockModel.materialNames[materialIndex];
+        std::string materialName = blockModel.materials[materialIndex].name;
         std::string texturePath;
-        if (!blockModel.texturePaths.empty()) texturePath = blockModel.texturePaths[materialIndex];
+        if (!blockModel.materials.empty()) texturePath = blockModel.materials[materialIndex].texturePath;
 
         float r = 0.5f, g = 0.5f, b = 0.5f;
         if (!texturePath.empty()) {
@@ -133,11 +135,32 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
     }
 
     char finalColorStr[128];
-    if (blockModel.tintindex != -1) {
+    // 检查模型中是否有任何材质需要tint索引（群系着色）
+    bool hasTintIndex = false;
+    short tintIndexValue = -1;
+    
+    // 首先检查当前使用的材质
+    if (!blockModel.materials.empty() && materialIndex >= 0 && materialIndex < blockModel.materials.size()) {
+        tintIndexValue = blockModel.materials[materialIndex].tintIndex;
+        hasTintIndex = (tintIndexValue != -1);
+    }
+    
+    // 如果当前材质不需要着色，检查模型中的所有其他材质
+    if (!hasTintIndex && !blockModel.materials.empty()) {
+        for (const auto& material : blockModel.materials) {
+            if (material.tintIndex != -1) {
+                hasTintIndex = true;
+                tintIndexValue = material.tintIndex;
+                break;
+            }
+        }
+    }
+    
+    if (hasTintIndex) {
         float textureR, textureG, textureB;
         sscanf(textureAverage.c_str(), "%f %f %f", &textureR, &textureG, &textureB);
         uint32_t hexColor = Biome::GetBiomeColor(x, y, z,
-            blockModel.tintindex == 2 ? BiomeColorType::Water : BiomeColorType::Foliage);
+            tintIndexValue == 2 ? BiomeColorType::Water : BiomeColorType::Foliage);
         float biomeR = ((hexColor >> 16) & 0xFF) / 255.0f;
         float biomeG = ((hexColor >> 8) & 0xFF) / 255.0f;
         float biomeB = (hexColor & 0xFF) / 255.0f;
@@ -623,7 +646,8 @@ ModelData LODManager::GenerateBox(int x, int y, int z, int baseSize, float boxHe
         size, height, 0.0f
     };
 
-    box.faces = {
+    // 创建临时顶点索引数组，之后会用于创建 Face 结构体
+    std::vector<int> tempVertexIndices = {
         0, 3, 2, 1,      // 底面
         4, 7, 6, 5,      // 顶面
         8, 11, 10, 9,    // 北面
@@ -642,20 +666,36 @@ ModelData LODManager::GenerateBox(int x, int y, int z, int baseSize, float boxHe
     };
 
     // 材质设置
+    std::vector<int> materialIndices; // 临时材质索引数组
+    
     if (colors.empty()) {
-        box.materialNames = { "default_color" };
-        box.texturePaths = { "default_color" };
-        box.materialIndices = { 0, 0, 0, 0, 0, 0 };
+        Material defaultMaterial;
+        defaultMaterial.name = "default_color";
+        defaultMaterial.texturePath = "default_color";
+        defaultMaterial.tintIndex = -1;
+        box.materials = { defaultMaterial };
+        materialIndices = { 0, 0, 0, 0, 0, 0 }; // 临时数组，用于后续创建 Face 结构体
     }
     else if (colors.size() == 1 || (colors.size() >= 2 && colors[0] == colors[1])) {
-        box.materialNames = { colors[0] };
-        box.texturePaths = { colors[0] };
-        box.materialIndices = { 0, 0, 0, 0, 0, 0 };
+        Material singleMaterial;
+        singleMaterial.name = colors[0];
+        singleMaterial.texturePath = colors[0];
+        singleMaterial.tintIndex = -1;
+        box.materials = { singleMaterial };
+        materialIndices = { 0, 0, 0, 0, 0, 0 }; // 临时数组，用于后续创建 Face 结构体
     }
     else {
-        box.materialNames = { colors[0], colors[1] };
-        box.texturePaths = { colors[0], colors[1] };
-        box.materialIndices = { 1, 0, 1, 1, 1, 1 };
+        Material material1, material2;
+        material1.name = colors[0];
+        material1.texturePath = colors[0];
+        material1.tintIndex = -1;
+        
+        material2.name = colors[1];
+        material2.texturePath = colors[1];
+        material2.tintIndex = -1;
+        
+        box.materials = { material1, material2 };
+        materialIndices = { 1, 0, 1, 1, 1, 1 }; // 临时数组，用于后续创建 Face 结构体
     }
 
     // 调整模型位置
@@ -702,20 +742,37 @@ ModelData LODManager::GenerateBox(int x, int y, int z, int baseSize, float boxHe
         }
     }
 
-    // 根据 validFaces 过滤不需要的面
+    // 根据 validFaces 过滤不需要的面，并使用新的 Face 结构体
     ModelData filteredBox;
-    for (int faceIdx = 0; faceIdx < 6; ++faceIdx) {
-        if (validFaces[faceIdx]) {
-            for (int i = 0; i < 4; ++i) {
-                filteredBox.faces.push_back(box.faces[faceIdx * 4 + i]);
-                filteredBox.uvFaces.push_back(box.uvCoordinates[faceIdx * 4 + i]);
-            }
-            filteredBox.materialIndices.push_back(box.materialIndices[faceIdx]);
-        }
-    }
     filteredBox.vertices = box.vertices;
     filteredBox.uvCoordinates = box.uvCoordinates;
-    filteredBox.materialNames = box.materialNames;
-    filteredBox.texturePaths = box.texturePaths;
+    filteredBox.materials = box.materials;
+    
+    // 定义 faceDirections，与索引对应
+    FaceType faceDirections[6] = { DOWN, UP, NORTH, SOUTH, WEST, EAST };
+    
+    for (int faceIdx = 0; faceIdx < 6; ++faceIdx) {
+        if (validFaces[faceIdx]) {
+            Face face;
+            // 设置顶点索引
+            face.vertexIndices = {
+                tempVertexIndices[faceIdx * 4],
+                tempVertexIndices[faceIdx * 4 + 1],
+                tempVertexIndices[faceIdx * 4 + 2],
+                tempVertexIndices[faceIdx * 4 + 3]
+            };
+            
+            // 设置UV索引
+            int uvBase = faceIdx * 4;
+            face.uvIndices = { uvBase, uvBase + 1, uvBase + 2, uvBase + 3 };
+            
+            // 设置材质索引和面方向
+            face.materialIndex = materialIndices[faceIdx];
+            face.faceDirection = faceDirections[faceIdx];
+            
+            // 添加到结果模型
+            filteredBox.faces.push_back(face);
+        }
+    }
     return filteredBox;
 }

@@ -38,8 +38,10 @@ void ModelDeduplicator::DeduplicateVertices(ModelData& data) {
     data.vertices = std::move(newVertices);
 
     // 更新面数据中的顶点索引
-    for (auto& idx : data.faces) {
-        idx = indexMap[idx];
+    for (auto& face : data.faces) {
+        for (auto& idx : face.vertexIndices) {
+            idx = indexMap[idx];
+        }
     }
 }
 
@@ -81,10 +83,12 @@ void ModelDeduplicator::DeduplicateUV(ModelData& model) {
     }
 
     // 如果 uvFaces 不为空，则更新 uvFaces 中的索引
-    if (!model.uvFaces.empty()) {
-        for (int& idx : model.uvFaces) {
-            // 注意：这里假设 uvFaces 中的索引都在有效范围内
-            idx = indexMapping[idx];
+    if (!model.faces.empty()) {
+        for (auto& face : model.faces) {
+            for (auto& idx : face.uvIndices) {
+                // 注意：这里假设 uvIndices 中的索引都在有效范围内
+                idx = indexMapping[idx];
+            }
         }
     }
 
@@ -93,19 +97,20 @@ void ModelDeduplicator::DeduplicateUV(ModelData& model) {
 }
 
 void ModelDeduplicator::DeduplicateFaces(ModelData& data) {
-    size_t faceCountNum = data.faces.size() / 4;
+    size_t faceCountNum = data.faces.size();
     std::vector<FaceKey> keys;
     keys.reserve(faceCountNum);
 
     // 第一次遍历：计算每个面的规范化键并存入数组（避免重复排序）
-    for (size_t i = 0; i < data.faces.size(); i += 4) {
-        std::array<int, 4> face = {
-            data.faces[i], data.faces[i + 1],
-            data.faces[i + 2], data.faces[i + 3]
+    for (size_t i = 0; i < data.faces.size(); i++) {
+        const auto& face = data.faces[i];
+        std::array<int, 4> faceArray = {
+            face.vertexIndices[0], face.vertexIndices[1],
+            face.vertexIndices[2], face.vertexIndices[3]
         };
-        std::array<int, 4> sorted = face;
+        std::array<int, 4> sorted = faceArray;
         std::sort(sorted.begin(), sorted.end());
-        int matIndex = config.strictDeduplication ? data.materialIndices[i / 4] : -1;
+        int matIndex = config.strictDeduplication ? face.materialIndex : -1;
         keys.push_back(FaceKey{ sorted, matIndex });
     }
 
@@ -117,27 +122,14 @@ void ModelDeduplicator::DeduplicateFaces(ModelData& data) {
     }
 
     // 第二次遍历：过滤只出现一次的面
-    std::vector<int> newFaces;
+    std::vector<Face> newFaces;
     newFaces.reserve(data.faces.size());
-    std::vector<int> newUvFaces;
-    newUvFaces.reserve(data.uvFaces.size());
-    std::vector<int> newMaterials;
-    newMaterials.reserve(data.materialIndices.size());
 
     for (size_t i = 0; i < keys.size(); i++) {
         if (freq[keys[i]] == 1) {
-            size_t base = i * 4;
-            newFaces.insert(newFaces.end(),
-                data.faces.begin() + base,
-                data.faces.begin() + base + 4);
-            newUvFaces.insert(newUvFaces.end(),
-                data.uvFaces.begin() + base,
-                data.uvFaces.begin() + base + 4);
-            newMaterials.push_back(data.materialIndices[i]);
+            newFaces.push_back(data.faces[i]);
         }
     }
 
     data.faces.swap(newFaces);
-    data.uvFaces.swap(newUvFaces);
-    data.materialIndices.swap(newMaterials);
 }

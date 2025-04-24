@@ -232,8 +232,9 @@ void RegionModelExporter::LoadChunks(int chunkXStart, int chunkXEnd, int chunkZS
 ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int chunkZ) {
     ModelData chunkModel;
     // Optimize: static map for neighbor direction to index
-    static const std::unordered_map<std::string, int> neighborIndexMap = {
-        {"down", 1}, {"up", 0}, {"north", 4}, {"south", 5}, {"west", 2}, {"east", 3}
+    static const std::unordered_map<FaceType, int> neighborIndexMap = {
+        {FaceType::DOWN, 1}, {FaceType::UP, 0}, {FaceType::NORTH, 4}, 
+        {FaceType::SOUTH, 5}, {FaceType::WEST, 2}, {FaceType::EAST, 3}
     };
     int xStart = config.minX;
     int xEnd = config.maxX;
@@ -323,15 +324,10 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
                         liquidModel = GenerateFluidModel(fluidLevels);
                         AssignFluidMaterials(liquidModel, currentBlock.name);
                         
-                        if (!blockModel.faceDirections.empty())
+                        // 将所有面的方向设置为不剔除
+                        for (auto& face : blockModel.faces)
                         {
-                            for (size_t i = 0; i < blockModel.faceDirections.size(); i += 4)
-                            {
-                                blockModel.faceDirections[i] = "DO_NOT_CULL";
-                                blockModel.faceDirections[i + 1] = "DO_NOT_CULL";
-                                blockModel.faceDirections[i + 2] = "DO_NOT_CULL";
-                                blockModel.faceDirections[i + 3] = "DO_NOT_CULL";
-                            }
+                            face.faceDirection = FaceType::DO_NOT_CULL;
                         }
 
                         blockModel = MergeFluidModelData(blockModel, liquidModel);
@@ -346,18 +342,18 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
                 
                 // 剔除被遮挡的面
                 std::vector<int> validFaceIndices;
-                validFaceIndices.reserve(blockModel.faces.size() / 4);
+                validFaceIndices.reserve(blockModel.faces.size());
 
-                // 遍历所有面（每4个顶点索引构成一个面）
-                for (size_t faceIdx = 0; faceIdx < blockModel.faces.size() / 4; ++faceIdx) {
+                // 遍历所有面
+                for (size_t faceIdx = 0; faceIdx < blockModel.faces.size(); ++faceIdx) {
                     // 检查faceIdx是否超出范围
-                    if (faceIdx * 4 >= blockModel.faceDirections.size()) {
+                    if (faceIdx >= blockModel.faces.size()) {
                         throw std::runtime_error("faceIdx out of range");
                     }
 
-                    std::string dir = blockModel.faceDirections[faceIdx * 4]; // 取第一个顶点的方向
-                    // 如果是 "DO_NOT_CULL"，保留该面
-                    if (dir == "DO_NOT_CULL") {
+                    FaceType dir = blockModel.faces[faceIdx].faceDirection; // 获取面的方向
+                    // 如果是DO_NOT_CULL，保留该面
+                    if (dir == FaceType::DO_NOT_CULL) {
                         validFaceIndices.push_back(faceIdx);
                     }
                     else {
@@ -370,39 +366,25 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
                         }
                         validFaceIndices.push_back(faceIdx);
                     }
-
                 }
 
-                // 重建面数据（顶点、UV、材质）
+                // 重建面数据（使用新的Face结构体）
                 ModelData filteredModel;
-                filteredModel.faces.reserve(validFaceIndices.size() * 4);
-                filteredModel.uvFaces.reserve(validFaceIndices.size() * 4);
-                filteredModel.materialIndices.reserve(validFaceIndices.size());
-                filteredModel.faceDirections.reserve(validFaceIndices.size());
+                filteredModel.faces.reserve(validFaceIndices.size());
 
                 for (int faceIdx : validFaceIndices) {
-                    // 提取原面数据（4个顶点索引）
-                    for (int i = 0; i < 4; ++i) {
-                        filteredModel.faces.push_back(blockModel.faces[faceIdx * 4 + i]);
-                        filteredModel.uvFaces.push_back(blockModel.uvFaces[faceIdx * 4 + i]);
-                    }
-                    // 材质索引
-                    filteredModel.materialIndices.push_back(blockModel.materialIndices[faceIdx]);
-                    // 方向记录（每个顶点重复方向，这里仅记录一次）
-                    filteredModel.faceDirections.push_back(blockModel.faceDirections[faceIdx * 4]);
+                    // 直接复制Face结构体
+                    filteredModel.faces.push_back(blockModel.faces[faceIdx]);
                 }
 
                 // 顶点和UV数据保持不变（后续合并时会去重）
                 filteredModel.vertices = blockModel.vertices;
                 filteredModel.uvCoordinates = blockModel.uvCoordinates;
-                filteredModel.materialNames = blockModel.materialNames;
-                filteredModel.texturePaths = blockModel.texturePaths;
+                filteredModel.materials = blockModel.materials;
 
                 // 使用过滤后的模型
                 blockModel = std::move(filteredModel);
             
-
-                
                 ApplyPositionOffset(blockModel, x, y, z);
 
                 // 合并到主模型
@@ -413,7 +395,6 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
                     MergeModelsDirectly(chunkModel, blockModel);
                 }
             }
-
         }
     }
 
@@ -432,7 +413,6 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
             ModelData EntityModel;
             if (entity != nullptr) {
                 EntityModel = entity->GenerateModel();
-                entity->PrintDetails();
                 if (chunkModel.vertices.empty()) {
                     chunkModel = EntityModel;
                 }

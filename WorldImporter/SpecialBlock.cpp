@@ -107,19 +107,51 @@ ModelData SpecialBlock::GenerateLightBlockModel(const string& texturePath) {
         0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f
     };
 
-    // 设置面数据（每个面由4个顶点组成）
-    cubeModel.faces = {
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23
-    };
-    cubeModel.uvFaces = cubeModel.faces;
+    // 创建材质
+    Material material;
+    material.name = texturePath;
+    material.texturePath = "None";
+    material.tintIndex = -1;  // 设置默认tint索引
+    cubeModel.materials = { material };
 
-    cubeModel.materialNames = { texturePath };
-    cubeModel.texturePaths = { "None" };
-    cubeModel.materialIndices = vector<int>(6, 0);
-
-    cubeModel.faceDirections = {
-        "DO_NOT_CULL", "DO_NOT_CULL", "DO_NOT_CULL", "DO_NOT_CULL", "DO_NOT_CULL", "DO_NOT_CULL","DO_NOT_CULL", "DO_NOT_CULL", "DO_NOT_CULL", "DO_NOT_CULL", "DO_NOT_CULL", "DO_NOT_CULL","DO_NOT_CULL", "DO_NOT_CULL", "DO_NOT_CULL", "DO_NOT_CULL", "DO_NOT_CULL", "DO_NOT_CULL","DO_NOT_CULL", "DO_NOT_CULL", "DO_NOT_CULL", "DO_NOT_CULL", "DO_NOT_CULL", "DO_NOT_CULL"
-    };
+    // 使用Face结构体创建六个面
+    cubeModel.faces.resize(6);
+    
+    // 前面
+    cubeModel.faces[0].vertexIndices = { 0, 1, 2, 3 };
+    cubeModel.faces[0].uvIndices = { 0, 1, 2, 3 };
+    cubeModel.faces[0].materialIndex = 0;
+    cubeModel.faces[0].faceDirection = FaceType::DO_NOT_CULL;
+    
+    // 后面
+    cubeModel.faces[1].vertexIndices = { 4, 5, 6, 7 };
+    cubeModel.faces[1].uvIndices = { 4, 5, 6, 7 };
+    cubeModel.faces[1].materialIndex = 0;
+    cubeModel.faces[1].faceDirection = FaceType::DO_NOT_CULL;
+    
+    // 上面
+    cubeModel.faces[2].vertexIndices = { 8, 9, 10, 11 };
+    cubeModel.faces[2].uvIndices = { 8, 9, 10, 11 };
+    cubeModel.faces[2].materialIndex = 0;
+    cubeModel.faces[2].faceDirection = FaceType::DO_NOT_CULL;
+    
+    // 下面
+    cubeModel.faces[3].vertexIndices = { 12, 13, 14, 15 };
+    cubeModel.faces[3].uvIndices = { 12, 13, 14, 15 };
+    cubeModel.faces[3].materialIndex = 0;
+    cubeModel.faces[3].faceDirection = FaceType::DO_NOT_CULL;
+    
+    // 左面
+    cubeModel.faces[4].vertexIndices = { 16, 17, 18, 19 };
+    cubeModel.faces[4].uvIndices = { 16, 17, 18, 19 };
+    cubeModel.faces[4].materialIndex = 0;
+    cubeModel.faces[4].faceDirection = FaceType::DO_NOT_CULL;
+    
+    // 右面
+    cubeModel.faces[5].vertexIndices = { 20, 21, 22, 23 };
+    cubeModel.faces[5].uvIndices = { 20, 21, 22, 23 };
+    cubeModel.faces[5].materialIndex = 0;
+    cubeModel.faces[5].faceDirection = FaceType::DO_NOT_CULL;
 
     return cubeModel;
 }

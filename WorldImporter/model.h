@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <array>
 #include <string>
 #include <cmath>
 #include "include/json.hpp"
@@ -24,26 +25,35 @@
 #ifndef M_PI
 #define M_PI 3.14159265358979323846264338327950288
 #endif
+enum FaceType { UP, DOWN, NORTH, SOUTH, WEST, EAST, DO_NOT_CULL, UNKNOWN };
+
+//---------------- 材质信息定义 ----------------
+struct Material {
+    std::string name;       // 材质名称
+    std::string texturePath;// 纹理路径
+    short tintIndex;        // tint 索引
+};
 
 //---------------- 数据类型定义 ----------------
-// 模型数据结构体
+// 在 ModelData 定义之前新增 Face 结构体定义，用于包含顶点索引、UV 索引、材质索引和面方向
+struct Face {
+    std::array<int, 4> vertexIndices; // 四个顶点索引
+    std::array<int, 4> uvIndices;     // 四个 UV 索引
+    int materialIndex;                // 材质索引
+    FaceType faceDirection;           // 剔除方向
+};
+
+// 修改 ModelData，使用统一 Face 结构体替换原有的 faces、uvFaces、materialIndices 和 faceDirections
 struct ModelData {
     // 顶点数据（x,y,z顺序存储）
     std::vector<float> vertices;          // 每3个元素构成一个顶点
     std::vector<float> uvCoordinates;     // 每2个元素构成一个UV坐标
-    
-    // 面数据（四边面）
-    std::vector<int> faces;               // 每4个顶点索引构成一个面
-    std::vector<int> uvFaces;             // 每4个UV索引构成一个面
-    
+
+    // 面数据（使用 Face 结构体优化性能，支持 GreedyMesh 算法）
+    std::vector<Face> faces;              // 包含顶点索引、UV索引、材质索引和面方向
+
     // 材质系统（保持原优化方案）
-    std::vector<int> materialIndices;     // 每个面对应的材质索引
-    std::vector<std::string> materialNames;
-    std::vector<std::string> texturePaths;
-
-    short tintindex;
-
-    std::vector<std::string> faceDirections;      // 每个面的剔除方向信息，每个面一项
+    std::vector<Material> materials;      // 每个材质包含名称、纹理路径和 tint 索引
 };
 
 // 自定义顶点键：用整数表示，精度保留到小数点后6位
@@ -121,13 +131,15 @@ namespace std {
     };
 }
 
-enum FaceType { UP, DOWN, NORTH, SOUTH, WEST, EAST, UNKNOWN };
 
 // 辅助函数：将字符串方向转换为FaceType枚举
 FaceType StringToFaceType(const std::string& dirString);
 
 // 辅助函数：根据面索引获取面方向 (每4个顶点构成一个面)
 FaceType GetFaceTypeByIndex(size_t faceIndex);
+
+// 辅助函数：将FaceType枚举转换为字符串
+std::string FaceTypeToString(FaceType faceType);
 
 //---------------- 缓存管理 ----------------
 static std::mutex cacheMutex;
@@ -179,5 +191,8 @@ nlohmann::json MergeModelJson(const nlohmann::json& parentModelJson,
 void ApplyRotationToVertices(std::span<float> vertices, float rx, float ry, float rz);
 void ApplyRotationToVertices(std::span<float> vertices, int rotationX, int rotationY);
 void ApplyScaleToVertices(std::span<float> vertices, float sx, float sy, float sz);
+
+// 旋转应用到面方向
+void ApplyRotationToFaceDirections(std::vector<Face>& faces, int rotationX, int rotationY);
 
 #endif // MODEL_H

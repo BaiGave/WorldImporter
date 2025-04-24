@@ -172,10 +172,10 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
     }
 
     // 面数据分组计算
-    std::vector<std::vector<size_t>> materialGroups(data.materialNames.size());
-    const size_t totalFaces = data.faces.size() / 4;
+    std::vector<std::vector<size_t>> materialGroups(data.materials.size());
+    const size_t totalFaces = data.faces.size();
     for (size_t faceIdx = 0; faceIdx < totalFaces; ++faceIdx) {
-        const int matIndex = data.materialIndices[faceIdx];
+        const int matIndex = data.faces[faceIdx].materialIndex;
         if (matIndex != -1 && matIndex < materialGroups.size()) {
             materialGroups[matIndex].push_back(faceIdx);
         }
@@ -185,10 +185,10 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
     totalSize += snprintf(nullptr, 0, "\n# Faces (%zu)\n", totalFaces);
 
     // 预计算材质组内每个材质对应的usemtl行以及各个面的长度
-    std::vector<size_t> usemtlLengths(data.materialNames.size());
+    std::vector<size_t> usemtlLengths(data.materials.size());
 #pragma omp parallel for
-    for (int matIndex = 0; matIndex < data.materialNames.size(); ++matIndex) {
-        usemtlLengths[matIndex] = 8 + data.materialNames[matIndex].size() + 1; // "usemtl " + name + "\n"
+    for (int matIndex = 0; matIndex < data.materials.size(); ++matIndex) {
+        usemtlLengths[matIndex] = 8 + data.materials[matIndex].name.size() + 1; // "usemtl " + name + "\n"
     }
 
 #pragma omp parallel for reduction(+:totalSize)
@@ -198,11 +198,11 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         size_t localSize = usemtlLengths[matIndex];
         for (const size_t faceIdx : faces) {
             size_t faceLength = 3; // "f " + '\n'
-            const int* faceV = &data.faces[faceIdx * 4];
-            const int* faceUV = &data.uvFaces[faceIdx * 4];
+            const auto& vertexIndices = data.faces[faceIdx].vertexIndices;
+            const auto& uvIndices = data.faces[faceIdx].uvIndices;
             for (int i = 0; i < 4; ++i) {
-                const int vIdx = faceV[i] + 1;
-                const int uvIdx = faceUV[i] + 1;
+                const int vIdx = vertexIndices[i] + 1;
+                const int uvIdx = uvIndices[i] + 1;
                 faceLength += calculateIntLength(vIdx) + calculateIntLength(uvIdx) + 2; // 对应 '/' 和空格
             }
             localSize += faceLength;
@@ -243,13 +243,13 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
     for (size_t matIndex = 0; matIndex < materialGroups.size(); ++matIndex) {
         const auto& faces = materialGroups[matIndex];
         if (faces.empty()) continue;
-        ptr += sprintf_s(ptr, buffer.size() - (ptr - buffer.data()), "usemtl %s\n", data.materialNames[matIndex].c_str());
+        ptr += sprintf_s(ptr, buffer.size() - (ptr - buffer.data()), "usemtl %s\n", data.materials[matIndex].name.c_str());
         for (const size_t faceIdx : faces) {
             memcpy(ptr, "f ", 2);
             ptr += 2;
             for (int i = 0; i < 4; ++i) {
-                const int vIdx = data.faces[faceIdx * 4 + i] + 1;
-                const int uvIdx = data.uvFaces[faceIdx * 4 + i] + 1;
+                const int vIdx = data.faces[faceIdx].vertexIndices[i] + 1;
+                const int uvIdx = data.faces[faceIdx].uvIndices[i] + 1;
                 if (vIdx <= 0 || uvIdx <= 0) {
                     throw std::invalid_argument("Invalid vertex or UV index");
                 }
@@ -349,10 +349,10 @@ void createObjFile(const ModelData& data, const std::string& objName, const std:
     oss << "\n";
 
     // 按材质分组面（优化分组算法）
-    std::vector<std::vector<size_t>> materialGroups(data.materialNames.size());
-    const size_t totalFaces = data.faces.size() / 4;
+    std::vector<std::vector<size_t>> materialGroups(data.materials.size());
+    const size_t totalFaces = data.faces.size();
     for (size_t faceIdx = 0; faceIdx < totalFaces; ++faceIdx) {
-        const int matIndex = data.materialIndices[faceIdx];
+        const int matIndex = data.faces[faceIdx].materialIndex;
         if (matIndex != -1 && matIndex < materialGroups.size()) {
             materialGroups[matIndex].push_back(faceIdx);
         }
@@ -364,13 +364,12 @@ void createObjFile(const ModelData& data, const std::string& objName, const std:
         const auto& faces = materialGroups[matIndex];
         if (faces.empty()) continue;
 
-        oss << "usemtl " << data.materialNames[matIndex] << "\n";
+        oss << "usemtl " << data.materials[matIndex].name << "\n";
         for (const size_t faceIdx : faces) {
-            size_t base = faceIdx * 4;
             oss << "f ";
             for (int i = 0; i < 4; ++i) {
-                const int vIdx = data.faces[base + i] + 1;
-                const int uvIdx = data.uvFaces[base + i] + 1;
+                const int vIdx = data.faces[faceIdx].vertexIndices[i] + 1;
+                const int uvIdx = data.faces[faceIdx].uvIndices[i] + 1;
                 oss << vIdx << "/" << uvIdx << " ";
             }
             oss << "\n";
@@ -416,7 +415,7 @@ void createSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMate
                 std::string colorStr;
                 size_t pos = texturePath.find("-");
                 if (pos != std::string::npos) {
-                    // 流体材质格式，提取“-”前面的颜色部分
+                    // 流体材质格式，提取"-"前面的颜色部分
                     colorStr = texturePath.substr(std::string("color#").size() , pos - std::string("color#").size());
                 }
                 else if (texturePath.find("color#") == 0) {
@@ -479,9 +478,9 @@ void createMtlFile(const ModelData& data, const std::string& mtlFileName) {
 
     std::ofstream mtlFile(fullMtlPath);
     if (mtlFile.is_open()) {
-        for (size_t i = 0; i < data.materialNames.size(); ++i) {
-            const std::string& textureName = data.materialNames[i];
-            std::string texturePath = data.texturePaths[i];
+        for (size_t i = 0; i < data.materials.size(); ++i) {
+            const std::string& textureName = data.materials[i].name;
+            std::string texturePath = data.materials[i].texturePath;
 
             mtlFile << "newmtl " << textureName << "\n";
 
@@ -501,7 +500,7 @@ void createMtlFile(const ModelData& data, const std::string& mtlFileName) {
                 std::string colorStr;
                 size_t pos = texturePath.find("");
                 if (pos != std::string::npos) {
-                    // 流体材质格式，提取“-”前面的颜色部分
+                    // 流体材质格式，提取"-"前面的颜色部分
                     colorStr = texturePath.substr(pos + std::string("color#").size() , pos - std::string("color#").size());
                 }
                 else if (texturePath.find("color#") == 0) {
@@ -601,8 +600,8 @@ void CreateMultiModelFiles(const ModelData& data, const std::string& filename,
     }
 
     // 收集材质信息
-    for (size_t i = 0; i < data.materialNames.size(); ++i) {
-        uniqueMaterialsL[data.materialNames[i]] = data.texturePaths[i];
+    for (size_t i = 0; i < data.materials.size(); ++i) {
+        uniqueMaterialsL[data.materials[i].name] = data.materials[i].texturePath;
     }
 
     auto end = high_resolution_clock::now();
