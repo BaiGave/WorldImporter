@@ -140,6 +140,24 @@ void ModelDeduplicator::DeduplicateFaces(ModelData& data) {
 // Greedy mesh 算法：合并相邻同材质、相同方向的面以减少面数
 void ModelDeduplicator::GreedyMesh(ModelData& data) {
     if (data.faces.empty()) return;
+    
+    // 查找标准UV坐标的索引 (0,0), (1,0), (1,1), (0,1)
+    int uvIndex00 = -1, uvIndex10 = -1, uvIndex11 = -1, uvIndex01 = -1;
+    for (size_t i = 0; i < data.uvCoordinates.size() / 2; ++i) {
+        float u = data.uvCoordinates[i*2];
+        float v = data.uvCoordinates[i*2+1];
+        
+        if (u == 0.0f && v == 0.0f) uvIndex00 = i;
+        else if (u == 1.0f && v == 0.0f) uvIndex10 = i;
+        else if (u == 1.0f && v == 1.0f) uvIndex11 = i;
+        else if (u == 0.0f && v == 1.0f) uvIndex01 = i;
+    }
+    
+    // 如果找不到标准UV坐标，就提前返回，不进行贪心合并
+    if (uvIndex00 == -1 || uvIndex10 == -1 || uvIndex11 == -1 || uvIndex01 == -1) {
+        return; // 直接结束，不进行合并
+    }
+    
     // 区域临时结构
     struct Region {
         FaceType dir;
@@ -152,7 +170,42 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     // 提取所有区域
     std::vector<Region> regions;
     regions.reserve(data.faces.size());
+    
+    // 保存特殊面（DO_NOT_CULL 和 UNKNOWN）
+    std::vector<Face> specialFaces;
+    
     for (const auto& face : data.faces) {
+        // 特殊面保存起来，不参与贪心合并
+        if (face.faceDirection == DO_NOT_CULL || face.faceDirection == UNKNOWN) {
+            specialFaces.push_back(face);
+            continue;
+        }
+        
+        // 直接通过UV索引判断是否是标准映射
+        bool isStandardMapping = false;
+        
+        // 所有标准UV索引都找到了
+        if (uvIndex00 != -1 && uvIndex10 != -1 && uvIndex11 != -1 && uvIndex01 != -1) {
+            // 检查四个UV索引是否包含标准点的索引（不考虑顺序）
+            bool has00 = false, has10 = false, has11 = false, has01 = false;
+            
+            for (int i = 0; i < 4; ++i) {
+                int idx = face.uvIndices[i];
+                if (idx == uvIndex00) has00 = true;
+                else if (idx == uvIndex10) has10 = true;
+                else if (idx == uvIndex11) has11 = true;
+                else if (idx == uvIndex01) has01 = true;
+            }
+            
+            // 必须包含所有四个标准UV点
+            isStandardMapping = has00 && has10 && has11 && has01;
+        }
+        
+        if (!isStandardMapping) {
+            specialFaces.push_back(face);
+            continue;
+        }
+        std::array<std::array<float, 2>, 4> uvs;
         std::array<std::array<float,3>,4> vs;
         for (int i = 0; i < 4; ++i) {
             int vidx = face.vertexIndices[i];
@@ -160,7 +213,6 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             vs[i][1] = data.vertices[vidx*3+1];
             vs[i][2] = data.vertices[vidx*3+2];
         }
-        std::array<std::array<float,2>,4> uvs;
         for (int i = 0; i < 4; ++i) {
             int uvidx = face.uvIndices[i];
             uvs[i][0] = data.uvCoordinates[uvidx*2];
@@ -209,15 +261,15 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         if (regs.empty()) continue;
         // 计算 a、b 轴范围
         int minA = INT_MAX, minB = INT_MAX, maxA = INT_MIN, maxB = INT_MIN;
-        float du = regs[0].u1 - regs[0].u0;
-        float dv = regs[0].v1 - regs[0].v0;
+        float du = 1.0f;
+        float dv = 1.0f;
         for (auto& r : regs) {
             int a0i = int(r.a0), a1i = int(r.a1);
             int b0i = int(r.b0), b1i = int(r.b1);
-            minA = std::min(minA, a0i);
-            minB = std::min(minB, b0i);
-            maxA = std::max(maxA, a1i);
-            maxB = std::max(maxB, b1i);
+            minA = std::fmin(minA, a0i);
+            minB = std::fmin(minB, b0i);
+            maxA = std::fmax(maxA, a1i);
+            maxB = std::fmax(maxB, b1i);
         }
         int width = maxA - minA;
         int height = maxB - minB;
@@ -233,36 +285,47 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
                     mask[b0i + y][a0i + x] = true;
         }
         std::vector<std::vector<bool>> used(height, std::vector<bool>(width, false));
-        // 扫描出最大矩形
+        // 在每个未使用的格子上寻找最大矩形以尽可能合并
         for (int by = 0; by < height; ++by) {
             for (int ax = 0; ax < width; ++ax) {
                 if (!mask[by][ax] || used[by][ax]) continue;
-                // 横向扩展宽度
-                int w = 1;
-                while (ax + w < width && mask[by][ax + w] && !used[by][ax + w]) ++w;
-                // 纵向扩展高度
-                int h = 1;
-                bool ok = true;
-                while (by + h < height && ok) {
-                    for (int xx = 0; xx < w; ++xx) {
-                        if (!mask[by + h][ax + xx] || used[by + h][ax + xx]) { ok = false; break; }
+                int maxWidth = width - ax;
+                int bestArea = 0, bestW = 0, bestH = 0;
+                int minWidth = maxWidth;
+                // 向下扩展行，动态维护最小宽度以计算最大面积
+                for (int h = 1; by + h <= height; ++h) {
+                    // 当前行可用宽度
+                    int rowWidth = 0;
+                    while (rowWidth < minWidth && ax + rowWidth < width
+                           && mask[by + h - 1][ax + rowWidth]
+                           && !used[by + h - 1][ax + rowWidth]) {
+                        ++rowWidth;
                     }
-                    if (ok) ++h;
+                    minWidth = std::fmin(minWidth, rowWidth);
+                    if (minWidth == 0) break;
+                    int area = minWidth * h;
+                    if (area > bestArea) {
+                        bestArea = area;
+                        bestW = minWidth;
+                        bestH = h;
+                    }
                 }
-                // 标记已使用
-                for (int y = 0; y < h; ++y)
-                    for (int x = 0; x < w; ++x)
-                        used[by + y][ax + x] = true;
+                // 标记已使用区域
+                for (int dy = 0; dy < bestH; ++dy) {
+                    for (int dx = 0; dx < bestW; ++dx) {
+                        used[by + dy][ax + dx] = true;
+                    }
+                }
                 // 生成合并区域
                 Region nr = regs[0];
                 nr.a0 = float(minA + ax);
-                nr.a1 = nr.a0 + w;
+                nr.a1 = nr.a0 + bestW;
                 nr.b0 = float(minB + by);
-                nr.b1 = nr.b0 + h;
-                nr.u0 = regs[0].u0 + du * ax;
-                nr.u1 = nr.u0 + du * w;
-                nr.v0 = regs[0].v0 + dv * by;
-                nr.v1 = nr.v0 + dv * h;
+                nr.b1 = nr.b0 + bestH;
+                nr.u0 = 0.0f;
+                nr.u1 = du * bestW;
+                nr.v0 = 0.0f;
+                nr.v1 = dv * bestH;
                 merged.push_back(nr);
             }
         }
@@ -270,6 +333,10 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     // 构建新网格
     ModelData newData;
     newData.materials = data.materials;
+    // 用于顶点共享的哈希表
+    std::unordered_map<VertexKey, int> vertexMap;
+    std::unordered_map<UVKey, int> uvMap;
+
     for (auto& r : merged) {
         int daxis, aaxis, baxis;
         switch (r.dir) {
@@ -293,49 +360,110 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         setPt(2, r.a1, r.b1);
         setPt(3, r.a0, r.b1);
         // 计算合并区域的 UV 重复范围，避免贴图拉伸
-        float du = r.u1 - r.u0;
-        float dv = r.v1 - r.v0;
-        float aw = r.a1 - r.a0; // 区域宽度（世界单位）
-        float bh = r.b1 - r.b0; // 区域高度（世界单位）
+        int aw = static_cast<int>(r.a1 - r.a0);
+        int bh = static_cast<int>(r.b1 - r.b0);
         std::array<std::array<float,2>,4> uvRect = {{
-            {r.u0,                  r.v0},
-            {r.u0 + du * aw,        r.v0},
-            {r.u0 + du * aw,        r.v0 + dv * bh},
-            {r.u0,                  r.v0 + dv * bh}
+            {0.0f,      0.0f},      // 左下
+            {aw * 1.0f, 0.0f},      // 右下
+            {aw * 1.0f, bh * 1.0f}, // 右上
+            {0.0f,      bh * 1.0f}  // 左上
         }};
-        int baseV = newData.vertices.size() / 3;
-        int baseUV = newData.uvCoordinates.size() / 2;
         Face nf; nf.materialIndex = r.material; nf.faceDirection = r.dir;
         for (int i = 0; i < 4; ++i) {
-            newData.vertices.push_back(pts[i][0]);
-            newData.vertices.push_back(pts[i][1]);
-            newData.vertices.push_back(pts[i][2]);
-            nf.vertexIndices[i] = baseV + i;
-            newData.uvCoordinates.push_back(uvRect[i][0]);
-            newData.uvCoordinates.push_back(uvRect[i][1]);
-            nf.uvIndices[i] = baseUV + i;
+            // 检查顶点是否已存在
+            float x = pts[i][0], y = pts[i][1], z = pts[i][2];
+            // 保留四位小数
+            int rx = static_cast<int>(x * 10000 + 0.5f);
+            int ry = static_cast<int>(y * 10000 + 0.5f);
+            int rz = static_cast<int>(z * 10000 + 0.5f);
+            VertexKey vkey{ rx, ry, rz };
+
+            int vertexIndex;
+            auto vit = vertexMap.find(vkey);
+            if (vit != vertexMap.end()) {
+                vertexIndex = vit->second;
+            } else {
+                vertexIndex = newData.vertices.size() / 3;
+                vertexMap[vkey] = vertexIndex;
+                newData.vertices.push_back(x);
+                newData.vertices.push_back(y);
+                newData.vertices.push_back(z);
+            }
+            nf.vertexIndices[i] = vertexIndex;
+
+            // 检查UV是否已存在
+            float u = uvRect[i][0], v = uvRect[i][1];
+            // 保留六位小数
+            int ru = static_cast<int>(u * 1000000 + 0.5f);
+            int rv = static_cast<int>(v * 1000000 + 0.5f);
+            UVKey uvkey{ ru, rv };
+
+            int uvIndex;
+            auto uvit = uvMap.find(uvkey);
+            if (uvit != uvMap.end()) {
+                uvIndex = uvit->second;
+            } else {
+                uvIndex = newData.uvCoordinates.size() / 2;
+                uvMap[uvkey] = uvIndex;
+                newData.uvCoordinates.push_back(u);
+                newData.uvCoordinates.push_back(v);
+            }
+            nf.uvIndices[i] = uvIndex;
         }
         newData.faces.push_back(nf);
     }
     // 保留 DO_NOT_CULL 和 UNKNOWN 方位的面，避免丢失无法合并的植物面
-    for (const auto& face : data.faces) {
-        if (face.faceDirection == DO_NOT_CULL || face.faceDirection == UNKNOWN) {
-            Face nf = face;
-            int baseV = newData.vertices.size() / 3;
-            int baseUV = newData.uvCoordinates.size() / 2;
-            for (int i = 0; i < 4; ++i) {
-                int vidx = face.vertexIndices[i];
-                newData.vertices.push_back(data.vertices[vidx*3]);
-                newData.vertices.push_back(data.vertices[vidx*3+1]);
-                newData.vertices.push_back(data.vertices[vidx*3+2]);
-                nf.vertexIndices[i] = baseV + i;
-                int uvidx = face.uvIndices[i];
-                newData.uvCoordinates.push_back(data.uvCoordinates[uvidx*2]);
-                newData.uvCoordinates.push_back(data.uvCoordinates[uvidx*2+1]);
-                nf.uvIndices[i] = baseUV + i;
+    for (const auto& face : specialFaces) {
+        Face nf = face;
+        for (int i = 0; i < 4; ++i) {
+            int vidx = face.vertexIndices[i];
+            float x = data.vertices[vidx*3];
+            float y = data.vertices[vidx*3+1];
+            float z = data.vertices[vidx*3+2];
+            // 保留四位小数
+            int rx = static_cast<int>(x * 10000 + 0.5f);
+            int ry = static_cast<int>(y * 10000 + 0.5f);
+            int rz = static_cast<int>(z * 10000 + 0.5f);
+            VertexKey vkey{ rx, ry, rz };
+            
+            int vertexIndex;
+            auto vit = vertexMap.find(vkey);
+            if (vit != vertexMap.end()) {
+                vertexIndex = vit->second;
+            } else {
+                vertexIndex = newData.vertices.size() / 3;
+                vertexMap[vkey] = vertexIndex;
+                newData.vertices.push_back(x);
+                newData.vertices.push_back(y);
+                newData.vertices.push_back(z);
             }
-            newData.faces.push_back(nf);
+            nf.vertexIndices[i] = vertexIndex;
+            
+            int uvidx = face.uvIndices[i];
+            float u = data.uvCoordinates[uvidx*2];
+            float v = data.uvCoordinates[uvidx*2+1];
+            
+            // 对于特殊方向面保持原始UV映射
+            // 注意：这里不限制UV在0-1范围内，允许贴图重复
+            
+            // 保留六位小数
+            int ru = static_cast<int>(u * 1000000 + 0.5f);
+            int rv = static_cast<int>(v * 1000000 + 0.5f);
+            UVKey uvkey{ ru, rv };
+            
+            int uvIndex;
+            auto uvit = uvMap.find(uvkey);
+            if (uvit != uvMap.end()) {
+                uvIndex = uvit->second;
+            } else {
+                uvIndex = newData.uvCoordinates.size() / 2;
+                uvMap[uvkey] = uvIndex;
+                newData.uvCoordinates.push_back(u);
+                newData.uvCoordinates.push_back(v);
+            }
+            nf.uvIndices[i] = uvIndex;
         }
+        newData.faces.push_back(nf);
     }
     // 替换原数据
     data.vertices = std::move(newData.vertices);

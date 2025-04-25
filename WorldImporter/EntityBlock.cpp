@@ -49,6 +49,11 @@ ModelData YuushyaShowBlockEntity::GenerateModel() const {
         if (colonPos != std::string::npos) blockName = blockName.substr(colonPos + 1);
         ModelData blockModel = GetRandomModelFromCache(ns, blockName);
 
+        // 将所有面设置为DO_NOT_CULL，确保不会被贪心合并算法错误剔除
+        for (auto& face : blockModel.faces) {
+            face.faceDirection = DO_NOT_CULL;
+        }
+
         // 应用变换顺序：缩放 -> 旋转 -> 平移
         ApplyRotationToVertices(std::span<float>(blockModel.vertices.data(), blockModel.vertices.size()), rx, ry, rz);
 
