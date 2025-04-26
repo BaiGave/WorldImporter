@@ -240,7 +240,6 @@ void RegionModelExporter::LoadChunks(int chunkXStart, int chunkXEnd, int chunkZS
 
 ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int chunkZ) {
     ModelData chunkModel;
-    // Optimize: static map for neighbor direction to index
     static const std::unordered_map<FaceType, int> neighborIndexMap = {
         {FaceType::DOWN, 1}, {FaceType::UP, 0}, {FaceType::NORTH, 4}, 
         {FaceType::SOUTH, 5}, {FaceType::WEST, 2}, {FaceType::EAST, 3}

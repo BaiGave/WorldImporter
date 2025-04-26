@@ -35,7 +35,8 @@ template<typename T>
 concept Numeric = std::is_arithmetic_v<T>;
 
 // 使用SFINAE的函数模板示例
-template<typename T, typename = IsNumeric<T>>
+template<typename T>
+    requires Numeric<T>
 T add(T a, T b) {
     return a + b;
 }

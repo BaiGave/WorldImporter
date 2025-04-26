@@ -166,6 +166,10 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         int aaxis, baxis;
         float a0, a1, b0, b1;
         float u0, v0, u1, v1;
+        // 添加UV旋转信息
+        int uvRotation;
+        std::array<int, 4> originalUVIndices; // 存储原始UV索引顺序
+        bool flipX, flipY; // 增加UV翻转标记
     };
     // 提取所有区域
     std::vector<Region> regions;
@@ -205,6 +209,65 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             specialFaces.push_back(face);
             continue;
         }
+        
+        // 分析UV映射顺序，确定旋转角度
+        int uvRotation = 0;
+        bool flipX = false, flipY = false;
+        
+        // 提取UV点的位置坐标
+        std::array<std::pair<float, float>, 4> uvPoints;
+        for (int i = 0; i < 4; ++i) {
+            int uvidx = face.uvIndices[i];
+            float u = data.uvCoordinates[uvidx * 2];
+            float v = data.uvCoordinates[uvidx * 2 + 1];
+            uvPoints[i] = {u, v};
+        }
+        
+        // 分析UV排列确定旋转
+        // 这里使用一个更可靠的方法来检测UV旋转
+        // 通过检查(0,0)点在UV序列中的位置以及相邻点的顺序
+        int pos00 = -1;
+        for (int i = 0; i < 4; ++i) {
+            if (face.uvIndices[i] == uvIndex00) {
+                pos00 = i;
+                break;
+            }
+        }
+        
+        if (pos00 != -1) {
+            // 检查(0,0)点后面的点是什么
+            int next = (pos00 + 1) % 4;
+            int uvidx = face.uvIndices[next];
+            
+            if (uvidx == uvIndex10) {
+                uvRotation = 0; // 标准顺序
+            } else if (uvidx == uvIndex01) {
+                uvRotation = 90; // 逆时针旋转90度
+            } else if (uvidx == uvIndex11) {
+                uvRotation = 180; // 旋转180度
+            } else {
+                // 可能是翻转的情况，暂定旋转270度
+                uvRotation = 270;
+            }
+            
+            // 检测UV是否翻转
+            // 简单的启发式方法，可能需要根据具体情况调整
+            int expectedNext = -1;
+            if (uvRotation == 0) expectedNext = uvIndex10;
+            else if (uvRotation == 90) expectedNext = uvIndex01;
+            else if (uvRotation == 180) expectedNext = uvIndex11;
+            else if (uvRotation == 270) expectedNext = uvIndex10;
+            
+            if (uvidx != expectedNext) {
+                // 可能存在翻转
+                if ((uvRotation == 0 || uvRotation == 180) && face.uvIndices[next] == uvIndex01) {
+                    flipX = true;
+                } else if ((uvRotation == 90 || uvRotation == 270) && face.uvIndices[next] == uvIndex10) {
+                    flipY = true;
+                }
+            }
+        }
+        
         std::array<std::array<float, 2>, 4> uvs;
         std::array<std::array<float,3>,4> vs;
         for (int i = 0; i < 4; ++i) {
@@ -245,8 +308,16 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             v0 = std::fmin(v0, uvs[i][1]);
             v1 = std::fmax(v1, uvs[i][1]);
         }
-        regions.push_back({face.faceDirection, face.materialIndex, plane,
-                           aaxis, baxis, a0, a1, b0, b1, u0, v0, u1, v1});
+        
+        // 添加新属性
+        Region reg = {
+            face.faceDirection, face.materialIndex, plane,
+            aaxis, baxis, a0, a1, b0, b1, u0, v0, u1, v1,
+            uvRotation, // 添加UV旋转信息
+            {face.uvIndices[0], face.uvIndices[1], face.uvIndices[2], face.uvIndices[3]}, // 保存原始UV索引顺序
+            flipX, flipY // 保存UV翻转标记
+        };
+        regions.push_back(reg);
     }
     // 分组
     std::map<std::tuple<FaceType, int, float>, std::vector<Region>> groups;
@@ -316,8 +387,44 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
                         used[by + dy][ax + dx] = true;
                     }
                 }
+                
+                // 查找此区域包含的原始区域，确定合并区域的UV旋转
+                int regionA0 = minA + ax;
+                int regionA1 = regionA0 + bestW;
+                int regionB0 = minB + by;
+                int regionB1 = regionB0 + bestH;
+                
+                // 查找重叠率最高的原始区域，使用其UV旋转信息
+                Region* bestMatchRegion = nullptr;
+                float bestOverlap = 0.0f;
+                
+                for (auto& r : regs) {
+                    int a0i = int(r.a0);
+                    int a1i = int(r.a1);
+                    int b0i = int(r.b0);
+                    int b1i = int(r.b1);
+                    
+                    // 计算重叠区域
+                    int overlapA0 = std::fmax(regionA0, a0i);
+                    int overlapA1 = std::fmin(regionA1, a1i);
+                    int overlapB0 = std::fmax(regionB0, b0i);
+                    int overlapB1 = std::fmin(regionB1, b1i);
+                    
+                    if (overlapA0 < overlapA1 && overlapB0 < overlapB1) {
+                        // 有重叠，计算重叠面积
+                        float overlapArea = (overlapA1 - overlapA0) * (overlapB1 - overlapB0);
+                        float regionArea = (a1i - a0i) * (b1i - b0i);
+                        float overlapRatio = overlapArea / regionArea;
+                        
+                        if (overlapRatio > bestOverlap) {
+                            bestOverlap = overlapRatio;
+                            bestMatchRegion = &r;
+                        }
+                    }
+                }
+                
                 // 生成合并区域
-                Region nr = regs[0];
+                Region nr = regs[0]; // 基础属性复制
                 nr.a0 = float(minA + ax);
                 nr.a1 = nr.a0 + bestW;
                 nr.b0 = float(minB + by);
@@ -326,6 +433,16 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
                 nr.u1 = du * bestW;
                 nr.v0 = 0.0f;
                 nr.v1 = dv * bestH;
+                
+                // 如果找到最佳匹配区域，使用其UV旋转信息
+                if (bestMatchRegion) {
+                    nr.uvRotation = bestMatchRegion->uvRotation;
+                    nr.flipX = bestMatchRegion->flipX;
+                    nr.flipY = bestMatchRegion->flipY;
+                    // 复制原始UV索引顺序，用于后续重建UV映射
+                    nr.originalUVIndices = bestMatchRegion->originalUVIndices;
+                }
+                
                 merged.push_back(nr);
             }
         }
@@ -362,12 +479,38 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         // 计算合并区域的 UV 重复范围，避免贴图拉伸
         int aw = static_cast<int>(r.a1 - r.a0);
         int bh = static_cast<int>(r.b1 - r.b0);
-        std::array<std::array<float,2>,4> uvRect = {{
+        
+        // 基础UV映射矩形（左下、右下、右上、左上）
+        std::array<std::array<float,2>,4> baseUvRect = {{
             {0.0f,      0.0f},      // 左下
             {aw * 1.0f, 0.0f},      // 右下
             {aw * 1.0f, bh * 1.0f}, // 右上
             {0.0f,      bh * 1.0f}  // 左上
         }};
+        
+        // 应用UV旋转和翻转
+        std::array<std::array<float,2>,4> uvRect = baseUvRect;
+        
+        // 应用旋转
+        if (r.uvRotation != 0) {
+            int steps = r.uvRotation / 90;
+            std::array<std::array<float,2>,4> rotatedUV = baseUvRect;
+            for (int i = 0; i < 4; i++) {
+                rotatedUV[i] = baseUvRect[(i + steps) % 4];
+            }
+            uvRect = rotatedUV;
+        }
+        
+        // 应用翻转
+        if (r.flipX) {
+            std::swap(uvRect[0], uvRect[1]);
+            std::swap(uvRect[3], uvRect[2]);
+        }
+        if (r.flipY) {
+            std::swap(uvRect[0], uvRect[3]);
+            std::swap(uvRect[1], uvRect[2]);
+        }
+        
         Face nf; nf.materialIndex = r.material; nf.faceDirection = r.dir;
         for (int i = 0; i < 4; ++i) {
             // 检查顶点是否已存在
