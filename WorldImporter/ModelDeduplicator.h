@@ -18,8 +18,9 @@ public:
     // 面去重方法
     static void DeduplicateFaces(ModelData& data);
 
-    // Greedy mesh 算法，合并相邻同材质、同方向的面
+    //贪心网格算法
     static void GreedyMesh(ModelData& data);
+
 };
 
 #endif // MODEL_DEDUPLICATOR_H

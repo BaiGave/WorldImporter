@@ -216,3 +216,52 @@ void PrintTextureCache(const std::unordered_map<std::string, std::vector<unsigne
 
     std::cout << "Total Cached Textures: " << textureCache.size() << std::endl;
 }
+
+// 解析.mcmeta文件并确定材质类型
+bool ParseMcmetaFile(const std::string& cacheKey, MaterialType& outType) {
+    // 默认为普通材质
+    outType = NORMAL;
+    
+    auto mcmetaIt = GlobalCache::mcmetaCache.find(cacheKey);
+    if (mcmetaIt == GlobalCache::mcmetaCache.end() || mcmetaIt->second.empty()) {
+        // 没有找到.mcmeta数据，视为普通材质
+        return false;
+    }
+    
+    const nlohmann::json& mcmetaData = mcmetaIt->second;
+    
+    // 检查是否为动态材质
+    if (mcmetaData.contains("animation")) {
+        outType = ANIMATED;
+        return true;
+    }
+    
+    // 检查是否为CTM材质
+    if (mcmetaData.contains("ctm")) {
+        outType = CTM;
+        return true;
+    }
+    
+    // 其他类型的.mcmeta文件，保持为普通材质
+    return true;
+}
+
+// 检测材质类型
+MaterialType DetectMaterialType(const std::string& namespaceName, const std::string& texturePath) {
+    MaterialType type = NORMAL;
+    
+    std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
+    
+    // 按照JAR文件的加载顺序逐个查找
+    for (size_t i = 0; i < GlobalCache::jarOrder.size(); ++i) {
+        const std::string& modId = GlobalCache::jarOrder[i];
+        std::string cacheKey = modId + ":" + namespaceName + ":" + texturePath;
+        
+        // 检查.mcmeta文件是否存在
+        if (ParseMcmetaFile(cacheKey, type)) {
+            break;
+        }
+    }
+    
+    return type;
+}

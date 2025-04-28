@@ -664,6 +664,10 @@ void processTextures(const nlohmann::json& modelJson, ModelData& data,
                 newMaterial.name = fullMaterialName;
                 newMaterial.texturePath = textureSavePath;
                 newMaterial.tintIndex = -1;  // 默认值
+                
+                // 检测材质类型（是否为动态材质或CTM）
+                newMaterial.type = DetectMaterialType(namespaceName, pathPart);
+                
                 int materialIndex = data.materials.size();
                 data.materials.push_back(newMaterial);
                 processedMaterials[fullMaterialName] = materialIndex;
@@ -727,9 +731,11 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                     if (y1 <= 0.01f) {
                         // 靠近底部，只保留底面
                         elementVertices["down"] = { {x2, y1, z2}, {x1, y1, z2}, {x1, y1, z1}, {x2, y1, z1} };
+                        
                     } else {
                         // 否则保留顶面
                         elementVertices["up"] = { {x2, y2, z2}, {x2, y2, z1} ,{x1, y2, z1}, {x1, y2, z2} };
+                       
                     }
                 } else if (isThinZ) {
                     // Z方向极薄，只保留南面或北面

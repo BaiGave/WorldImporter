@@ -50,6 +50,7 @@ struct Config {
     int LOD2renderDistance;//LOD1 x2渲染距离
     int LOD3renderDistance;//LOD1 x4渲染距离
     bool useUnderwaterLOD; //水下LOD模型生成
+    bool useGreedyMesh; //是否使用GreedyMesh算法合并面
 
     bool exportFullModel;  // 是否完整导入
     int partitionSize; //分割大小
@@ -88,6 +89,7 @@ struct Config {
         LOD2renderDistance(6),
         LOD3renderDistance(6),
         useUnderwaterLOD(true),
+        useGreedyMesh(false),
 
         exportFullModel(false),
         partitionSize(4),

@@ -49,9 +49,10 @@ void RegionModelExporter::ExportModels(const string& outputName) {
         ModelDeduplicator::DeduplicateVertices(model);
         ModelDeduplicator::DeduplicateUV(model);
         ModelDeduplicator::DeduplicateFaces(model);
-        ModelDeduplicator::GreedyMesh(model);
-        
-        };
+        if(config.useGreedyMesh) {
+            ModelDeduplicator::GreedyMesh(model);
+        }
+    };
 
     if (config.useChunkPrecision) {
         config.minX = alignTo16(xStart); config.maxX = alignTo16(xEnd);
@@ -236,7 +237,6 @@ void RegionModelExporter::LoadChunks(int chunkXStart, int chunkXEnd, int chunkZS
         }
     }
 }
-
 
 ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int chunkZ) {
     ModelData chunkModel;

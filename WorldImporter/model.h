@@ -29,11 +29,21 @@ enum  FaceType{
     UP, DOWN, NORTH, SOUTH, WEST, EAST, DO_NOT_CULL, UNKNOWN
 };
 
+
+
 //---------------- 材质信息定义 ----------------
 struct Material {
     std::string name;       // 材质名称
     std::string texturePath;// 纹理路径
-    int8_t  tintIndex;        // tint 索引
+    int8_t  tintIndex;      // tint 索引
+    MaterialType type;      // 材质类型
+    
+    // 构造函数，默认为普通材质
+    Material() : name(""), texturePath(""), tintIndex(-1), type(NORMAL) {}
+    Material(const std::string& name, const std::string& path, int8_t tint) 
+        : name(name), texturePath(path), tintIndex(tint), type(NORMAL) {}
+    Material(const std::string& name, const std::string& path, int8_t tint, MaterialType materialType)
+        : name(name), texturePath(path), tintIndex(tint), type(materialType) {}
 };
 
 //---------------- 数据类型定义 ----------------

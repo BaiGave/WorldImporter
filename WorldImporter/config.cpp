@@ -49,6 +49,7 @@ Config LoadConfig(const std::string& configFile) {
     config.LOD2renderDistance = j["LOD2renderDistance"];
     config.LOD3renderDistance = j["LOD3renderDistance"];
     config.useUnderwaterLOD = j["useUnderwaterLOD"];
+    config.useGreedyMesh = j["useGreedyMesh"];
 
     config.exportFullModel = j["exportFullModel"];
     config.partitionSize = j["partitionSize"];

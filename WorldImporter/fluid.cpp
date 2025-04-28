@@ -377,12 +377,14 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
     stillMaterial.name = "water_still";
     stillMaterial.texturePath = "textures/minecraft/block/water_still.png";
     stillMaterial.tintIndex = 2; // 水的色调索引
+    stillMaterial.type = DetectMaterialType("minecraft", "block/water_still");
 
     // 流动水材质（flow）- 用于侧面
     Material flowMaterial;
     flowMaterial.name = "water_flow"; 
     flowMaterial.texturePath = "textures/minecraft/block/water_flow.png";
     flowMaterial.tintIndex = 2; // 水的色调索引
+    flowMaterial.type = DetectMaterialType("minecraft", "block/water_flow");
 
     model.materials = { stillMaterial, flowMaterial };
 
@@ -472,12 +474,14 @@ void AssignFluidMaterials(ModelData& model, const std::string& fluidId) {
     stillFluid.name = fluidInfo.folder + "/" + fluidName + fluidInfo.still_texture;
     stillFluid.texturePath = "textures/" + ns + "/" + fluidInfo.folder + "/" + pureName + fluidInfo.still_texture + ".png";
     stillFluid.tintIndex = (fluidName.find("water") != std::string::npos) ? 2 : -1;
+    stillFluid.type = DetectMaterialType(ns, fluidInfo.folder + "/" + pureName + fluidInfo.still_texture);
     
     // 创建流动流体材质
     Material flowFluid;
     flowFluid.name = fluidInfo.folder + "/" + fluidName + fluidInfo.flow_texture;
     flowFluid.texturePath = "textures/" + ns + "/" + fluidInfo.folder + "/" + pureName + fluidInfo.flow_texture + ".png";
     flowFluid.tintIndex = (fluidName.find("water") != std::string::npos) ? 2 : -1;
+    flowFluid.type = DetectMaterialType(ns, fluidInfo.folder + "/" + pureName + fluidInfo.flow_texture);
     
     model.materials = { stillFluid, flowFluid };
 }
