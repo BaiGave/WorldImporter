@@ -400,3 +400,81 @@ std::wstring GetFolderNameFromPath(const std::wstring& folderPath) {
     return folderPath;
 }
 
+void DeleteFiles(const std::wstring& path, const std::wstring& pattern) {
+    WIN32_FIND_DATA findFileData;
+    HANDLE hFind = FindFirstFile((path + L"\\" + pattern).c_str(), &findFileData);
+    if (hFind != INVALID_HANDLE_VALUE) {
+        std::vector<std::wstring> filesToDelete;
+
+        do {
+            if (wcscmp(findFileData.cFileName, L".") != 0 && wcscmp(findFileData.cFileName, L"..") != 0) {
+                filesToDelete.push_back(path + L"\\" + findFileData.cFileName);
+            }
+        } while (FindNextFile(hFind, &findFileData) != 0);
+
+        FindClose(hFind);
+
+        // 使用C++20 ranges和视图
+        auto deleteView = filesToDelete
+            | std::views::filter([](const std::wstring& file) {
+            return GetFileAttributes(file.c_str()) != INVALID_FILE_ATTRIBUTES &&
+                !(GetFileAttributes(file.c_str()) & FILE_ATTRIBUTE_DIRECTORY);
+                });
+
+        for (const auto& file : deleteView) {
+            DeleteFile(file.c_str());
+        }
+    }
+}
+
+void DeleteDirectory(const std::wstring& path) {
+    WIN32_FIND_DATA findFileData;
+    HANDLE hFind = FindFirstFile((path + L"\\*").c_str(), &findFileData);
+    if (hFind != INVALID_HANDLE_VALUE) {
+        do {
+            if (wcscmp(findFileData.cFileName, L".") != 0 && wcscmp(findFileData.cFileName, L"..") != 0) {
+                std::wstring filePath = path + L"\\" + findFileData.cFileName;
+                if (findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                    DeleteDirectory(filePath); // 递归删除子目录
+                }
+                else {
+                    // 解除文件占用并删除文件
+                    if (!DeleteFile(filePath.c_str())) {
+                        // 如果删除失败，尝试解除占用
+                        MoveFileEx(filePath.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+                    }
+                }
+            }
+        } while (FindNextFile(hFind, &findFileData) != 0);
+        FindClose(hFind);
+    }
+    // 删除空目录
+    RemoveDirectory(path.c_str());
+}
+
+void DeleteTexturesFolder() {
+    // 获取当前可执行文件所在的目录
+    wchar_t cwd[MAX_PATH];
+    if (GetModuleFileName(NULL, cwd, MAX_PATH) == 0) {
+        return;
+    }
+
+    // 提取目录路径
+    std::wstring exePath(cwd);
+    size_t lastSlash = exePath.find_last_of(L"\\/");
+    std::wstring exeDir = exePath.substr(0, lastSlash);
+
+    // 构建textures文件夹的路径
+    std::wstring texturesPath = exeDir + L"\\textures";
+    std::wstring biomeTexPath = exeDir + L"\\biomeTex";
+
+    // 删除textures文件夹
+    if (GetFileAttributes(texturesPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        DeleteDirectory(texturesPath);
+    }
+
+    // 删除biomeTex文件夹
+    if (GetFileAttributes(biomeTexPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        DeleteDirectory(biomeTexPath);
+    }
+}

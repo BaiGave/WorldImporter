@@ -22,6 +22,12 @@ void LoadSolidBlocks(const std::string& filepath);
 
 void LoadFluidBlocks(const std::string& filepath);
 
+void DeleteFiles(const std::wstring& path, const std::wstring& pattern);
+
+void DeleteDirectory(const std::wstring& path);
+
+void DeleteTexturesFolder();
+
 void RegisterFluidTextures();
 // 将 wstring 转换为 UTF-8 编码的 string
 std::string wstring_to_string(const std::wstring& wstr);

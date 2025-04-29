@@ -18,8 +18,11 @@ public:
     // 预先生成所有方块的模型文件
     void PreprocessBlockModels(std::vector<Block> blockPalette);
 
-    // 导出点云到 .obj 文件
-    void ExportPointCloud(int xStart, int xEnd, int yStart, int yEnd, int zStart, int zEnd);
+    // 导出点云到 .obj 文件 - 实例方法，无参数版本
+    void ExportPointCloud();
+    
+    // 静态方法，直接导出点云 - 包含文件名参数
+    static void ExportPointCloudToFile(const std::string& objFileName = "output.obj", const std::string& jsonFileName = "block_id_mapping.json");
 
 private:
     std::ofstream objFile;  // 输出 .obj 文件流

@@ -86,7 +86,11 @@ void PointCloudExporter::PreprocessBlockModels(std::vector<Block> blockPalette) 
     }
 }
 
-void PointCloudExporter::ExportPointCloud(int xStart, int xEnd, int yStart, int yEnd, int zStart, int zEnd) {
+void PointCloudExporter::ExportPointCloud() {
+    // 初始化坐标范围
+    const int xStart = config.minX, xEnd = config.maxX;
+    const int yStart = config.minY, yEnd = config.maxY;
+    const int zStart = config.minZ, zEnd = config.maxZ;
     // 遍历所有方块位置
     for (int x = xStart; x <= xEnd; ++x) {
         for (int y = yStart; y <= yEnd; ++y) {
@@ -122,4 +126,13 @@ void PointCloudExporter::ExportPointCloud(int xStart, int xEnd, int yStart, int 
     // 关闭文件流
     objFile.close();
     jsonFile.close();
+}
+
+// 静态方法实现
+void PointCloudExporter::ExportPointCloudToFile(const std::string& objFileName, const std::string& jsonFileName) {
+    // 创建 PointCloudExporter 实例
+    PointCloudExporter exporter(objFileName, jsonFileName);
+    
+    // 调用实例方法导出点云 - 这里使用无参数的实例方法
+    exporter.ExportPointCloud();
 }
