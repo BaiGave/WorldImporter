@@ -514,131 +514,185 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         std::vector<std::vector<bool>> used(height, std::vector<bool>(width, false));
         
         //----------------------------------------------------------------------
-        // 执行贪心合并算法
+        // 优化的贪心合并算法：寻找最大矩形
         //----------------------------------------------------------------------
-        // 遍历每个未使用的格子，寻找最大矩形
-        for (int by = 0; by < height; ++by) {
-            for (int ax = 0; ax < width; ++ax) {
-                // 跳过没有区域或已处理的格子
-                if (!mask[by][ax] || used[by][ax]) continue;
-                
-                int maxWidth = width - ax;
-                int bestArea = 0, bestW = 0, bestH = 0;
-                int minWidth = maxWidth;
-                
-                // 向下扩展行，动态维护最小宽度，寻找最大面积矩形
-                for (int h = 1; by + h <= height; ++h) {
-                    // 检查当前行可用宽度
-                    int rowWidth = 0;
-                    while (rowWidth < minWidth && ax + rowWidth < width
-                        && mask[by + h - 1][ax + rowWidth]
-                        && !used[by + h - 1][ax + rowWidth]) {
-                        ++rowWidth;
-                    }
-                    
-                    minWidth = std::fmin(minWidth, rowWidth);
-                    if (minWidth == 0) break;  // 无法继续扩展
-                    
-                    // 更新最大面积矩形
-                    int area = minWidth * h;
-                    if (area > bestArea) {
-                        bestArea = area;
-                        bestW = minWidth;
-                        bestH = h;
+        
+        // 结构体用于存储可能的合并矩形
+        struct PotentialRectangle {
+            int x, y;       // 左上角坐标
+            int width, height; // 宽度和高度
+            int area;          // 面积
+            
+            bool operator<(const PotentialRectangle& other) const {
+                return area > other.area; // 按面积降序排列
+            }
+        };
+        
+        // 计算每个位置可以向右扩展的宽度
+        std::vector<std::vector<int>> rightExtension(height, std::vector<int>(width, 0));
+        for (int y = 0; y < height; ++y) {
+            for (int x = width - 1; x >= 0; --x) {
+                if (mask[y][x] && !used[y][x]) {
+                    if (x == width - 1) {
+                        rightExtension[y][x] = 1;
+                    } else {
+                        rightExtension[y][x] = rightExtension[y][x + 1] + 1;
                     }
                 }
-                
-                // 如果找到的最大矩形只有1x1大小，表示这是一个孤立的单元格
-                // 我们不应该合并它，而是把它作为特殊面处理
-                if (bestW == 1 && bestH == 1) {
-                    used[by][ax] = true;  // 标记为已使用
+            }
+        }
+        
+        // 当还有未使用的格子时，继续寻找最大矩形
+        while (true) {
+            std::vector<PotentialRectangle> potentialRects;
+            
+            // 尝试从每个可用格子开始，找出可能的最大矩形
+            for (int startY = 0; startY < height; ++startY) {
+                for (int startX = 0; startX < width; ++startX) {
+                    if (!mask[startY][startX] || used[startY][startX]) continue;
                     
-                    int regIdx = cellToRegionIdx[by][ax];
+                    // 该位置可以向右扩展的最大宽度
+                    int maxWidth = rightExtension[startY][startX];
+                    if (maxWidth == 0) continue;
+                    
+                    // 向下扩展寻找最大矩形
+                    int currentHeight = 1;
+                    int currentWidth = maxWidth;
+                    
+                    for (int h = 1; startY + h < height; ++h) {
+                        // 检查下一行的可用宽度
+                        if (!mask[startY + h][startX] || used[startY + h][startX]) break;
+                        
+                        // 更新当前行可以扩展的最大宽度
+                        currentWidth = std::fmin(currentWidth, rightExtension[startY + h][startX]);
+                        if (currentWidth == 0) break;
+                        
+                        // 计算当前矩形的面积
+                        int area = currentWidth * (h + 1);
+                        currentHeight = h + 1;
+                        
+                        // 添加到潜在矩形列表
+                        potentialRects.push_back({startX, startY, currentWidth, currentHeight, area});
+                    }
+                    
+                    // 如果只有一行，也计算面积
+                    if (currentHeight == 1) {
+                        potentialRects.push_back({startX, startY, maxWidth, 1, maxWidth});
+                    }
+                }
+            }
+            
+            // 如果没有找到可合并的矩形，则结束循环
+            if (potentialRects.empty()) break;
+            
+            // 按面积降序排序，选择最大面积的矩形
+            std::sort(potentialRects.begin(), potentialRects.end());
+            const auto& bestRect = potentialRects[0];
+            
+            // 如果最大矩形只有1x1大小，检查是否是孤立单元格
+            if (bestRect.width == 1 && bestRect.height == 1) {
+                // 将这个孤立的单元格标记为已使用
+                used[bestRect.y][bestRect.x] = true;
+                
+                // 获取原始面索引并添加到特殊面列表
+                int regIdx = cellToRegionIdx[bestRect.y][bestRect.x];
+                if (regIdx >= 0) {
+                    int originalFaceIdx = regs[regIdx].originalFaceIndex;
+                    if (processedFaces.find(originalFaceIdx) == processedFaces.end()) {
+                        specialFaces.push_back(data.faces[originalFaceIdx]);
+                        processedFaces.insert(originalFaceIdx);
+                    }
+                }
+                continue;
+            }
+            
+            // 标记矩形内的所有格子为已使用
+            for (int dy = 0; dy < bestRect.height; ++dy) {
+                for (int dx = 0; dx < bestRect.width; ++dx) {
+                    int y = bestRect.y + dy;
+                    int x = bestRect.x + dx;
+                    used[y][x] = true;
+                    
+                    // 记录参与合并的原始区域
+                    int regIdx = cellToRegionIdx[y][x];
                     if (regIdx >= 0) {
                         int originalFaceIdx = regs[regIdx].originalFaceIndex;
-                        // 只有当这个面还没有被处理过时才添加
-                        if (processedFaces.find(originalFaceIdx) == processedFaces.end()) {
-                            // 将孤立面添加到特殊面列表
-                            specialFaces.push_back(data.faces[originalFaceIdx]);
-                            // 标记为已处理
-                            processedFaces.insert(originalFaceIdx);
-                        }
+                        processedFaces.insert(originalFaceIdx);
                     }
+                }
+            }
+            
+            // 计算合并后矩形的世界坐标
+            int regionA0 = minA + bestRect.x;
+            int regionA1 = regionA0 + bestRect.width;
+            int regionB0 = minB + bestRect.y;
+            int regionB1 = regionB0 + bestRect.height;
+            
+            // 查找与合并区域重叠最多的原始区域，继承其UV属性
+            Region* bestMatchRegion = nullptr;
+            float bestOverlap = 0.0f;
+            
+            for (auto& r : regs) {
+                int a0i = int(r.a0);
+                int a1i = int(r.a1);
+                int b0i = int(r.b0);
+                int b1i = int(r.b1);
+                
+                // 计算重叠区域
+                int overlapA0 = std::fmax(regionA0, a0i);
+                int overlapA1 = std::fmin(regionA1, a1i);
+                int overlapB0 = std::fmax(regionB0, b0i);
+                int overlapB1 = std::fmin(regionB1, b1i);
+                
+                // 检查是否有重叠
+                if (overlapA0 < overlapA1 && overlapB0 < overlapB1) {
+                    // 计算重叠比例
+                    float overlapArea = (overlapA1 - overlapA0) * (overlapB1 - overlapB0);
+                    float regionArea = (a1i - a0i) * (b1i - b0i);
+                    float overlapRatio = overlapArea / regionArea;
                     
-                    continue;  // 跳过后续的合并处理
-                }
-                
-                // 标记已使用的区域并记录参与合并的原始区域
-                for (int dy = 0; dy < bestH; ++dy) {
-                    for (int dx = 0; dx < bestW; ++dx) {
-                        used[by + dy][ax + dx] = true;
-                        int regIdx = cellToRegionIdx[by + dy][ax + dx];
-                        if (regIdx >= 0) {
-                            int originalFaceIdx = regs[regIdx].originalFaceIndex;
-                            // 标记为已处理
-                            processedFaces.insert(originalFaceIdx);
-                        }
+                    // 更新最佳匹配
+                    if (overlapRatio > bestOverlap) {
+                        bestOverlap = overlapRatio;
+                        bestMatchRegion = &r;
                     }
                 }
-
-                // 计算合并后矩形的世界坐标
-                int regionA0 = minA + ax;
-                int regionA1 = regionA0 + bestW;
-                int regionB0 = minB + by;
-                int regionB1 = regionB0 + bestH;
-
-                //------------------------------------------------------------------
-                // 确定合并区域的UV属性
-                //------------------------------------------------------------------
-                // 查找与合并区域重叠最多的原始区域，继承其UV属性
-                Region* bestMatchRegion = nullptr;
-                float bestOverlap = 0.0f;
-
-                for (auto& r : regs) {
-                    int a0i = int(r.a0);
-                    int a1i = int(r.a1);
-                    int b0i = int(r.b0);
-                    int b1i = int(r.b1);
-
-                    // 计算重叠区域
-                    int overlapA0 = std::fmax(regionA0, a0i);
-                    int overlapA1 = std::fmin(regionA1, a1i);
-                    int overlapB0 = std::fmax(regionB0, b0i);
-                    int overlapB1 = std::fmin(regionB1, b1i);
-
-                    // 检查是否有重叠
-                    if (overlapA0 < overlapA1 && overlapB0 < overlapB1) {
-                        // 计算重叠比例
-                        float overlapArea = (overlapA1 - overlapA0) * (overlapB1 - overlapB0);
-                        float regionArea = (a1i - a0i) * (b1i - b0i);
-                        float overlapRatio = overlapArea / regionArea;
-
-                        // 更新最佳匹配
-                        if (overlapRatio > bestOverlap) {
-                            bestOverlap = overlapRatio;
-                            bestMatchRegion = &r;
+            }
+            
+            // 创建合并区域
+            Region nr = regs[0];  // 基础属性复制
+            nr.a0 = float(regionA0);
+            nr.a1 = float(regionA1);
+            nr.b0 = float(regionB0);
+            nr.b1 = float(regionB1);
+            nr.u0 = 0.0f;
+            nr.u1 = du * bestRect.width;
+            nr.v0 = 0.0f;
+            nr.v1 = dv * bestRect.height;
+            nr.originalFaceIndex = -1; // 合并区域不对应原始面
+            
+            // 如果有最佳匹配区域，继承其顶点顺序
+            if (bestMatchRegion) {
+                nr.vertexOrder = bestMatchRegion->vertexOrder;
+            }
+            
+            merged.push_back(nr);
+            
+            // 更新右扩展数组，因为有些格子已经被使用了
+            for (int y = 0; y < height; ++y) {
+                for (int x = width - 1; x >= 0; --x) {
+                    if (mask[y][x] && !used[y][x]) {
+                        if (x == width - 1) {
+                            rightExtension[y][x] = 1;
+                        } else if (used[y][x + 1]) {
+                            rightExtension[y][x] = 1;
+                        } else {
+                            rightExtension[y][x] = rightExtension[y][x + 1] + 1;
                         }
+                    } else {
+                        rightExtension[y][x] = 0;
                     }
                 }
-
-                // 创建合并区域
-                Region nr = regs[0];  // 基础属性复制
-                nr.a0 = float(minA + ax);
-                nr.a1 = nr.a0 + bestW;
-                nr.b0 = float(minB + by);
-                nr.b1 = nr.b0 + bestH;
-                nr.u0 = 0.0f;
-                nr.u1 = du * bestW;
-                nr.v0 = 0.0f;
-                nr.v1 = dv * bestH;
-                nr.originalFaceIndex = -1; // 合并区域不对应原始面
-                
-                // 如果有最佳匹配区域，继承其顶点顺序
-                if (bestMatchRegion) {
-                    nr.vertexOrder = bestMatchRegion->vertexOrder;
-                }
-
-                merged.push_back(nr);
             }
         }
         

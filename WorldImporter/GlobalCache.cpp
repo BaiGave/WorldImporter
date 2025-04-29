@@ -11,6 +11,9 @@
 #include <atomic>
 #include "include/json.hpp"
 #include <fstream>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 // ========= 全局变量定义 =========
 namespace GlobalCache {
     // 缓存数据
@@ -45,10 +48,15 @@ struct TaskResult {
 std::vector<std::wstring> listdir(const std::wstring& path) {
     std::vector<std::wstring> files;
 
-    std::wstring wpath = path + L"\\*";
+    std::wstring wpath = path;
+    // 确保路径以 \ 结尾
+    if (!wpath.empty() && wpath.back() != L'\\' && wpath.back() != L'/') {
+        wpath += L"\\";
+    }
+    std::wstring searchPath = wpath + L"*";
 
     WIN32_FIND_DATAW findFileData;
-    HANDLE hFind = FindFirstFileW(wpath.c_str(), &findFileData);
+    HANDLE hFind = FindFirstFileW(searchPath.c_str(), &findFileData);
 
     if (hFind != INVALID_HANDLE_VALUE) {
         do {
@@ -57,6 +65,9 @@ std::vector<std::wstring> listdir(const std::wstring& path) {
             }
         } while (FindNextFileW(hFind, &findFileData));
         FindClose(hFind);
+    } else {
+        DWORD error = GetLastError();
+        std::cerr << "Error listing directory " << wstring_to_string(path) << ": " << error << std::endl;
     }
 
     return files;
@@ -131,6 +142,12 @@ std::string GetModIdFromJar(std::wstring jarPath , std::string modLoaderType){
     {
         // 使用 JarReader 处理 .jar 文件
         JarReader jarReader(jarPath);
+        
+        // 明确调用open()方法并检查是否成功
+        if (!jarReader.open()) {
+            std::cerr << "Failed to open jar for mod ID extraction: " << wstring_to_string(jarPath) << std::endl;
+            return modId;
+        }
 
         if (modLoaderType == "Fabric") {
             modId = jarReader.getFabricModId();
@@ -144,13 +161,16 @@ std::string GetModIdFromJar(std::wstring jarPath , std::string modLoaderType){
     }
     catch (const std::exception& e)
     {
-        std::cerr << "Error occurred: " << e.what() << std::endl;
+        std::cerr << "Error occurred during mod ID extraction: " << e.what() << std::endl;
     }
     return modId;
 }
 // ========= 初始化实现 =========
 void InitializeAllCaches() {
-
+    // 设置控制台输出编码为UTF-8
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+#endif
 
     std::call_once(GlobalCache::initFlag, []() {
         auto start = std::chrono::high_resolution_clock::now();
@@ -173,15 +193,44 @@ void InitializeAllCaches() {
                 GlobalCache::jarQueue.push(string_to_wstring(resourcepack));
                 GlobalCache::jarOrder.push_back(resourcepackid);
             }
-            for (const auto& mod : listdir(string_to_wstring(config.modsPath))) {
-                //判断是否以.jar结尾
-                if (wstring_to_string(mod).substr(wstring_to_string(mod).length() - 4) == ".jar") {
-                    std::wstring modPath = string_to_wstring(config.modsPath + "\\") + mod;
-                    std::string modid = GetModIdFromJar(modPath , modLoaderType);
-                    GlobalCache::jarQueue.push(modPath);
-                    GlobalCache::jarOrder.push_back(modid);
+            
+            // 检查mods目录是否存在且路径有效
+            if (!config.modsPath.empty()) {
+                std::wstring modsPathW = string_to_wstring(config.modsPath);
+                WIN32_FIND_DATAW fdFile;
+                HANDLE hFind = FindFirstFileW(modsPathW.c_str(), &fdFile);
+                if (hFind != INVALID_HANDLE_VALUE && (fdFile.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+                    // 目录存在，处理mod文件
+                    FindClose(hFind);
+                    
+                    for (const auto& mod : listdir(modsPathW)) {
+                        //判断是否以.jar结尾
+                        std::string modStr = wstring_to_string(mod);
+                        if (modStr.length() > 4 && modStr.substr(modStr.length() - 4) == ".jar") {
+                            std::wstring modPath = modsPathW;
+                            if (modPath.back() != L'\\' && modPath.back() != L'/') {
+                                modPath += L"\\";
+                            }
+                            modPath += mod;
+                            
+                            std::string modid = GetModIdFromJar(modPath, modLoaderType);
+                            // 如果无法获取modid，使用文件名（不含扩展名）作为备用modid
+                            if (modid.empty()) {
+                                modid = modStr.substr(0, modStr.length() - 4); // 移除.jar后缀
+                            }
+                            GlobalCache::jarQueue.push(modPath);
+                            GlobalCache::jarOrder.push_back(modid);
+                        }
+                    }
+                } else {
+                    if (hFind != INVALID_HANDLE_VALUE) {
+                        FindClose(hFind);
+                    }
+                    std::cerr << "Warning: Mods directory not found or not accessible: " << config.modsPath << std::endl;
                 }
             }
+            
+            // 添加主jar文件
             GlobalCache::jarQueue.push(string_to_wstring(config.jarPath));
             GlobalCache::jarOrder.push_back("minecraft");
             };
@@ -218,7 +267,13 @@ void InitializeAllCaches() {
                 std::string currentModId = GlobalCache::jarOrder[idx];
 
                 JarReader reader(jarPath);
-                if (reader.open()) {
+                if (!reader.open()) {
+                    std::cerr << "Warning: Failed to open jar, skipping resources for: " << currentModId << std::endl;
+                    // 跳过此JAR文件的处理，但不终止整个循环
+                    continue;
+                }
+                
+                try {
                     // 读取 jar 文件的各类资源，存入对应的任务结果中
                     reader.cacheAllResources(taskResults[idx].localTextures,
                         taskResults[idx].localBlockstates,
@@ -226,7 +281,10 @@ void InitializeAllCaches() {
                         taskResults[idx].localMcmetas);
                     reader.cacheAllBiomes(taskResults[idx].localBiomes);
                     reader.cacheAllColormaps(taskResults[idx].localColormaps);
-
+                } catch (const std::exception& e) {
+                    std::cerr << "Error processing jar file for " << currentModId 
+                              << ": " << e.what() << std::endl;
+                    // 出错时继续处理下一个JAR文件
                 }
             }
             };

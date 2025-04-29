@@ -12,12 +12,7 @@
 
 class JarReader {
 public:
-    bool open() {
-        if (zipFile) return true;
-        int error;
-        zipFile = zip_open(wstring_to_string(jarFilePath).c_str(), 0, &error);
-        return zipFile != nullptr;
-    }
+    bool open();
 
     // 枚举类型，用于表示 mod 的类型
     enum class ModType {

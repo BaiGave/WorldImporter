@@ -45,44 +45,32 @@ std::string preprocessJson(const std::string& jsonStr) {
 }
 
 std::string JarReader::convertWStrToStr(const std::wstring& wstr) {
+    if (wstr.empty()) return "";
+    
     int buffer_size = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (buffer_size <= 0) {
+        std::cerr << "Error converting wstring to string: " << GetLastError() << std::endl;
+        return "";
+    }
+    
     std::string str(buffer_size, 0);
-    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &str[0], buffer_size, nullptr, nullptr);
+    if (WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &str[0], buffer_size, nullptr, nullptr) == 0) {
+        std::cerr << "Error executing WideCharToMultiByte: " << GetLastError() << std::endl;
+        return "";
+    }
+    
+    // 移除字符串末尾的空字符
+    if (!str.empty() && str.back() == 0) {
+        str.pop_back();
+    }
+    
     return str;
 }
 
 JarReader::JarReader(const std::wstring& jarFilePath)
-    : jarFilePath(jarFilePath), zipFile(nullptr), modType(ModType::Unknown) {
-    std::string utf8Path = convertWStrToStr(jarFilePath);
-
-    // 打开 .jar 文件（本质上是 .zip 文件）
-    int error = 0;
-    zipFile = zip_open(utf8Path.c_str(), 0, &error);  // 使用 UTF-8 路径打开
-    if (!zipFile) {
-        std::cerr << "Failed to open .jar file: " << utf8Path << std::endl;
-        return;
-    }
-
-
-    // 检查是否为原版
-    if (isVanilla()) {
-        modType = ModType::Vanilla;
-    }
-    // 检查是否为Fabric
-    else if (isFabric()) {
-        modType = ModType::Mod;
-    }
-    // 检查是否为Forge
-    else if (isForge()) {
-        modType = ModType::Mod;
-    }
-    // 检查是否为NeoForge
-    else if (isNeoForge()) {
-        modType = ModType::Mod;
-    }
-
-    // 获取命名空间
-    modNamespace = getNamespaceForModType(modType);
+    : jarFilePath(jarFilePath), zipFile(nullptr), modType(ModType::Unknown), modNamespace("") {
+    // 在构造函数中只初始化成员变量，不打开文件
+    // 文件打开操作移至open()方法中
 }
 
 JarReader::~JarReader() {
@@ -110,25 +98,35 @@ std::string JarReader::getNamespaceForModType(ModType type) {
 
 std::string JarReader::getFileContent(const std::string& filePathInJar) {
     if (!zipFile) {
-        std::cerr << "Zip file is not open." << std::endl;
+        std::cerr << "Error: Attempt to read from unopened jar file: " << convertWStrToStr(jarFilePath) << std::endl;
         return "";
     }
 
     // 查找文件在 .jar 文件中的索引
     zip_file_t* fileInJar = zip_fopen(zipFile, filePathInJar.c_str(), 0);
     if (!fileInJar) {
+        // 静默失败，但记录日志
+        // std::cerr << "Could not find file in jar: " << filePathInJar << std::endl;
         return "";
     }
 
     // 获取文件的大小
     zip_stat_t fileStat;
-    zip_stat(zipFile, filePathInJar.c_str(), 0, &fileStat);
+    if (zip_stat(zipFile, filePathInJar.c_str(), 0, &fileStat) != 0) {
+        std::cerr << "Failed to get file stats: " << filePathInJar << std::endl;
+        zip_fclose(fileInJar);
+        return "";
+    }
 
     // 读取文件内容
     std::string fileContent;
-
-    fileContent.resize(fileStat.size);
-    zip_fread(fileInJar, &fileContent[0], fileStat.size);
+    try {
+        fileContent.resize(fileStat.size);
+        zip_fread(fileInJar, &fileContent[0], fileStat.size);
+    } catch (const std::exception& e) {
+        std::cerr << "Error reading file content: " << e.what() << std::endl;
+        fileContent.clear();
+    }
 
     // 关闭文件
     zip_fclose(fileInJar);
@@ -140,24 +138,36 @@ std::vector<unsigned char> JarReader::getBinaryFileContent(const std::string& fi
     std::vector<unsigned char> fileContent;
 
     if (!zipFile) {
-        std::cerr << "Zip file is not open." << std::endl;
+        std::cerr << "Error: Attempt to read binary from unopened jar file: " << convertWStrToStr(jarFilePath) << std::endl;
         return fileContent;
     }
 
     // 查找文件在 .jar 文件中的索引
     zip_file_t* fileInJar = zip_fopen(zipFile, filePathInJar.c_str(), 0);
     if (!fileInJar) {
-        //std::cerr << "Failed to open file in .jar: " << filePathInJar << std::endl;
+        // 静默失败，但可以根据需要添加日志
         return fileContent;
     }
 
     // 获取文件的大小
     zip_stat_t fileStat;
-    zip_stat(zipFile, filePathInJar.c_str(), 0, &fileStat);
+    if (zip_stat(zipFile, filePathInJar.c_str(), 0, &fileStat) != 0) {
+        std::cerr << "Failed to get binary file stats: " << filePathInJar << std::endl;
+        zip_fclose(fileInJar);
+        return fileContent;
+    }
 
     // 读取文件内容
-    fileContent.resize(fileStat.size);
-    zip_fread(fileInJar, fileContent.data(), fileStat.size);
+    try {
+        fileContent.resize(fileStat.size);
+        if (zip_fread(fileInJar, fileContent.data(), fileStat.size) != static_cast<zip_int64_t>(fileStat.size)) {
+            std::cerr << "Failed to read complete binary file: " << filePathInJar << std::endl;
+            fileContent.clear();
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Error reading binary file content: " << e.what() << std::endl;
+        fileContent.clear();
+    }
 
     // 关闭文件
     zip_fclose(fileInJar);
@@ -516,5 +526,38 @@ std::string JarReader::cleanUpContent(const std::string& content) {
     }
 
     return cleaned;
+}
+
+bool JarReader::open() {
+    if (zipFile) return true;
+    int error;
+    zipFile = zip_open(convertWStrToStr(jarFilePath).c_str(), 0, &error);
+    if (!zipFile) {
+        std::cerr << "Failed to open .jar file: " << convertWStrToStr(jarFilePath) << ", error code: " << error << std::endl;
+        return false;
+    }
+
+    // 初始化mod类型和命名空间，这些操作从构造函数移到这里
+    // 检查是否为原版
+    if (isVanilla()) {
+        modType = ModType::Vanilla;
+    }
+    // 检查是否为Fabric
+    else if (isFabric()) {
+        modType = ModType::Mod;
+    }
+    // 检查是否为Forge
+    else if (isForge()) {
+        modType = ModType::Mod;
+    }
+    // 检查是否为NeoForge
+    else if (isNeoForge()) {
+        modType = ModType::Mod;
+    }
+
+    // 获取命名空间
+    modNamespace = getNamespaceForModType(modType);
+    
+    return true;
 }
 

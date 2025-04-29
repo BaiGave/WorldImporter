@@ -355,6 +355,7 @@ std::string wstring_to_string(const std::wstring& wstr) {
     
     // 计算所需的缓冲区大小
     int size_needed = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.size(), nullptr, 0, nullptr, nullptr);
+    if (size_needed <= 0) return "";
     
     // 创建输出字符串
     std::string result(size_needed, 0);
@@ -371,6 +372,7 @@ std::wstring string_to_wstring(const std::string& str) {
     
     // 计算所需的缓冲区大小
     int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), nullptr, 0);
+    if (size_needed <= 0) return L"";
     
     // 创建输出宽字符串
     std::wstring result(size_needed, 0);
