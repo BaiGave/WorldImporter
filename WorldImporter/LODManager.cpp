@@ -71,7 +71,7 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
         }
 
         if (materialIndex == -1 && !blockModel.materials.empty()) materialIndex = 0;
-        if (materialIndex == -1) return "color#0.50 0.50 0.50";
+        if (materialIndex == -1) return "color#0.50 0.50 0.50=";
 
         std::string materialName = blockModel.materials[materialIndex].name;
         std::string texturePath;
@@ -175,7 +175,7 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
             oss << "color#" << finalR << " " << finalG << " " << finalB << "-" << currentBlock.GetNameAndNameSpaceWithoutState().c_str();
         }
         else {
-            oss << "color#" << finalR << " " << finalG << " " << finalB;
+            oss << "color#" << finalR << " " << finalG << " " << finalB << "=";
         }
         return oss.str();
     }
@@ -184,7 +184,7 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
             return  + "color#" + textureAverage + "-" + currentBlock.GetNameAndNameSpaceWithoutState();
         }
         else {
-            return "color#" + textureAverage;
+            return "color#" + textureAverage + "=";
         }
     }
 }
