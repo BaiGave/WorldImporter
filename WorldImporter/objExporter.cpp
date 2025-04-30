@@ -1,4 +1,4 @@
-#include "objExporter.h"
+#include "ObjExporter.h"
 #include <chrono>
 #include <fstream>
 #include <sstream>

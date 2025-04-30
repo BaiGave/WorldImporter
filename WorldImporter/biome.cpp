@@ -5,12 +5,12 @@
 #include "biome.h"
 #include "block.h"
 #include "GlobalCache.h"
-#include "coord_conversion.h"
+#include "locutil.h"
 #include <iostream>
 #include <stdexcept>
 #include <fstream>
 #include <string>
-#include "hash_utils.h"
+#include "hashutils.h"
 
 namespace {
     std::pair<std::string, std::string> splitBiomeName(const std::string& fullName) {

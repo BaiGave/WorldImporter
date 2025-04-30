@@ -1,4 +1,4 @@
-#include "fluid.h"
+#include "Fluid.h"
 #include <cmath>
 #include <algorithm>
 #include <iostream>

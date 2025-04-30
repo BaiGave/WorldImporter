@@ -1,11 +1,11 @@
 // LODManager.cpp
 #include "LODManager.h"
 #include "RegionModelExporter.h"
-#include "coord_conversion.h"
-#include "objExporter.h"
+#include "locutil.h"
+#include "ObjExporter.h"
 #include "include/stb_image.h"
 #include "biome.h"
-#include "fluid.h"
+#include "Fluid.h"
 #include "texture.h"
 #include <iomanip>
 #include <sstream>

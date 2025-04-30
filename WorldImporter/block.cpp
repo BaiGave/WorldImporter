@@ -25,8 +25,8 @@
 #include "biome.h"
 #include "fileutils.h"
 #include "decompressor.h"
-#include "coord_conversion.h"
-#include "hash_utils.h"
+#include "locutil.h"
+#include "hashutils.h"
 
 using namespace std;
 

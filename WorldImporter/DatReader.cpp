@@ -1,4 +1,4 @@
-﻿#include "dat.h"
+﻿#include "DatReader.h"
 #include "fileutils.h"
 #include "decompressor.h"
 #include <fstream>

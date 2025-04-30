@@ -1,6 +1,6 @@
 ﻿#include "blockstate.h"
 #include "fileutils.h"
-#include "objExporter.h"
+#include "ObjExporter.h"
 #include <regex>
 #include <random>
 #include <numeric>

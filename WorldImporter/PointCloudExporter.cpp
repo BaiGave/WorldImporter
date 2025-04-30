@@ -3,7 +3,7 @@
 #include "block.h"
 #include "model.h"
 #include "blockstate.h"
-#include "objExporter.h"
+#include "ObjExporter.h"
 #include <chrono>
 #include <sstream>
 #include <iostream>

@@ -23,6 +23,6 @@ void CreateMultiModelFiles(const ModelData& data, const std::string& filename,
     const std::string& sharedMtlName);
 
 
-// 在objExporter.h中添加新函数声明
+// 在ObjExporter.h中添加新函数声明
 void createSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMaterials, const std::string& mtlFileName);
 #endif

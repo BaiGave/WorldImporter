@@ -1,4 +1,4 @@
-// chunk_group_allocator.h
+// ChunkGroupAllocator.h
 #pragma once
 
 #include <vector>

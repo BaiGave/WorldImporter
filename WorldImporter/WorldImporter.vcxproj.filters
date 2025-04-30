@@ -13,195 +13,210 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
-    <Filter Include="头文件\utils">
-      <UniqueIdentifier>{e1f35ce1-7b34-4e2a-bf95-8dcb06f84bb6}</UniqueIdentifier>
+    <!-- 核心模块 -->
+    <Filter Include="源文件\Core">
+      <UniqueIdentifier>{9E7A1D3C-F23A-4BB1-8C67-F3B2D5C1F1A1}</UniqueIdentifier>
     </Filter>
-    <Filter Include="源文件\utils">
-      <UniqueIdentifier>{5235a81a-2e2e-4a3c-9862-bf93047eac41}</UniqueIdentifier>
+    <Filter Include="头文件\Core">
+      <UniqueIdentifier>{9E7A1D3C-F23A-4BB1-8C67-F3B2D5C1F1A2}</UniqueIdentifier>
     </Filter>
-    <Filter Include="源文件\functions">
-      <UniqueIdentifier>{432df8dc-65cb-435d-b5cf-91ea8157bb32}</UniqueIdentifier>
+    <!-- 世界模块 -->
+    <Filter Include="源文件\World">
+      <UniqueIdentifier>{9E7A1D3C-F23A-4BB1-8C67-F3B2D5C1F1A3}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\functions">
-      <UniqueIdentifier>{506a3810-4d73-4348-910d-1b4ee71404c9}</UniqueIdentifier>
+    <Filter Include="头文件\World">
+      <UniqueIdentifier>{9E7A1D3C-F23A-4BB1-8C67-F3B2D5C1F1A4}</UniqueIdentifier>
     </Filter>
-    <Filter Include="源文件\functions\json">
-      <UniqueIdentifier>{6e6aa3e4-c184-484b-af17-35411184569f}</UniqueIdentifier>
+    <!-- 块模块 -->
+    <Filter Include="源文件\Blocks">
+      <UniqueIdentifier>{9E7A1D3C-F23A-4BB1-8C67-F3B2D5C1F1A5}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\functions\json">
-      <UniqueIdentifier>{11074400-e298-4f50-b9f3-8bf55d7983e0}</UniqueIdentifier>
+    <Filter Include="头文件\Blocks">
+      <UniqueIdentifier>{9E7A1D3C-F23A-4BB1-8C67-F3B2D5C1F1A6}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\functions\mapping">
-      <UniqueIdentifier>{6a1822b5-c8da-4d67-b4f8-897d6a08846c}</UniqueIdentifier>
+    <!-- 导出模块 -->
+    <Filter Include="源文件\Export">
+      <UniqueIdentifier>{9E7A1D3C-F23A-4BB1-8C67-F3B2D5C1F1A7}</UniqueIdentifier>
     </Filter>
-    <Filter Include="源文件\functions\mapping">
-      <UniqueIdentifier>{eb064eac-3e6f-4778-9acd-13a915b20045}</UniqueIdentifier>
+    <Filter Include="头文件\Export">
+      <UniqueIdentifier>{9E7A1D3C-F23A-4BB1-8C67-F3B2D5C1F1A8}</UniqueIdentifier>
     </Filter>
-    <Filter Include="源文件\functions\tools">
-      <UniqueIdentifier>{3d78696a-cd52-44a2-9f82-cb35daacefb5}</UniqueIdentifier>
+    <!-- 工具模块 -->
+    <Filter Include="源文件\Utils">
+      <UniqueIdentifier>{9E7A1D3C-F23A-4BB1-8C67-F3B2D5C1F1A9}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\functions\tools">
-      <UniqueIdentifier>{5484b0f4-fd87-477c-9ecc-64b1980337ac}</UniqueIdentifier>
+    <Filter Include="头文件\Utils">
+      <UniqueIdentifier>{9E7A1D3C-F23A-4BB1-8C67-F3B2D5C1F1B0}</UniqueIdentifier>
     </Filter>
-    <Filter Include="源文件\export">
-      <UniqueIdentifier>{33dc952d-9c10-4d19-9cca-c30e1d0b67a8}</UniqueIdentifier>
+    <!-- 数据格式模块 -->
+    <!-- 渲染模块 -->
+    <Filter Include="头文件\Core\Model">
+      <UniqueIdentifier>{009ae036-fdbf-4bd7-827d-3f792f9c8ad7}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\export">
-      <UniqueIdentifier>{70afca97-b68c-4c3b-9ece-d88a5209eb54}</UniqueIdentifier>
+    <Filter Include="源文件\Core\Model">
+      <UniqueIdentifier>{cb23d563-c8b3-4e48-b7c3-9e708dba008f}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\functions\nbt">
-      <UniqueIdentifier>{9a52f18d-b6e9-4348-8f16-91cc7a4a99a9}</UniqueIdentifier>
+    <Filter Include="头文件\Core\Load">
+      <UniqueIdentifier>{ccfb225f-ce5c-482c-978e-31d15b831e75}</UniqueIdentifier>
     </Filter>
-    <Filter Include="源文件\functions\nbt">
-      <UniqueIdentifier>{1dc6216c-c72b-4bee-9620-ae60415af6cf}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="源文件\functions\texture">
-      <UniqueIdentifier>{3fea0638-9c5c-4279-8725-120068eb2ca0}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="头文件\functions\texture">
-      <UniqueIdentifier>{925aea1a-6470-4f39-bedc-981c4d99b1ce}</UniqueIdentifier>
+    <Filter Include="源文件\Core\Load">
+      <UniqueIdentifier>{aa759359-5b73-43ae-b6f8-0185a72b0658}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <!-- 核心文件 -->
+    <!-- 世界相关文件 -->
+    <!-- 块相关文件 -->
+    <!-- 导出相关文件 -->
+    <!-- 工具相关文件 -->
+    <!-- 数据格式相关文件 -->
+    <!-- 渲染相关文件 -->
     <ClCompile Include="main.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="locutil.cpp">
+      <Filter>源文件\Utils</Filter>
+    </ClCompile>
     <ClCompile Include="fileutils.cpp">
-      <Filter>源文件\utils</Filter>
+      <Filter>源文件\Utils</Filter>
     </ClCompile>
     <ClCompile Include="nbtutils.cpp">
-      <Filter>源文件\utils</Filter>
-    </ClCompile>
-    <ClCompile Include="biome.cpp">
-      <Filter>源文件\functions\mapping</Filter>
-    </ClCompile>
-    <ClCompile Include="decompressor.cpp">
-      <Filter>源文件\functions\tools</Filter>
-    </ClCompile>
-    <ClCompile Include="coord_conversion.cpp">
-      <Filter>源文件\functions\tools</Filter>
-    </ClCompile>
-    <ClCompile Include="block.cpp">
-      <Filter>源文件\functions</Filter>
-    </ClCompile>
-    <ClCompile Include="config.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="PointCloudExporter.cpp">
-      <Filter>源文件\export</Filter>
-    </ClCompile>
-    <ClCompile Include="JarReader.cpp">
-      <Filter>源文件\functions\tools</Filter>
-    </ClCompile>
-    <ClCompile Include="dat.cpp">
-      <Filter>源文件\functions\nbt</Filter>
-    </ClCompile>
-    <ClCompile Include="blockstate.cpp">
-      <Filter>源文件\functions\json</Filter>
+      <Filter>源文件\Utils</Filter>
     </ClCompile>
     <ClCompile Include="model.cpp">
-      <Filter>源文件\functions\json</Filter>
+      <Filter>源文件\Core\Model</Filter>
     </ClCompile>
     <ClCompile Include="texture.cpp">
-      <Filter>源文件\functions\texture</Filter>
+      <Filter>源文件\Core\Model</Filter>
     </ClCompile>
-    <ClCompile Include="GlobalCache.cpp">
-      <Filter>源文件</Filter>
+    <ClCompile Include="blockstate.cpp">
+      <Filter>源文件\Core\Model</Filter>
     </ClCompile>
-    <ClCompile Include="RegionModelExporter.cpp">
-      <Filter>源文件</Filter>
+    <ClCompile Include="biome.cpp">
+      <Filter>源文件\World</Filter>
     </ClCompile>
-    <ClCompile Include="objExporter.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="SpecialBlock.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="fluid.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="LODManager.cpp">
-      <Filter>源文件</Filter>
+    <ClCompile Include="block.cpp">
+      <Filter>源文件\World</Filter>
     </ClCompile>
     <ClCompile Include="ModelDeduplicator.cpp">
-      <Filter>源文件</Filter>
+      <Filter>源文件\Export</Filter>
     </ClCompile>
-    <ClCompile Include="chunk_group_allocator.cpp">
-      <Filter>源文件</Filter>
+    <ClCompile Include="PointCloudExporter.cpp">
+      <Filter>源文件\Export</Filter>
+    </ClCompile>
+    <ClCompile Include="RegionModelExporter.cpp">
+      <Filter>源文件\Export</Filter>
+    </ClCompile>
+    <ClCompile Include="ObjExporter.cpp">
+      <Filter>源文件\Export</Filter>
+    </ClCompile>
+    <ClCompile Include="DatReader.cpp">
+      <Filter>源文件\Core\Load</Filter>
+    </ClCompile>
+    <ClCompile Include="JarReader.cpp">
+      <Filter>源文件\Core\Load</Filter>
+    </ClCompile>
+    <ClCompile Include="GlobalCache.cpp">
+      <Filter>源文件\Core\Load</Filter>
     </ClCompile>
     <ClCompile Include="EntityBlock.cpp">
-      <Filter>源文件</Filter>
+      <Filter>源文件\Blocks</Filter>
+    </ClCompile>
+    <ClCompile Include="SpecialBlock.cpp">
+      <Filter>源文件\Blocks</Filter>
+    </ClCompile>
+    <ClCompile Include="Fluid.cpp">
+      <Filter>源文件\Blocks</Filter>
+    </ClCompile>
+    <ClCompile Include="LODManager.cpp">
+      <Filter>源文件\Blocks</Filter>
+    </ClCompile>
+    <ClCompile Include="config.cpp">
+      <Filter>源文件\Core\Load</Filter>
+    </ClCompile>
+    <ClCompile Include="ChunkGroupAllocator.cpp">
+      <Filter>源文件\Export</Filter>
+    </ClCompile>
+    <ClCompile Include="decompressor.cpp">
+      <Filter>源文件\Utils</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="nbtutils.h">
-      <Filter>头文件\utils</Filter>
-    </ClInclude>
-    <ClInclude Include="fileutils.h">
-      <Filter>头文件\utils</Filter>
-    </ClInclude>
-    <ClInclude Include="biome.h">
-      <Filter>头文件\functions\mapping</Filter>
-    </ClInclude>
-    <ClInclude Include="decompressor.h">
-      <Filter>头文件\functions\tools</Filter>
-    </ClInclude>
-    <ClInclude Include="coord_conversion.h">
-      <Filter>头文件\functions\tools</Filter>
-    </ClInclude>
-    <ClInclude Include="block.h">
-      <Filter>头文件\functions</Filter>
-    </ClInclude>
-    <ClInclude Include="config.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="PointCloudExporter.h">
-      <Filter>头文件\export</Filter>
-    </ClInclude>
-    <ClInclude Include="JarReader.h">
-      <Filter>头文件\functions\tools</Filter>
-    </ClInclude>
-    <ClInclude Include="dat.h">
-      <Filter>头文件\functions\nbt</Filter>
-    </ClInclude>
-    <ClInclude Include="blockstate.h">
-      <Filter>头文件\functions\json</Filter>
-    </ClInclude>
-    <ClInclude Include="model.h">
-      <Filter>头文件\functions\json</Filter>
-    </ClInclude>
-    <ClInclude Include="texture.h">
-      <Filter>头文件\functions\texture</Filter>
-    </ClInclude>
-    <ClInclude Include="GlobalCache.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="RegionModelExporter.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="objExporter.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
+    <!-- 核心文件 -->
+    <!-- 世界相关文件 -->
+    <!-- 块相关文件 -->
+    <!-- 导出相关文件 -->
+    <!-- 工具相关文件 -->
+    <!-- 数据格式相关文件 -->
+    <!-- 渲染相关文件 -->
     <ClInclude Include="SpecialBlock.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="fluid.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="LODManager.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="ModelDeduplicator.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="chunk_group_allocator.h">
-      <Filter>头文件</Filter>
+      <Filter>头文件\Blocks</Filter>
     </ClInclude>
     <ClInclude Include="EntityBlock.h">
-      <Filter>头文件</Filter>
+      <Filter>头文件\Blocks</Filter>
     </ClInclude>
-    <ClInclude Include="hash_utils.h">
-      <Filter>头文件</Filter>
+    <ClInclude Include="Fluid.h">
+      <Filter>头文件\Blocks</Filter>
+    </ClInclude>
+    <ClInclude Include="texture.h">
+      <Filter>头文件\Core\Model</Filter>
+    </ClInclude>
+    <ClInclude Include="model.h">
+      <Filter>头文件\Core\Model</Filter>
+    </ClInclude>
+    <ClInclude Include="blockstate.h">
+      <Filter>头文件\Core\Model</Filter>
+    </ClInclude>
+    <ClInclude Include="biome.h">
+      <Filter>头文件\World</Filter>
+    </ClInclude>
+    <ClInclude Include="block.h">
+      <Filter>头文件\World</Filter>
+    </ClInclude>
+    <ClInclude Include="ModelDeduplicator.h">
+      <Filter>头文件\Export</Filter>
+    </ClInclude>
+    <ClInclude Include="ObjExporter.h">
+      <Filter>头文件\Export</Filter>
+    </ClInclude>
+    <ClInclude Include="PointCloudExporter.h">
+      <Filter>头文件\Export</Filter>
+    </ClInclude>
+    <ClInclude Include="RegionModelExporter.h">
+      <Filter>头文件\Export</Filter>
+    </ClInclude>
+    <ClInclude Include="hashutils.h">
+      <Filter>头文件\Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="fileutils.h">
+      <Filter>头文件\Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="locutil.h">
+      <Filter>头文件\Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="nbtutils.h">
+      <Filter>头文件\Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="DatReader.h">
+      <Filter>头文件\Core\Load</Filter>
+    </ClInclude>
+    <ClInclude Include="GlobalCache.h">
+      <Filter>头文件\Core\Load</Filter>
+    </ClInclude>
+    <ClInclude Include="JarReader.h">
+      <Filter>头文件\Core\Load</Filter>
+    </ClInclude>
+    <ClInclude Include="LODManager.h">
+      <Filter>头文件\Blocks</Filter>
+    </ClInclude>
+    <ClInclude Include="ChunkGroupAllocator.h">
+      <Filter>头文件\Export</Filter>
+    </ClInclude>
+    <ClInclude Include="config.h">
+      <Filter>头文件\Core\Load</Filter>
+    </ClInclude>
+    <ClInclude Include="decompressor.h">
+      <Filter>头文件\Utils</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

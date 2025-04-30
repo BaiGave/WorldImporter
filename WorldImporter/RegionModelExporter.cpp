@@ -1,9 +1,9 @@
 #include "RegionModelExporter.h"
-#include "coord_conversion.h"
-#include "objExporter.h"
+#include "locutil.h"
+#include "ObjExporter.h"
 #include "include/stb_image.h"
 #include "biome.h"
-#include "fluid.h"
+#include "Fluid.h"
 #include "LODManager.h"
 #include "texture.h"
 #include <iomanip>  // 用于 std::setw 和 std::setfill
@@ -16,9 +16,9 @@
 #include <thread>
 #include <atomic>
 #include "ModelDeduplicator.h"
-#include "chunk_group_allocator.h"
+#include "ChunkGroupAllocator.h"
 #include <utility> // 支持 std::move
-#include "hash_utils.h"
+#include "hashutils.h"
 
 using namespace std;
 using namespace std::chrono;  // 新增：方便使用 chrono

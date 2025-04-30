@@ -17,7 +17,7 @@
 #include "config.h"
 #include "model.h"
 #include "nbtutils.h"
-#include "hash_utils.h"
+#include "hashutils.h"
 
 extern Config config;
 // 引入统一的哈希函数头文件，提供 pair_hash 和 triple_hash
