@@ -606,7 +606,7 @@ void LoadBlockstateJson(const std::string& namespaceName, const std::vector<std:
 
                     std::vector<WeightedModelData> multipartModels;
                     int t = 0;
-                    // 如果 apply 为数组,直接遍历；否则将对象包装为单元素数组
+                    // 如果 apply 为数组,直接遍历,否则将对象包装为单元素数组
                     if (item["apply"].is_array()) {
                         for (const auto& modelItem : item["apply"]) {
                             int rotationX = 0, rotationY = 0;
