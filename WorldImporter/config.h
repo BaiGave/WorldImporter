@@ -57,7 +57,7 @@ struct Config {
 
     int decimalPlaces; //lod群系颜色值小数精度 #待做
     bool importByBlockType;  // 是否按方块种类导入 #待做
-    int pointCloudType;  // 实心或空心，0为实心，1为空心 #待做
+    int pointCloudType;  // 实心或空心,0为实心,1为空心 #待做
 
     Config()
         :

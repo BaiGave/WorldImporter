@@ -39,7 +39,7 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
             if (textureIt != GlobalCache::textures.end()) {
                 textureData = textureIt->second;
 
-                // 获取动态材质数据（如果存在）
+                // 获取动态材质数据(如果存在)
                 auto mcmetaIt = GlobalCache::mcmetaCache.find(cacheKey);
                 if (mcmetaIt != GlobalCache::mcmetaCache.end()) {
                     mcmetaData = mcmetaIt->second;
@@ -73,7 +73,7 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
         CreateDirectoryA(savePath.c_str(), NULL);
     }
 
-    // 提取文件名（不含路径）
+    // 提取文件名(不含路径)
     size_t lastSlashPos = blockId.find_last_of("/\\");
     std::string fileName = (lastSlashPos == std::string::npos) ? blockId : blockId.substr(lastSlashPos + 1);
 
@@ -104,7 +104,7 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
         outputFile.write(reinterpret_cast<const char*>(textureData.data()), textureData.size());
         outputFile.close();
 
-        // 保存 .mcmeta 文件（如果存在）
+        // 保存 .mcmeta 文件(如果存在)
         if (!mcmetaData.empty()) {
             std::string mcmetaFilePath = filePath + ".mcmeta";
             std::ofstream mcmetaFile(mcmetaFilePath);
@@ -117,7 +117,7 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
             }
         }
 
-        // 保存 PBR 贴图，后缀分别为 _n、_a、_s
+        // 保存 PBR 贴图,后缀分别为 _n、_a、_s
         std::vector<std::string> pbrSuffixes = { "_n", "_a", "_s" };
         for (const auto& suffix : pbrSuffixes) {
             std::vector<unsigned char> pbrTextureData;
@@ -133,7 +133,7 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
                     if (pbrTextureIt != GlobalCache::textures.end()) {
                         pbrTextureData = pbrTextureIt->second;
 
-                        // 获取 PBR 贴图的 .mcmeta 数据（如果存在）
+                        // 获取 PBR 贴图的 .mcmeta 数据(如果存在)
                         auto pbrMcmetaIt = GlobalCache::mcmetaCache.find(pbrCacheKey);
                         if (pbrMcmetaIt != GlobalCache::mcmetaCache.end()) {
                             pbrMcmetaData = pbrMcmetaIt->second;
@@ -151,7 +151,7 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
                     pbrOutputFile.write(reinterpret_cast<const char*>(pbrTextureData.data()), pbrTextureData.size());
                     pbrOutputFile.close();
 
-                    // 保存 PBR 贴图的 .mcmeta 文件（如果存在）
+                    // 保存 PBR 贴图的 .mcmeta 文件(如果存在)
                     if (!pbrMcmetaData.empty()) {
                         std::string pbrMcmetaFilePath = pbrFilePath + ".mcmeta";
                         std::ofstream pbrMcmetaFile(pbrMcmetaFilePath);
@@ -187,7 +187,7 @@ void RegisterTexture(const std::string& namespaceName, const std::string& pathPa
     // 检查缓存中是否已存在该材质
     auto cacheIt = texturePathCache.find(cacheKey);
     if (cacheIt != texturePathCache.end()) {
-        // 如果存在，直接返回
+        // 如果存在,直接返回
         return;
     }
 
@@ -206,7 +206,7 @@ void PrintTextureCache(const std::unordered_map<std::string, std::vector<unsigne
     }
 
     for (const auto& entry : textureCache) {
-        const std::string& cacheKey = entry.first;  // 缓存键（命名空间:资源路径）
+        const std::string& cacheKey = entry.first;  // 缓存键(命名空间:资源路径)
         const std::vector<unsigned char>& textureData = entry.second;  // 纹理数据
 
         std::cout << "Key: " << cacheKey << std::endl;
@@ -224,7 +224,7 @@ bool ParseMcmetaFile(const std::string& cacheKey, MaterialType& outType) {
     
     auto mcmetaIt = GlobalCache::mcmetaCache.find(cacheKey);
     if (mcmetaIt == GlobalCache::mcmetaCache.end() || mcmetaIt->second.empty()) {
-        // 没有找到.mcmeta数据，视为普通材质
+        // 没有找到.mcmeta数据,视为普通材质
         return false;
     }
     
@@ -242,7 +242,7 @@ bool ParseMcmetaFile(const std::string& cacheKey, MaterialType& outType) {
         return true;
     }
     
-    // 其他类型的.mcmeta文件，保持为普通材质
+    // 其他类型的.mcmeta文件,保持为普通材质
     return true;
 }
 

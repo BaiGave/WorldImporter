@@ -5,7 +5,7 @@
 #include <functional>
 #include <cstddef>
 
-// 自定义哈希函数，用于std::pair
+// 自定义哈希函数,用于std::pair
 struct pair_hash {
     template <class T1, class T2>
     std::size_t operator()(const std::pair<T1, T2>& p) const noexcept {
@@ -15,7 +15,7 @@ struct pair_hash {
     }
 };
 
-// 自定义哈希函数，用于std::tuple（三元组）
+// 自定义哈希函数,用于std::tuple(三元组)
 struct triple_hash {
     template <class T1, class T2, class T3>
     std::size_t operator()(const std::tuple<T1, T2, T3>& t) const noexcept {

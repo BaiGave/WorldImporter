@@ -21,7 +21,7 @@ struct WeightedModelData {
     int weight;
 };
 
-// 全局缓存，键为 namespace，值为 blockId 到 ModelData 的映射
+// 全局缓存,键为 namespace,值为 blockId 到 ModelData 的映射
 extern  std::unordered_map<std::string, std::unordered_map<std::string, ModelData>> BlockModelCache;
 
 extern std::unordered_map<std::string,

@@ -16,7 +16,7 @@
 
 using namespace std;
 using namespace std::chrono;
-// 全局变量：存储每个块（chunkX, sectionY, chunkZ）对应的 LOD 值
+// 全局变量:存储每个块(chunkX, sectionY, chunkZ)对应的 LOD 值
 std::unordered_map<std::tuple<int, int, int>, float, TupleHash> g_chunkLODs;
 
 // 缓存方块ID到颜色的映射
@@ -50,7 +50,7 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
         }
     }
 
-    // 声明materialIndex变量，使其在整个函数中可见
+    // 声明materialIndex变量,使其在整个函数中可见
     int materialIndex = -1;
     
     if (textureAverage.empty()) {
@@ -135,7 +135,7 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
     }
 
     char finalColorStr[128];
-    // 检查模型中是否有任何材质需要tint索引（群系着色）
+    // 检查模型中是否有任何材质需要tint索引(群系着色)
     bool hasTintIndex = false;
     short tintIndexValue = -1;
     
@@ -145,7 +145,7 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
         hasTintIndex = (tintIndexValue != -1);
     }
     
-    // 如果当前材质不需要着色，检查模型中的所有其他材质
+    // 如果当前材质不需要着色,检查模型中的所有其他材质
     if (!hasTintIndex && !blockModel.materials.empty()) {
         for (const auto& material : blockModel.materials) {
             if (material.tintIndex != -1) {
@@ -238,7 +238,7 @@ BlockType DetermineLODBlockType(int x, int y, int z, int lodBlockSize, int* id =
     bool hasSolidBelow = false; // 当前层下方是否存在固体层
     BlockType result = AIR;
 
-    // 从下到上遍历每一层（0表示最底层）
+    // 从下到上遍历每一层(0表示最底层)
     for (int dy = lodBlockSize - 1; dy >= 0; --dy) {
         int currentAir = 0, currentFluid = 0, currentSolid = 0;
 
@@ -290,7 +290,7 @@ BlockType DetermineLODBlockType(int x, int y, int z, int lodBlockSize, int* id =
     else if (hasSolidBelow)    result = SOLID;
     else                       result = AIR;
 
-    // 设置ID（从上到下查找第一个对应类型）
+    // 设置ID(从上到下查找第一个对应类型)
     if (id) {
         *id = 0;
         for (int dy = lodBlockSize - 1; dy >= 0; --dy) {
@@ -323,13 +323,13 @@ BlockType LODManager::DetermineLODBlockTypeWithUpperCheck(int x, int y, int z, i
     BlockType upperType = DetermineLODBlockType(x, y + lodBlockSize, z, lodBlockSize);
 
     if (level != nullptr) {
-        // 如果上方的类型不是空气，则将 level 设置为 0
+        // 如果上方的类型不是空气,则将 level 设置为 0
         if (upperType != AIR) {
             *level = 0;
 
         }
         else {
-            // 如果上方是空气，则返回当前块的层数
+            // 如果上方是空气,则返回当前块的层数
             *level = currentLevel;
 
         }
@@ -354,7 +354,7 @@ std::vector<std::string> LODManager::GetBlockColor(int x, int y, int z, int id, 
     }
 }
 
-// 修改后的 IsRegionEmpty 方法：增加 isFluid 参数（默认为 false，用于固体判断）
+// 修改后的 IsRegionEmpty 方法:增加 isFluid 参数(默认为 false,用于固体判断)
 bool IsRegionEmpty(int x, int y, int z, float lodSize) {
     int height;
     BlockType type = LODManager::DetermineLODBlockTypeWithUpperCheck(x, y, z, lodSize, nullptr, &height);
@@ -377,7 +377,7 @@ bool IsRegionEmpty(int x, int y, int z, float lodSize) {
     return true;
 }
 
-// 辅助函数：判断指定区域是否有效 
+// 辅助函数:判断指定区域是否有效 
 bool IsRegionValid(int x, int y, int z, float lodSize) {
     // 边界检查
     if (x < config.minX || x + lodSize > config.maxX ||
@@ -391,7 +391,7 @@ bool IsRegionValid(int x, int y, int z, float lodSize) {
     return !IsRegionEmpty(x, y, z, lodSize);
 }
 
-// 修改后的 IsRegionEmpty 方法：增加 isFluid 参数（默认为 false，用于固体判断）
+// 修改后的 IsRegionEmpty 方法:增加 isFluid 参数(默认为 false,用于固体判断)
 bool IsFluidRegionEmpty(int x, int y, int z, float lodSize, float h) {
     int height;
     BlockType type = LODManager::DetermineLODBlockTypeWithUpperCheck(x, y, z, lodSize, nullptr, &height);
@@ -402,7 +402,7 @@ bool IsFluidRegionEmpty(int x, int y, int z, float lodSize, float h) {
     }
     return true;
 }
-// 辅助函数：判断指定区域是否有效 
+// 辅助函数:判断指定区域是否有效 
 bool IsFluidRegionValid(int x, int y, int z, float lodSize, float h) {
     // 边界检查
     if (x < config.minX || x + lodSize > config.maxX ||
@@ -416,7 +416,7 @@ bool IsFluidRegionValid(int x, int y, int z, float lodSize, float h) {
     return !IsFluidRegionEmpty(x, y, z, lodSize, h);
 }
 
-// 修改后的 IsRegionEmpty 方法：增加 isFluid 参数（默认为 false，用于固体判断）
+// 修改后的 IsRegionEmpty 方法:增加 isFluid 参数(默认为 false,用于固体判断)
 bool IsFluidTopRegionEmpty(int x, int y, int z, float lodSize, float h) {
     int height;
     BlockType type = LODManager::DetermineLODBlockTypeWithUpperCheck(x, y, z, lodSize, nullptr, &height);
@@ -426,7 +426,7 @@ bool IsFluidTopRegionEmpty(int x, int y, int z, float lodSize, float h) {
     }
     return true;
 }
-// 辅助函数：判断指定区域是否有效 
+// 辅助函数:判断指定区域是否有效 
 bool IsFluidTopRegionValid(int x, int y, int z, float lodSize, float h) {
     // 边界检查
     if (x < config.minX || x + lodSize > config.maxX ||
@@ -445,7 +445,7 @@ bool IsFaceOccluded(int faceDir, int x, int y, int z, int baseSize) {
 
     // 根据面方向设置检测范围
     switch (faceDir) {
-    case 0: // 底面（y-方向）
+    case 0: // 底面(y-方向)
         dxStart = x;
         dxEnd = x + baseSize;
         dyStart = y - 1;
@@ -453,7 +453,7 @@ bool IsFaceOccluded(int faceDir, int x, int y, int z, int baseSize) {
         dzStart = z;
         dzEnd = z + baseSize;
         break;
-    case 1: // 顶面（y+方向）
+    case 1: // 顶面(y+方向)
         dxStart = x;
         dxEnd = x + baseSize;
         dyStart = y + baseSize;
@@ -461,7 +461,7 @@ bool IsFaceOccluded(int faceDir, int x, int y, int z, int baseSize) {
         dzStart = z;
         dzEnd = z + baseSize;
         break;
-    case 2: // 北面（z-方向）
+    case 2: // 北面(z-方向)
         dxStart = x;
         dxEnd = x + baseSize;
         dyStart = y;
@@ -469,7 +469,7 @@ bool IsFaceOccluded(int faceDir, int x, int y, int z, int baseSize) {
         dzStart = z - 1;
         dzEnd = z;
         break;
-    case 3: // 南面（z+方向）
+    case 3: // 南面(z+方向)
         dxStart = x;
         dxEnd = x + baseSize;
         dyStart = y;
@@ -477,7 +477,7 @@ bool IsFaceOccluded(int faceDir, int x, int y, int z, int baseSize) {
         dzStart = z + baseSize;
         dzEnd = z + baseSize + 1;
         break;
-    case 4: // 西面（x-方向）
+    case 4: // 西面(x-方向)
         dxStart = x - 1;
         dxEnd = x;
         dyStart = y;
@@ -485,7 +485,7 @@ bool IsFaceOccluded(int faceDir, int x, int y, int z, int baseSize) {
         dzStart = z;
         dzEnd = z + baseSize;
         break;
-    case 5: // 东面（x+方向）
+    case 5: // 东面(x+方向)
         dxStart = x + baseSize;
         dxEnd = x + baseSize + 1;
         dyStart = y;
@@ -506,7 +506,7 @@ bool IsFaceOccluded(int faceDir, int x, int y, int z, int baseSize) {
                 if (config.useUnderwaterLOD)
                 {
                     if (type != SOLID) {
-                        return false; // 发现非固体方块，不剔除该面
+                        return false; // 发现非固体方块,不剔除该面
                     }
                 }
                 else
@@ -520,7 +520,7 @@ bool IsFaceOccluded(int faceDir, int x, int y, int z, int baseSize) {
             }
         }
     }
-    return true; // 区域全为固体，需要剔除该面
+    return true; // 区域全为固体,需要剔除该面
 }
 
 bool IsFluidFaceOccluded(int faceDir, int x, int y, int z, int baseSize) {
@@ -528,7 +528,7 @@ bool IsFluidFaceOccluded(int faceDir, int x, int y, int z, int baseSize) {
 
     // 根据面方向设置检测范围
     switch (faceDir) {
-    case 0: // 底面（y-方向）
+    case 0: // 底面(y-方向)
         dxStart = x;
         dxEnd = x + baseSize;
         dyStart = y - 1;
@@ -536,7 +536,7 @@ bool IsFluidFaceOccluded(int faceDir, int x, int y, int z, int baseSize) {
         dzStart = z;
         dzEnd = z + baseSize;
         break;
-    case 1: // 顶面（y+方向）
+    case 1: // 顶面(y+方向)
         dxStart = x;
         dxEnd = x + baseSize;
         dyStart = y + baseSize;
@@ -544,7 +544,7 @@ bool IsFluidFaceOccluded(int faceDir, int x, int y, int z, int baseSize) {
         dzStart = z;
         dzEnd = z + baseSize;
         break;
-    case 2: // 北面（z-方向）
+    case 2: // 北面(z-方向)
         dxStart = x;
         dxEnd = x + baseSize;
         dyStart = y;
@@ -552,7 +552,7 @@ bool IsFluidFaceOccluded(int faceDir, int x, int y, int z, int baseSize) {
         dzStart = z - 1;
         dzEnd = z;
         break;
-    case 3: // 南面（z+方向）
+    case 3: // 南面(z+方向)
         dxStart = x;
         dxEnd = x + baseSize;
         dyStart = y;
@@ -560,7 +560,7 @@ bool IsFluidFaceOccluded(int faceDir, int x, int y, int z, int baseSize) {
         dzStart = z + baseSize;
         dzEnd = z + baseSize + 1;
         break;
-    case 4: // 西面（x-方向）
+    case 4: // 西面(x-方向)
         dxStart = x - 1;
         dxEnd = x;
         dyStart = y;
@@ -568,7 +568,7 @@ bool IsFluidFaceOccluded(int faceDir, int x, int y, int z, int baseSize) {
         dzStart = z;
         dzEnd = z + baseSize;
         break;
-    case 5: // 东面（x+方向）
+    case 5: // 东面(x+方向)
         dxStart = x + baseSize;
         dxEnd = x + baseSize + 1;
         dyStart = y;
@@ -587,16 +587,16 @@ bool IsFluidFaceOccluded(int faceDir, int x, int y, int z, int baseSize) {
             for (int dz = dzStart; dz < dzEnd; ++dz) {
                 BlockType type = GetBlockType2(dx, dy, dz);
                 if (type != SOLID) {
-                    return false; // 发现非固体方块，不剔除该面
+                    return false; // 发现非固体方块,不剔除该面
                 }
             }
         }
     }
-    return true; // 区域全为固体，需要剔除该面
+    return true; // 区域全为固体,需要剔除该面
 }
 
 
-// 修改后的 GenerateBox，增加了 boxHeight 参数 
+// 修改后的 GenerateBox,增加了 boxHeight 参数 
 ModelData LODManager::GenerateBox(int x, int y, int z, int baseSize, float boxHeight,
     const std::vector<std::string>& colors) {
     ModelData box;
@@ -606,20 +606,20 @@ ModelData LODManager::GenerateBox(int x, int y, int z, int baseSize, float boxHe
     if (colors.size() == 1) {
         // 然后检查上方的 LOD 块 (y + 1)
         BlockType upperType = DetermineLODBlockType(x, y + baseSize, z, baseSize);
-        // 如果上方的类型不是空气，则将 level 设置为 0
+        // 如果上方的类型不是空气,则将 level 设置为 0
         if (upperType == AIR) {
             height = height - 0.1f;
         }
 
     }
-    // 构造顶点数组，注意 y 方向使用 boxHeight
+    // 构造顶点数组,注意 y 方向使用 boxHeight
     box.vertices = {
         // 底面
         0.0f, 0.0f, 0.0f,
         size, 0.0f, 0.0f,
         size, 0.0f, size,
         0.0f, 0.0f, size,
-        // 顶面（高度为 boxHeight）
+        // 顶面(高度为 boxHeight)
         0.0f, height, 0.0f,
         size, height, 0.0f,
         size, height, size,
@@ -646,7 +646,7 @@ ModelData LODManager::GenerateBox(int x, int y, int z, int baseSize, float boxHe
         size, height, 0.0f
     };
 
-    // 创建临时顶点索引数组，之后会用于创建 Face 结构体
+    // 创建临时顶点索引数组,之后会用于创建 Face 结构体
     std::vector<int> tempVertexIndices = {
         0, 3, 2, 1,      // 底面
         4, 7, 6, 5,      // 顶面
@@ -674,7 +674,7 @@ ModelData LODManager::GenerateBox(int x, int y, int z, int baseSize, float boxHe
         defaultMaterial.texturePath = "default_color";
         defaultMaterial.tintIndex = -1;
         box.materials = { defaultMaterial };
-        materialIndices = { 0, 0, 0, 0, 0, 0 }; // 临时数组，用于后续创建 Face 结构体
+        materialIndices = { 0, 0, 0, 0, 0, 0 }; // 临时数组,用于后续创建 Face 结构体
     }
     else if (colors.size() == 1 || (colors.size() >= 2 && colors[0] == colors[1])) {
         Material singleMaterial;
@@ -682,7 +682,7 @@ ModelData LODManager::GenerateBox(int x, int y, int z, int baseSize, float boxHe
         singleMaterial.texturePath = colors[0];
         singleMaterial.tintIndex = -1;
         box.materials = { singleMaterial };
-        materialIndices = { 0, 0, 0, 0, 0, 0 }; // 临时数组，用于后续创建 Face 结构体
+        materialIndices = { 0, 0, 0, 0, 0, 0 }; // 临时数组,用于后续创建 Face 结构体
     }
     else {
         Material material1, material2;
@@ -695,7 +695,7 @@ ModelData LODManager::GenerateBox(int x, int y, int z, int baseSize, float boxHe
         material2.tintIndex = -1;
         
         box.materials = { material1, material2 };
-        materialIndices = { 1, 0, 1, 1, 1, 1 }; // 临时数组，用于后续创建 Face 结构体
+        materialIndices = { 1, 0, 1, 1, 1, 1 }; // 临时数组,用于后续创建 Face 结构体
     }
 
     // 调整模型位置
@@ -742,13 +742,13 @@ ModelData LODManager::GenerateBox(int x, int y, int z, int baseSize, float boxHe
         }
     }
 
-    // 根据 validFaces 过滤不需要的面，并使用新的 Face 结构体
+    // 根据 validFaces 过滤不需要的面,并使用新的 Face 结构体
     ModelData filteredBox;
     filteredBox.vertices = box.vertices;
     filteredBox.uvCoordinates = box.uvCoordinates;
     filteredBox.materials = box.materials;
     
-    // 定义 faceDirections，与索引对应
+    // 定义 faceDirections,与索引对应
     FaceType faceDirections[6] = { DOWN, UP, NORTH, SOUTH, WEST, EAST };
     
     for (int faceIdx = 0; faceIdx < 6; ++faceIdx) {

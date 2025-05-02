@@ -5,14 +5,14 @@
 
 using namespace std::chrono;
 
-// 辅助函数：计算数值转换为字符串后的长度
+// 辅助函数:计算数值转换为字符串后的长度
 template <typename T>
 int calculateStringLength(T value, int precision = 6) {
     char buffer[64];
     return snprintf(buffer, sizeof(buffer), "%.*f", precision, static_cast<double>(value));
 }
 
-// 快速计算整数的字符串长度（正数）
+// 快速计算整数的字符串长度(正数)
 inline int calculateIntLength(int value) {
     if (value == 0) return 1;
     int length = 0;
@@ -27,7 +27,7 @@ inline int calculateIntLength(int value) {
     }
     return length;
 }
-// 快速计算浮点数转换为 "%.6f" 格式后的字符串长度（数学估算）
+// 快速计算浮点数转换为 "%.6f" 格式后的字符串长度(数学估算)
 inline int calculateFloatStringLength(float value) {
     if (value == floor(value)) {  // 整数
         return calculateIntLength(static_cast<int>(value));
@@ -36,7 +36,7 @@ inline int calculateFloatStringLength(float value) {
         const bool negative = value < 0.0f;
         const double absValue = std::abs(static_cast<double>(value));
 
-        // 处理特殊情况：0.0
+        // 处理特殊情况:0.0
         if (absValue < 1e-7) {
             return negative ? 9 : 8; // "-0.000000" 或 "0.000000"
         }
@@ -55,7 +55,7 @@ inline int calculateFloatStringLength(float value) {
     }
 
 }
-// 快速整数转字符串（正数版）
+// 快速整数转字符串(正数版)
 inline char* fast_itoa_positive(uint32_t value, char* ptr) {
     char* start = ptr;
     do {
@@ -66,7 +66,7 @@ inline char* fast_itoa_positive(uint32_t value, char* ptr) {
     return ptr;
 }
 
-// 快速整数转字符串（带符号）
+// 快速整数转字符串(带符号)
 inline char* fast_itoa(int value, char* ptr) {
     if (value == 0) {
         *ptr++ = '0';
@@ -85,7 +85,7 @@ inline char* fast_itoa(int value, char* ptr) {
     return ptr;
 }
 
-// 快速浮点转字符串（固定6位小数）
+// 快速浮点转字符串(固定6位小数)
 inline char* fast_ftoa(float value, char* ptr) {
     if (value == floor(value)) {  // 检查是否是整数
         return fast_itoa(static_cast<int>(value), ptr);
@@ -137,7 +137,7 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
     //【新增】预计算顶点注释行的长度
     totalSize += snprintf(nullptr, 0, "# Vertices (%zu)\n", data.vertices.size() / 3);
 
-    // 预计算所有浮点数的字符串长度（顶点数据）
+    // 预计算所有浮点数的字符串长度(顶点数据)
     std::vector<int> vertexLengths(data.vertices.size());
     for (size_t i = 0; i < data.vertices.size(); ++i) {
         vertexLengths[i] = calculateFloatStringLength(data.vertices[i]);
@@ -210,7 +210,7 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         totalSize += localSize;
     }
 
-    // 分配缓冲区（+1为安全冗余）
+    // 分配缓冲区(+1为安全冗余)
     std::vector<char> buffer(totalSize + 1);
     char* ptr = buffer.data();
 
@@ -325,13 +325,13 @@ void createObjFile(const ModelData& data, const std::string& objName, const std:
         name = objName.substr(commentPos + 2);
     }
 
-    // 使用流缓冲区进行拼接，减少IO操作次数
+    // 使用流缓冲区进行拼接,减少IO操作次数
     std::ostringstream oss;
 
     // 写入文件头
     oss << "mtllib " << mtlFilePath << "\n";
     oss << "o " << name << "\n\n";
-    // 写入顶点数据（每3个元素一个顶点）
+    // 写入顶点数据(每3个元素一个顶点)
     oss << "# Vertices (" << data.vertices.size() / 3 << ")\n";
     for (size_t i = 0; i < data.vertices.size(); i += 3) {
         oss << "v " << data.vertices[i] << " "
@@ -340,7 +340,7 @@ void createObjFile(const ModelData& data, const std::string& objName, const std:
     }
     oss << "\n";
 
-    // 写入UV坐标（每2个元素一个UV）
+    // 写入UV坐标(每2个元素一个UV)
     oss << "# UVs (" << data.uvCoordinates.size() / 2 << ")\n";
     for (size_t i = 0; i < data.uvCoordinates.size(); i += 2) {
         oss << "vt " << data.uvCoordinates[i] << " "
@@ -348,7 +348,7 @@ void createObjFile(const ModelData& data, const std::string& objName, const std:
     }
     oss << "\n";
 
-    // 按材质分组面（优化分组算法）
+    // 按材质分组面(优化分组算法)
     std::vector<std::vector<size_t>> materialGroups(data.materials.size());
     const size_t totalFaces = data.faces.size();
     for (size_t faceIdx = 0; faceIdx < totalFaces; ++faceIdx) {
@@ -358,7 +358,7 @@ void createObjFile(const ModelData& data, const std::string& objName, const std:
         }
     }
 
-    // 写入面数据（优化内存访问模式）
+    // 写入面数据(优化内存访问模式)
     oss << "# Faces (" << totalFaces << ")\n";
     for (size_t matIndex = 0; matIndex < materialGroups.size(); ++matIndex) {
         const auto& faces = materialGroups[matIndex];
@@ -410,13 +410,13 @@ void createSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMate
                 mtlFile << "Ni 1.500000\n";
                 mtlFile << "illum 2\n";
             }
-            // 处理纯颜色材质（支持流体格式：color#r g b-流体名 和普通格式：color#r g b=）
+            // 处理纯颜色材质(支持流体格式:color#r g b-流体名 和普通格式:color#r g b=)
             else if (texturePath.find("color#") != std::string::npos) {
                 std::string colorStr;
                 size_t pos = texturePath.find("-");
                 size_t pos_deng = texturePath.find("=");
                 if (pos != std::string::npos) {
-                    // 流体材质格式，提取"-"前面的颜色部分
+                    // 流体材质格式,提取"-"前面的颜色部分
                     colorStr = texturePath.substr(std::string("color#").size() , pos - std::string("color#").size());
                 }
                 else if (pos_deng != std::string::npos) {
@@ -472,7 +472,7 @@ void createSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMate
     }
 }
 
-// 创建 .mtl 文件，接收 textureToPath 作为参数
+// 创建 .mtl 文件,接收 textureToPath 作为参数
 void createMtlFile(const ModelData& data, const std::string& mtlFileName) {
     std::string exeDir = getExecutableDir();
     std::string fullMtlPath = exeDir + mtlFileName + ".mtl";
@@ -496,13 +496,13 @@ void createMtlFile(const ModelData& data, const std::string& mtlFileName) {
                 mtlFile << "Ni 1.500000\n";
                 mtlFile << "illum 2\n";
             }
-            // 处理纯颜色材质（支持流体格式：color#r g b-流体名 和普通格式：color#r g b=）
+            // 处理纯颜色材质(支持流体格式:color#r g b-流体名 和普通格式:color#r g b=)
             else if (texturePath.find("color#") != std::string::npos) {
                 std::string colorStr;
                 size_t pos = texturePath.find("-");
                 size_t pos_deng = texturePath.find("=");
                 if (pos != std::string::npos) {
-                    // 流体材质格式，提取"-"前面的颜色部分
+                    // 流体材质格式,提取"-"前面的颜色部分
                     colorStr = texturePath.substr(pos + std::string("color#").size() , pos - std::string("color#").size());
                 }
                 else if (pos_deng != std::string::npos) {
@@ -559,7 +559,7 @@ void createMtlFile(const ModelData& data, const std::string& mtlFileName) {
 
 // 单独的文件创建方法
 void CreateModelFiles(const ModelData& data, const std::string& filename) {
-    auto start = high_resolution_clock::now();  // 新增：开始时间点
+    auto start = high_resolution_clock::now();  // 新增:开始时间点
     // 创建MTL文件
     try
     {
@@ -581,9 +581,9 @@ void CreateModelFiles(const ModelData& data, const std::string& filename) {
     
     
     
-    auto end = high_resolution_clock::now();  // 新增：结束时间点
-    auto duration = duration_cast<milliseconds>(end - start);  // 新增：计算时间差
-    std::cout << "模型导出obj耗时: " << duration.count() << " ms" << std::endl;  // 新增：输出到控制台
+    auto end = high_resolution_clock::now();  // 新增:结束时间点
+    auto duration = duration_cast<milliseconds>(end - start);  // 新增:计算时间差
+    std::cout << "模型导出obj耗时: " << duration.count() << " ms" << std::endl;  // 新增:输出到控制台
     
     
 }

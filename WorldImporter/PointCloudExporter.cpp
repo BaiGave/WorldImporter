@@ -60,12 +60,12 @@ void PointCloudExporter::PreprocessBlockModels(std::vector<Block> blockPalette) 
         const string& blockName = blockPalette[index].GetBlockNameWithoutProperties();
         string fullBlockName = blockName;
 
-        // 分割命名空间和方块 ID（假设 blockName 已包含状态）
+        // 分割命名空间和方块 ID(假设 blockName 已包含状态)
         size_t colonPos = fullBlockName.find(':');
         string namespaceName = fullBlockName.substr(0, colonPos);
         string blockIdWithState = fullBlockName.substr(colonPos + 1);
 
-        // 替换非法字符，确保文件名合法
+        // 替换非法字符,确保文件名合法
         replace(blockIdWithState.begin(), blockIdWithState.end(), ':', '=');
 
         // 调用 ProcessBlockstateJson 获取模型数据
@@ -76,11 +76,11 @@ void PointCloudExporter::PreprocessBlockModels(std::vector<Block> blockPalette) 
             // 获取模型数据
             ModelData modelData = models[blockIdWithState];
 
-            // 生成文件名，前面加上索引和 #
+            // 生成文件名,前面加上索引和 #
             string fileName = "#" + std::to_string(index) + "_" + blockIdWithState;
 
-            // 调用模型生成函数（文件名前缀拼接 models/）
-            string outputPath = "models//" + fileName; // 注意：Windows 路径分隔符是反斜杠
+            // 调用模型生成函数(文件名前缀拼接 models/)
+            string outputPath = "models//" + fileName; // 注意:Windows 路径分隔符是反斜杠
             CreateModelFiles(modelData, outputPath);
         }
     }
@@ -101,9 +101,9 @@ void PointCloudExporter::ExportPointCloud() {
                 {
                     std::cout << blockName;
                 }*/
-                // 如果方块不是 "minecraft:air"，则导出该方块位置为点
+                // 如果方块不是 "minecraft:air",则导出该方块位置为点
                 if (blockName != "minecraft:air") {
-                    // 将该点作为顶点写入 .obj 文件，格式：v x y z id
+                    // 将该点作为顶点写入 .obj 文件,格式:v x y z id
                     objFile << "v " << x << " " << y << " " << z << " " << blockId << endl;
                 }
             }
@@ -120,7 +120,7 @@ void PointCloudExporter::ExportPointCloud() {
     }
 
 
-    // 写入 JSON 文件（格式化输出）
+    // 写入 JSON 文件(格式化输出)
     jsonFile << blockIdMapping.dump(4);  // 使用 4 空格进行格式化
 
     // 关闭文件流

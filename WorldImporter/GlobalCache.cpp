@@ -200,7 +200,7 @@ void InitializeAllCaches() {
                 WIN32_FIND_DATAW fdFile;
                 HANDLE hFind = FindFirstFileW(modsPathW.c_str(), &fdFile);
                 if (hFind != INVALID_HANDLE_VALUE && (fdFile.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-                    // 目录存在，处理mod文件
+                    // 目录存在,处理mod文件
                     FindClose(hFind);
                     
                     for (const auto& mod : listdir(modsPathW)) {
@@ -214,7 +214,7 @@ void InitializeAllCaches() {
                             modPath += mod;
                             
                             std::string modid = GetModIdFromJar(modPath, modLoaderType);
-                            // 如果无法获取modid，使用文件名（不含扩展名）作为备用modid
+                            // 如果无法获取modid,使用文件名(不含扩展名)作为备用modid
                             if (modid.empty()) {
                                 modid = modStr.substr(0, modStr.length() - 4); // 移除.jar后缀
                             }
@@ -237,7 +237,7 @@ void InitializeAllCaches() {
 
         prepareQueue();
 
-        // 将 jarQueue 中的 jar 路径复制到 vector 中，保证顺序与 GlobalCache::jarOrder 保持一致
+        // 将 jarQueue 中的 jar 路径复制到 vector 中,保证顺序与 GlobalCache::jarOrder 保持一致
         std::vector<std::wstring> jarPaths;
         {
             std::lock_guard<std::mutex> lock(GlobalCache::queueMutex);
@@ -251,11 +251,11 @@ void InitializeAllCaches() {
 
         
 
-        // 用 vector 保存所有任务的结果，顺序与 jarPaths 和 jarOrder 对应
+        // 用 vector 保存所有任务的结果,顺序与 jarPaths 和 jarOrder 对应
         std::vector<TaskResult> taskResults(taskCount);
         std::atomic<size_t> atomicIndex{ 0 };
 
-        // 工作线程：按索引读取 jar 文件，并将结果存入 taskResults 对应位置
+        // 工作线程:按索引读取 jar 文件,并将结果存入 taskResults 对应位置
         auto worker = [&]() {
             while (true) {
                 size_t idx = atomicIndex.fetch_add(1);
@@ -263,18 +263,18 @@ void InitializeAllCaches() {
                     break;
 
                 std::wstring jarPath = jarPaths[idx];
-                // 根据索引，从 GlobalCache::jarOrder 中获取对应的模组 ID
+                // 根据索引,从 GlobalCache::jarOrder 中获取对应的模组 ID
                 std::string currentModId = GlobalCache::jarOrder[idx];
 
                 JarReader reader(jarPath);
                 if (!reader.open()) {
                     std::cerr << "Warning: Failed to open jar, skipping resources for: " << currentModId << std::endl;
-                    // 跳过此JAR文件的处理，但不终止整个循环
+                    // 跳过此JAR文件的处理,但不终止整个循环
                     continue;
                 }
                 
                 try {
-                    // 读取 jar 文件的各类资源，存入对应的任务结果中
+                    // 读取 jar 文件的各类资源,存入对应的任务结果中
                     reader.cacheAllResources(taskResults[idx].localTextures,
                         taskResults[idx].localBlockstates,
                         taskResults[idx].localModels,

@@ -29,9 +29,9 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
 
 void PrintTextureCache(const std::unordered_map<std::string, std::vector<unsigned char>>& textureCache);
 
-// 新增：检测材质类型
+// 新增:检测材质类型
 MaterialType DetectMaterialType(const std::string& namespaceName, const std::string& texturePath);
 
-// 新增：从缓存中读取.mcmeta数据并解析
+// 新增:从缓存中读取.mcmeta数据并解析
 bool ParseMcmetaFile(const std::string& cacheKey, MaterialType& outType);
 #endif // TEXTURE_H

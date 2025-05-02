@@ -16,7 +16,7 @@ void init() {
     SetGlobalLocale();
     config = LoadConfig("config\\config.json");
     
-    // 配置加载完成后，再初始化缓存
+    // 配置加载完成后,再初始化缓存
     InitializeAllCaches();
     LoadSolidBlocks(config.solidBlocksFile);
     LoadFluidBlocks(config.fluidsFile);
@@ -35,15 +35,15 @@ int main() {
     
     
     if (config.status == 1) {
-        // 如果是 1，导出区域内所有方块模型
+        // 如果是 1,导出区域内所有方块模型
         RegionModelExporter::ExportModels("region_models");
     }
     else if (config.status == 2) {
-        // 如果是 2，执行点云导出逻辑
+        // 如果是 2,执行点云导出逻辑
         PointCloudExporter::ExportPointCloudToFile("output.obj", "block_id_mapping.json");
     }
     else if (config.status == 0) {
-        // 如果是 0，执行整合包所有方块状态导出逻辑
+        // 如果是 0,执行整合包所有方块状态导出逻辑
         ProcessAllBlockstateVariants();
     }
     auto end_time = high_resolution_clock::now();

@@ -73,7 +73,7 @@ std::vector<std::vector<std::string>> GetAllParentPaths(const std::string& block
         allParentPaths.push_back({ blockFullName });
     }
     else {
-        // 其他情况，可能直接返回当前模型的路径
+        // 其他情况,可能直接返回当前模型的路径
         allParentPaths.push_back({ blockFullName });
     }
 
@@ -110,7 +110,7 @@ std::vector<char> ReadFileToMemory(const std::string& directoryPath, int regionX
 }
 
 unsigned CalculateOffset(const vector<char>& fileData, int x, int z) {
-    // 直接使用 x 和 z，不需要进行模运算
+    // 直接使用 x 和 z,不需要进行模运算
     unsigned index = 4 * (x + z * 32);
 
     // 检查是否越界
@@ -148,18 +148,18 @@ bool ExportChunkNBTDataToFile(const vector<char>& data, const string& filePath) 
     ofstream outFile(filePath, ios::binary);
     if (!outFile) {
         cerr << "无法打开文件: " << filePath << endl;
-        return false;  // 无法打开文件，返回 false
+        return false;  // 无法打开文件,返回 false
     }
 
     // 写入数据到文件
     outFile.write(data.data(), data.size());
     if (!outFile) {
         cerr << "写入文件失败: " << filePath << endl;
-        return false;  // 写入失败，返回 false
+        return false;  // 写入失败,返回 false
     }
 
     outFile.close();  // 关闭文件
-    return true;  // 成功保存数据到文件，返回 true
+    return true;  // 成功保存数据到文件,返回 true
 }
 
 
@@ -216,7 +216,7 @@ void GenerateSolidsJson(const std::string& outputPath, const std::vector<std::st
         std::cerr << "错误: 无法写入文件 " << outputPath << std::endl;
     }
 }
-// 设置全局 locale 为支持中文，支持 UTF-8 编码
+// 设置全局 locale 为支持中文,支持 UTF-8 编码
 void SetGlobalLocale() {
     std::setlocale(LC_ALL, "zh_CN.UTF-8");  // 使用 UTF-8 编码
 }
@@ -309,7 +309,7 @@ void LoadFluidBlocks(const std::string& filepath) {
 
 void RegisterFluidTextures() {
     for (const auto& entry : fluidDefinitions) {
-        const std::string& fluidName = entry.first; // 完整流体名（如"minecraft:water"）
+        const std::string& fluidName = entry.first; // 完整流体名(如"minecraft:water")
         const FluidInfo& info = entry.second;
 
         // 解析命名空间和基础名称
@@ -318,7 +318,7 @@ void RegisterFluidTextures() {
             fluidName.substr(0, colonPos) : "minecraft";
         std::string baseName = (colonPos != std::string::npos) ?
             fluidName.substr(colonPos + 1) : fluidName;
-        // 自动生成默认材质路径（如果未指定）
+        // 自动生成默认材质路径(如果未指定)
         std::string stillPath =baseName + info.still_texture;
         std::string flowPath = baseName + info.flow_texture;
 
@@ -327,7 +327,7 @@ void RegisterFluidTextures() {
 
         std::string textureSavePath1 = "textures/" + ns + "/" + pathPart1 + ".png";
         std::string textureSavePath2 = "textures/" + ns + "/" + pathPart2 + ".png";
-        // 注册材质（带命名空间）
+        // 注册材质(带命名空间)
         std::string Dir = "textures";
         std::string Dir2 = "textures";
         SaveTextureToFile(ns, pathPart1, Dir);
@@ -349,7 +349,7 @@ void printBytes(const std::vector<char>& data) {
     std::cout << std::endl;
 }
 
-// 使用Windows API实现UTF-8转换，替换弃用的codecvt
+// 使用Windows API实现UTF-8转换,替换弃用的codecvt
 std::string wstring_to_string(const std::wstring& wstr) {
     if (wstr.empty()) return "";
     
@@ -366,7 +366,7 @@ std::string wstring_to_string(const std::wstring& wstr) {
     return result;
 }
 
-// 使用Windows API实现UTF-8转换，替换弃用的codecvt
+// 使用Windows API实现UTF-8转换,替换弃用的codecvt
 std::wstring string_to_wstring(const std::string& str) {
     if (str.empty()) return L"";
     
@@ -383,7 +383,7 @@ std::wstring string_to_wstring(const std::string& str) {
     return result;
 }
 
-// 将std::wstring转换为Windows系统默认的多字节编码（通常为 GBK 或 ANSI）
+// 将std::wstring转换为Windows系统默认的多字节编码(通常为 GBK 或 ANSI)
 std::string wstring_to_system_string(const std::wstring& wstr) {
     int size_needed = WideCharToMultiByte(CP_ACP, 0, wstr.c_str(), (int)wstr.size(), nullptr, 0, nullptr, nullptr);
     std::string str(size_needed, 0);
@@ -391,7 +391,7 @@ std::string wstring_to_system_string(const std::wstring& wstr) {
     return str;
 }
 
-// 获取文件夹名（路径中的最后一部分）
+// 获取文件夹名(路径中的最后一部分)
 std::wstring GetFolderNameFromPath(const std::wstring& folderPath) {
     size_t pos = folderPath.find_last_of(L"\\");
     if (pos != std::wstring::npos) {
@@ -440,7 +440,7 @@ void DeleteDirectory(const std::wstring& path) {
                 else {
                     // 解除文件占用并删除文件
                     if (!DeleteFile(filePath.c_str())) {
-                        // 如果删除失败，尝试解除占用
+                        // 如果删除失败,尝试解除占用
                         MoveFileEx(filePath.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
                     }
                 }

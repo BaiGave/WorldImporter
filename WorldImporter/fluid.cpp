@@ -10,7 +10,7 @@
 
 using namespace std;
 
-// 模型缓存（假设有一个全局缓存 Map）
+// 模型缓存(假设有一个全局缓存 Map)
 static std::unordered_map<int, ModelData> fluidModelCache;
 static std::mutex fluidModelCacheMutex; // Mutex to protect the cache
 
@@ -158,32 +158,32 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
         1.0f, h_se, 1.0f, // 6 东南角
         0.0f, h_sw, 1.0f, // 7 西南角
 
-        // 北面 (north) - Z轴负方向（保持原顺序正确）
+        // 北面 (north) - Z轴负方向(保持原顺序正确)
         0.0f, 0.0f, 0.0f, // 8
         1.0f, 0.0f, 0.0f, // 9
         1.0f, h_ne, 0.0f, // 10
         0.0f, h_nw, 0.0f, // 11
 
-        // 南面 (south) - Z轴正方向，需反转顺序
+        // 南面 (south) - Z轴正方向,需反转顺序
         0.0f, 0.0f, 1.0f, // 12
         1.0f, 0.0f, 1.0f, // 13
         1.0f, h_se, 1.0f, // 14
         0.0f, h_sw, 1.0f, // 15
 
-        // 西面 (west) - X轴负方向（保持原顺序正确）
+        // 西面 (west) - X轴负方向(保持原顺序正确)
         0.0f, 0.0f, 0.0f, // 16
         0.0f, 0.0f, 1.0f, // 17
         0.0f, h_sw, 1.0f, // 18
         0.0f, h_nw, 0.0f, // 19
 
-        // 东面 (east) - X轴正方向，需反转顺序
+        // 东面 (east) - X轴正方向,需反转顺序
         1.0f, 0.0f, 0.0f, // 20
         1.0f, 0.0f, 1.0f, // 21
         1.0f, h_se, 1.0f, // 22
         1.0f, h_ne, 0.0f  // 23
     };
 
-    // 创建模型的六个面（底面，顶面，北面，南面，西面，东面）
+    // 创建模型的六个面(底面,顶面,北面,南面,西面,东面)
     model.faces.resize(6);
     
     // 底面 (y-)
@@ -261,7 +261,7 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
         
         // 设置材质索引
         for (int i = 0; i < 6; i++) {
-            model.faces[i].materialIndex = (i == 0 || i == 1) ? 0 : 1; // 前两个面用still材质，其他用flow材质
+            model.faces[i].materialIndex = (i == 0 || i == 1) ? 0 : 1; // 前两个面用still材质,其他用flow材质
         }
     }
     else {
@@ -372,14 +372,14 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
     }
 
     // 添加材质
-    // 静止水材质（still）- 用于顶部和底部
+    // 静止水材质(still)- 用于顶部和底部
     Material stillMaterial;
     stillMaterial.name = "water_still";
     stillMaterial.texturePath = "textures/minecraft/block/water_still.png";
     stillMaterial.tintIndex = 2; // 水的色调索引
     stillMaterial.type = DetectMaterialType("minecraft", "block/water_still");
 
-    // 流动水材质（flow）- 用于侧面
+    // 流动水材质(flow)- 用于侧面
     Material flowMaterial;
     flowMaterial.name = "water_flow"; 
     flowMaterial.texturePath = "textures/minecraft/block/water_flow.png";
@@ -406,7 +406,7 @@ void AssignFluidMaterials(ModelData& model, const std::string& fluidId) {
             material.tintIndex = -1;
         }
     }
-    // 提取基础 ID 和状态值（如果有多个状态值）
+    // 提取基础 ID 和状态值(如果有多个状态值)
     std::string baseId;
     std::unordered_map<std::string, std::string> stateValues;
 
@@ -454,7 +454,7 @@ void AssignFluidMaterials(ModelData& model, const std::string& fluidId) {
         }
 
         if (fluidIt == fluidDefinitions.end()) {
-            // 如果仍然没找到，直接返回
+            // 如果仍然没找到,直接返回
             return;
         }
     }

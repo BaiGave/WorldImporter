@@ -1,5 +1,5 @@
 #include "EntityBlock.h"
-#include "RegionModelExporter.h"  // 包含必要的头文件，确保相关函数可用
+#include "RegionModelExporter.h"  // 包含必要的头文件,确保相关函数可用
 
 
 void EntityBlock::PrintDetails() const {
@@ -25,12 +25,12 @@ ModelData YuushyaShowBlockEntity::GenerateModel() const {
     ModelData mainModel;
     for (const auto& block : blocks) {
         int id = block.blockid;
-        // 位置偏移（除以16转换到模型空间）
+        // 位置偏移(除以16转换到模型空间)
         double tx = block.showPos[0] / 16.0f;
         double ty = block.showPos[1] / 16.0f;
         double tz = block.showPos[2] / 16.0f;
 
-        // 旋转参数（直接使用原始值）
+        // 旋转参数(直接使用原始值)
         float rx = block.showRotation[0]; // 假设已是角度值
         float ry = block.showRotation[1];
         float rz = block.showRotation[2];
@@ -49,12 +49,12 @@ ModelData YuushyaShowBlockEntity::GenerateModel() const {
         if (colonPos != std::string::npos) blockName = blockName.substr(colonPos + 1);
         ModelData blockModel = GetRandomModelFromCache(ns, blockName);
 
-        // 将所有面设置为DO_NOT_CULL，确保不会被贪心合并算法错误剔除
+        // 将所有面设置为DO_NOT_CULL,确保不会被贪心合并算法错误剔除
         for (auto& face : blockModel.faces) {
             face.faceDirection = DO_NOT_CULL;
         }
 
-        // 应用变换顺序：缩放 -> 旋转 -> 平移
+        // 应用变换顺序:缩放 -> 旋转 -> 平移
         ApplyRotationToVertices(std::span<float>(blockModel.vertices.data(), blockModel.vertices.size()), rx, ry, rz);
 
         ApplyDoublePositionOffset(blockModel, tx, ty, tz);
@@ -120,7 +120,7 @@ ModelData CreateCube(float minX, float minY, float minZ, float maxX, float maxY,
         maxX, maxY, maxZ, maxX, maxY, minZ, maxX, minY, minZ, maxX, minY, maxZ
     };
 
-    // 设置 UV 坐标（此处是示例，实际可以根据不同的纹理进行调整）
+    // 设置 UV 坐标(此处是示例,实际可以根据不同的纹理进行调整)
     cubeModel.uvCoordinates = {
         0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,

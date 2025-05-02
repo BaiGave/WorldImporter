@@ -230,7 +230,7 @@ NbtTagPtr readTag(const std::vector<char>& data, size_t& index) {
         return nullptr;
     }
 
-    // 读取标签名称（大端序16位无符号长度）
+    // 读取标签名称(大端序16位无符号长度)
     uint16_t nameLength = (static_cast<uint8_t>(data[index]) << 8) | static_cast<uint8_t>(data[index + 1]);
     index += 2;
     std::string name(data.begin() + index, data.begin() + index + nameLength);
@@ -455,7 +455,7 @@ NbtTagPtr readListTag(const std::vector<char>& data, size_t& index) {
         case TagType::INT_ARRAY:
         case TagType::LONG_ARRAY:
             break;
-            // 如果需要，对数组实现类似的读取
+            // 如果需要,对数组实现类似的读取
             throw std::runtime_error("TAG_List with array types not implemented");
         default:
             break;
@@ -488,13 +488,13 @@ NbtTagPtr readCompoundTag(const std::vector<char>& data, size_t& index) {
 }
 
 
-// 将 payload 字节数组转换为 int 列表（大端顺序，每 4 个字节为一个 int）
+// 将 payload 字节数组转换为 int 列表(大端顺序,每 4 个字节为一个 int)
 std::vector<int> readIntArray(const std::vector<char>& payload) {
     std::vector<int> result;
     // 确保字节数是 4 的倍数
     if (payload.size() % 4 != 0) {
-        // 根据需要处理错误情况，这里可以抛异常或记录错误
-        // 例如：throw std::runtime_error("Invalid payload size for int array conversion.");
+        // 根据需要处理错误情况,这里可以抛异常或记录错误
+        // 例如:throw std::runtime_error("Invalid payload size for int array conversion.");
     }
     for (size_t i = 0; i < payload.size(); i += 4) {
         int value = (payload[i] << 24) | (payload[i + 1] << 16) | (payload[i + 2] << 8) | (payload[i + 3]);
@@ -520,14 +520,14 @@ NbtTagPtr getChildByName(const NbtTagPtr& tag, const std::string& childName) {
         return nullptr;
     }
 
-    // 处理 COMPOUND 类型，查找名字匹配的子标签
+    // 处理 COMPOUND 类型,查找名字匹配的子标签
     for (const auto& child : tag->children) {
         if (child->name == childName) {
             return child; // 找到匹配的子标签
         }
     }
 
-    // 如果没有找到，返回空指针
+    // 如果没有找到,返回空指针
     return nullptr;
 }
 
@@ -537,7 +537,7 @@ std::vector<NbtTagPtr> getChildren(const NbtTagPtr& tag) {
     if (tag->type == TagType::LIST || tag->type == TagType::COMPOUND) {
         return tag->children;
     }
-    return {}; // 如果标签不是 LIST 或 COMPOUND，返回空向量
+    return {}; // 如果标签不是 LIST 或 COMPOUND,返回空向量
 }
 
 //获取Tag类型
@@ -553,7 +553,7 @@ NbtTagPtr getListElementByIndex(const NbtTagPtr& tag, size_t index) {
             return tag->children[index]; // 返回指定索引的元素
         }
     }
-    return nullptr; // 如果标签类型不是 LIST 或索引无效，返回空指针
+    return nullptr; // 如果标签类型不是 LIST 或索引无效,返回空指针
 }
 
 // 获取并返回 String 类型标签的值
@@ -561,7 +561,7 @@ std::string getStringTag(const NbtTagPtr& tag) {
     if (tag->type == TagType::STRING) {
         return std::string(tag->payload.begin(), tag->payload.end());
     }
-    return "";  // 如果不是 STRING 类型，则返回空字符串
+    return "";  // 如果不是 STRING 类型,则返回空字符串
 }
 
 // 获取并输出 tag 存储的值
@@ -576,35 +576,35 @@ void getTagValue(const NbtTagPtr& tag, int depth = 0) {
     case TagType::SHORT: {
         short value;
         std::memcpy(&value, tag->payload.data(), sizeof(short));
-        value = byteSwap(value);  // 如果是大端字节序，转换为主机字节序
+        value = byteSwap(value);  // 如果是大端字节序,转换为主机字节序
         std::cout << indent << "Short value: " << value << std::endl;
         break;
     }
     case TagType::INT: {
         int value;
         std::memcpy(&value, tag->payload.data(), sizeof(int));
-        value = byteSwap(value);  // 如果是大端字节序，转换为主机字节序
+        value = byteSwap(value);  // 如果是大端字节序,转换为主机字节序
         std::cout << indent << "Int value: " << value << std::endl;
         break;
     }
     case TagType::LONG: {
         long long value;
         std::memcpy(&value, tag->payload.data(), sizeof(long long));
-        value = byteSwap(value);  // 如果是大端字节序，转换为主机字节序
+        value = byteSwap(value);  // 如果是大端字节序,转换为主机字节序
         std::cout << indent << "Long value: " << value << std::endl;
         break;
     }
     case TagType::FLOAT: {
         float value;
         std::memcpy(&value, tag->payload.data(), sizeof(float));
-        // 不需要进行字节顺序转换，因为浮点数通常与主机字节序一致
+        // 不需要进行字节顺序转换,因为浮点数通常与主机字节序一致
         std::cout << indent << "Float value: " << value << std::endl;
         break;
     }
     case TagType::DOUBLE: {
         double value;
         std::memcpy(&value, tag->payload.data(), sizeof(double));
-        // 不需要进行字节顺序转换，因为浮点数通常与主机字节序一致
+        // 不需要进行字节顺序转换,因为浮点数通常与主机字节序一致
         std::cout << indent << "Double value: " << value << std::endl;
         break;
     }
@@ -668,7 +668,7 @@ void getTagValue(const NbtTagPtr& tag, int depth = 0) {
 
 //——————————————实用方法————————————————————
 
-// 获取 section 下的 biomes 标签（TAG_Compound）
+// 获取 section 下的 biomes 标签(TAG_Compound)
 NbtTagPtr getBiomes(const NbtTagPtr& sectionTag) {
     // 确保 sectionTag 不为空
     if (!sectionTag) {
@@ -701,7 +701,7 @@ std::vector<int> getBiomeData(const std::shared_ptr<NbtTag>& tag) {
                     static std::once_flag warnFlag;
                     std::call_once(warnFlag, [&]() {
                         std::cerr << "发现未注册的生物群系: " << biomeName
-                            << "，将使用默认ID 0\n";
+                            << ",将使用默认ID 0\n";
                         });
                     bid = 0; // 默认值
                 }
@@ -712,7 +712,7 @@ std::vector<int> getBiomeData(const std::shared_ptr<NbtTag>& tag) {
     return biomeIds;
 }
 
-// 获取 biomes 下的 palette 标签（LIST 包含字符串）
+// 获取 biomes 下的 palette 标签(LIST 包含字符串)
 std::vector<std::string> getBiomePalette(const NbtTagPtr& biomesTag) {
     auto paletteTag = getChildByName(biomesTag, "palette");
     if (!paletteTag || paletteTag->type != TagType::LIST) {
@@ -732,7 +732,7 @@ std::vector<std::string> getBiomePalette(const NbtTagPtr& biomesTag) {
 
 
 //——————————————————————————————————————————
-// 获取 section 下的 block_states 标签（TAG_Compound）
+// 获取 section 下的 block_states 标签(TAG_Compound)
 NbtTagPtr getBlockStates(const NbtTagPtr& sectionTag) {
     // 确保 sectionTag 不为空
     if (!sectionTag) {
@@ -768,7 +768,7 @@ std::vector<std::string> getBlockPalette(const NbtTagPtr& blockStatesTag) {
                     blockName = std::string(nameTag->payload.begin(), nameTag->payload.end());
                 }
 
-                // 检查是否有 Properties，拼接后缀
+                // 检查是否有 Properties,拼接后缀
                 auto propertiesTag = getChildByName(blockTag, "Properties");
                 if (propertiesTag && propertiesTag->type == TagType::COMPOUND) {
                     std::string propertiesStr;
@@ -816,7 +816,7 @@ std::vector<int> getBlockStatesData(const NbtTagPtr& blockStatesTag, const std::
     int bitsPerState = (numBlockStates <= 16) ? 4 : static_cast<int>(std::ceil(std::log2(numBlockStates)));
     int statesPerLong = 64 / bitsPerState;  // 每个 long 能存储的状态数
 
-    // 将 payload 数据转换为 long 数组，并根据需要反转字节顺序
+    // 将 payload 数据转换为 long 数组,并根据需要反转字节顺序
     size_t numLongs = dataTag->payload.size() / sizeof(long long);
     std::vector<long long> data(numLongs);
     for (size_t i = 0; i < numLongs; ++i) {
@@ -826,7 +826,7 @@ std::vector<int> getBlockStatesData(const NbtTagPtr& blockStatesTag, const std::
         data[i] = encoded;
     }
 
-    // 按照子区块内的 YZX 编码顺序（索引i = 256*y + 16*z + x）读取4096个方块状态
+    // 按照子区块内的 YZX 编码顺序(索引i = 256*y + 16*z + x)读取4096个方块状态
     for (int i = 0; i < totalBlocks; ++i) {
         int longIndex = i / statesPerLong;
         int bitOffset = (i % statesPerLong) * bitsPerState;
@@ -860,14 +860,14 @@ NbtTagPtr getSectionByIndex(const NbtTagPtr& rootTag, int sectionIndex) {
         if (yTag && yTag->type == TagType::BYTE) {
             int yValue = static_cast<int>(yTag->payload[0]);
 
-            // 如果找到的 Y 值与给定的 sectionIndex 匹配，返回该子区块
+            // 如果找到的 Y 值与给定的 sectionIndex 匹配,返回该子区块
             if (yValue == sectionIndex) {
                 return sectionTag;
             }
         }
     }
 
-    // 如果没有找到匹配的子区块，返回 nullptr
+    // 如果没有找到匹配的子区块,返回 nullptr
     std::cerr << "Error: No section found with index " << sectionIndex << std::endl;
     return nullptr;
 }

@@ -14,7 +14,7 @@ class JarReader {
 public:
     bool open();
 
-    // 枚举类型，用于表示 mod 的类型
+    // 枚举类型,用于表示 mod 的类型
     enum class ModType {
         Unknown,  // 未知类型
         Vanilla,  // 原版 Minecraft
@@ -26,19 +26,19 @@ public:
         std::unordered_map<std::string, nlohmann::json>& blockstateCache,
         std::unordered_map<std::string, nlohmann::json>& modelCache,
         std::unordered_map<std::string, nlohmann::json>& mcmetaCache);
-    // 构造函数，接受 .jar 文件路径
+    // 构造函数,接受 .jar 文件路径
     JarReader(const std::wstring& jarFilePath);
 
-    // 析构函数，关闭 .jar 文件
+    // 析构函数,关闭 .jar 文件
     ~JarReader();
 
     // 去除注释
     std::string cleanUpContent(const std::string& content);
 
-    // 获取 .jar 文件中指定路径的文件内容（文本）
+    // 获取 .jar 文件中指定路径的文件内容(文本)
     std::string getFileContent(const std::string& filePathInJar);
 
-    // 获取 .jar 文件中指定路径的文件内容（二进制）
+    // 获取 .jar 文件中指定路径的文件内容(二进制)
     std::vector<unsigned char> getBinaryFileContent(const std::string& filePathInJar);
 
     void cacheAllBiomes(std::unordered_map<std::string, nlohmann::json>& cache);
@@ -83,7 +83,7 @@ private:
     // 手动解析 NeoForge 的 modId 和 displayName
     std::string extractModId(const std::string& content);
 
-    // 在 Windows 上，将宽字符路径转换为 UTF-8 路径
+    // 在 Windows 上,将宽字符路径转换为 UTF-8 路径
     std::string convertWStrToStr(const std::wstring& wstr);
 
 

@@ -24,7 +24,7 @@ bool matchConditions(const std::unordered_map<std::string, std::string>& blockCo
     if (when.is_object()) {
         // 处理空对象条件
         if (when.empty()) {
-            return false; // 触发警告：No elements found in selector
+            return false; // 触发警告:No elements found in selector
         }
 
         // 检查是否为单一OR或AND条件
@@ -33,7 +33,7 @@ bool matchConditions(const std::unordered_map<std::string, std::string>& blockCo
             if (when.contains("OR")) {
                 const auto& orCond = when["OR"];
                 if (!orCond.is_array()) {
-                    return false; // 触发警告：OR应为数组
+                    return false; // 触发警告:OR应为数组
                 }
                 for (const auto& cond : orCond) {
                     if (matchConditions(blockConditions, cond)) {
@@ -46,7 +46,7 @@ bool matchConditions(const std::unordered_map<std::string, std::string>& blockCo
             else if (when.contains("AND")) {
                 const auto& andCond = when["AND"];
                 if (!andCond.is_array()) {
-                    return false; // 触发警告：AND应为数组
+                    return false; // 触发警告:AND应为数组
                 }
                 for (const auto& cond : andCond) {
                     if (!matchConditions(blockConditions, cond)) {
@@ -86,13 +86,13 @@ bool matchConditions(const std::unordered_map<std::string, std::string>& blockCo
 
             // 空选项检查
             if (options.empty() || (options.size() == 1 && options[0].empty())) {
-                return false; // 触发警告：空属性值
+                return false; // 触发警告:空属性值
             }
 
             // 检查方块属性是否存在
             auto blockIt = blockConditions.find(prop);
             if (blockIt == blockConditions.end()) {
-                return false; // 触发警告：未知属性
+                return false; // 触发警告:未知属性
             }
 
             // 判断属性值是否匹配
@@ -114,7 +114,7 @@ bool matchConditions(const std::unordered_map<std::string, std::string>& blockCo
     return false;
 }
 
-// 辅助函数：将键值对字符串解析为map
+// 辅助函数:将键值对字符串解析为map
 std::unordered_map<std::string, std::string> ParseKeyValuePairs(const std::string& input) {
     std::unordered_map<std::string, std::string> result;
     if (input.empty()) return result;
@@ -270,7 +270,7 @@ std::unordered_map<std::string, ModelData> ProcessBlockstateJson(const std::stri
                 auto conditionMap = ParseKeyValuePairs(normalizedCondition);
                 auto variantMap = ParseKeyValuePairs(normalizedVariantKey);
 
-                // 判断条件：variantMap 的所有键值对需存在于 conditionMap 中
+                // 判断条件:variantMap 的所有键值对需存在于 conditionMap 中
                 if (condition.empty() || IsSubset(variantMap, conditionMap)) {
                     int rotationX = 0, rotationY = 0;
                     bool uvlock = false;
@@ -497,7 +497,7 @@ void LoadBlockstateJson(const std::string& namespaceName, const std::vector<std:
                 auto conditionMap = ParseKeyValuePairs(normalizedCondition);
                 auto variantMap = ParseKeyValuePairs(normalizedVariantKey);
 
-                // 判断条件：variantMap 的所有键值对需存在于 conditionMap 中
+                // 判断条件:variantMap 的所有键值对需存在于 conditionMap 中
                 if (condition.empty() || IsSubset(variantMap, conditionMap)) {
                     int rotationX = 0, rotationY = 0;
                     bool uvlock = false;
@@ -583,7 +583,7 @@ void LoadBlockstateJson(const std::string& namespaceName, const std::vector<std:
         if (blockstateJson.contains("multipart")) {
             auto multipart = blockstateJson["multipart"];
             bool useMultipartModelCache = false;
-            // 第一次遍历：检测是否存在列表格式的 apply
+            // 第一次遍历:检测是否存在列表格式的 apply
             for (const auto& item : multipart) {
                 if (item.contains("apply") && item["apply"].is_array()) {
                     useMultipartModelCache = true;
@@ -592,7 +592,7 @@ void LoadBlockstateJson(const std::string& namespaceName, const std::vector<std:
             }
 
             if (useMultipartModelCache) {
-                // 存储所有 multipart 项的模型组，每项都作为列表处理
+                // 存储所有 multipart 项的模型组,每项都作为列表处理
                 std::vector<std::vector<WeightedModelData>> multipartModelsList;
                 for (const auto& item : multipart) {
                     if (!item.contains("apply"))
@@ -606,7 +606,7 @@ void LoadBlockstateJson(const std::string& namespaceName, const std::vector<std:
 
                     std::vector<WeightedModelData> multipartModels;
                     int t = 0;
-                    // 如果 apply 为数组，直接遍历；否则将对象包装为单元素数组
+                    // 如果 apply 为数组,直接遍历；否则将对象包装为单元素数组
                     if (item["apply"].is_array()) {
                         for (const auto& modelItem : item["apply"]) {
                             int rotationX = 0, rotationY = 0;
@@ -673,7 +673,7 @@ void LoadBlockstateJson(const std::string& namespaceName, const std::vector<std:
                 MultipartModelCache[namespaceName][blockId] = multipartModelsList;
             }
             else {
-                // 如果所有 apply 均为对象，则按照原来的逻辑处理，合并模型后存入 BlockModelCache
+                // 如果所有 apply 均为对象,则按照原来的逻辑处理,合并模型后存入 BlockModelCache
                 std::vector<ModelData> selectedModels;
                 for (const auto& item : multipart) {
                     if (!item.contains("apply"))
@@ -755,8 +755,8 @@ ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::s
         }
     }
 
-    // 检查 multipart 缓存：在 multipart 时只进行一次随机，
-    // 对每个组选取对应位置的模型（如果该位置没有则使用第一个）
+    // 检查 multipart 缓存:在 multipart 时只进行一次随机,
+    // 对每个组选取对应位置的模型(如果该位置没有则使用第一个)
     if (MultipartModelCache.count(namespaceName) &&
         MultipartModelCache[namespaceName].count(blockId)) {
         auto& partList = MultipartModelCache[namespaceName][blockId];
@@ -781,7 +781,7 @@ ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::s
         for (auto& parts : partList) {
             int index = randomIndex;
             if (index >= parts.size()) {
-                index = 0; // 如果当前组中没有该位置的模型，则默认选第一个
+                index = 0; // 如果当前组中没有该位置的模型,则默认选第一个
             }
             merged = MergeModelData(merged, parts[index].model);
         }

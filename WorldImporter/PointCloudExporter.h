@@ -12,16 +12,16 @@
 
 class PointCloudExporter {
 public:
-    // 构造函数，传入导出的文件名
+    // 构造函数,传入导出的文件名
     PointCloudExporter(const std::string& objFileName, const std::string& jsonFileName);
 
     // 预先生成所有方块的模型文件
     void PreprocessBlockModels(std::vector<Block> blockPalette);
 
-    // 导出点云到 .obj 文件 - 实例方法，无参数版本
+    // 导出点云到 .obj 文件 - 实例方法,无参数版本
     void ExportPointCloud();
     
-    // 静态方法，直接导出点云 - 包含文件名参数
+    // 静态方法,直接导出点云 - 包含文件名参数
     static void ExportPointCloudToFile(const std::string& objFileName = "output.obj", const std::string& jsonFileName = "block_id_mapping.json");
 
 private:

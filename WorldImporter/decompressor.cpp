@@ -21,7 +21,7 @@ bool DecompressData(const vector<char>& chunkData, vector<char>& decompressedDat
     int result = uncompress(reinterpret_cast<Bytef*>(decompressedData.data()), &decompressedSize,
         reinterpret_cast<const Bytef*>(chunkData.data()), chunkData.size());
 
-    // 如果输出缓冲区太小，则动态扩展缓冲区
+    // 如果输出缓冲区太小,则动态扩展缓冲区
     while (result == Z_BUF_ERROR) {
         decompressedSize *= 2;  // 增加缓冲区大小
         decompressedData.resize(decompressedSize);
@@ -34,11 +34,11 @@ bool DecompressData(const vector<char>& chunkData, vector<char>& decompressedDat
     // 根据解压结果提供不同的日志信息
     if (result == Z_OK) {
         decompressedData.resize(decompressedSize);  // 修正解压数据的实际大小
-        //cout << "解压成功，解压后数据大小: " << decompressedSize << " 字节" << endl;
+        //cout << "解压成功,解压后数据大小: " << decompressedSize << " 字节" << endl;
         return true;
     }
     else {
-        cerr <<"错误: 解压失败，错误代码: " << result << endl;
+        cerr <<"错误: 解压失败,错误代码: " << result << endl;
 
         return false;
     }
@@ -61,7 +61,7 @@ bool SaveDecompressedData(const vector<char>& decompressedData, const string& ou
 
 // 解压缩 Gzip 数据
 std::vector<char> DecompressGzip(const std::wstring& filePath) {
-    // 将std::wstring转换为系统默认的多字节编码（如 GBK）
+    // 将std::wstring转换为系统默认的多字节编码(如 GBK)
     std::string filePathStr = wstring_to_system_string(filePath);
 
     // 打开 Gzip 文件

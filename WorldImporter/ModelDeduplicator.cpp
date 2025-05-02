@@ -10,7 +10,7 @@
 #include <string>
 #include <set>
 
-// 2x2矩阵结构体，用于UV坐标变换
+// 2x2矩阵结构体,用于UV坐标变换
 struct Matrix2x2 {
     float m[2][2];
 
@@ -29,7 +29,7 @@ struct Matrix2x2 {
         return Matrix2x2(1.0f, 0.0f, 0.0f, 1.0f);
     }
 
-    // 旋转矩阵（角度制）
+    // 旋转矩阵(角度制)
     static Matrix2x2 rotation(float angleDegrees) {
         float angleRadians = angleDegrees * 3.14159f / 180.0f;
         float c = std::cos(angleRadians);
@@ -83,7 +83,7 @@ std::pair<float, float> transformPoint(const Matrix2x2& matrix, float u, float v
 
 void ModelDeduplicator::DeduplicateVertices(ModelData& data) {
     std::unordered_map<VertexKey, int> vertexMap;
-    // 预先分配容量，避免多次rehash
+    // 预先分配容量,避免多次rehash
     vertexMap.reserve(data.vertices.size() / 3);
     std::vector<float> newVertices;
     newVertices.reserve(data.vertices.size());
@@ -93,7 +93,7 @@ void ModelDeduplicator::DeduplicateVertices(ModelData& data) {
         float x = data.vertices[i];
         float y = data.vertices[i + 1];
         float z = data.vertices[i + 2];
-        // 保留四位小数（转为整数后再比较）
+        // 保留四位小数(转为整数后再比较)
         int rx = static_cast<int>(x * 10000 + 0.5f);
         int ry = static_cast<int>(y * 10000 + 0.5f);
         int rz = static_cast<int>(z * 10000 + 0.5f);
@@ -124,30 +124,30 @@ void ModelDeduplicator::DeduplicateVertices(ModelData& data) {
 }
 
 void ModelDeduplicator::DeduplicateUV(ModelData& model) {
-    // 如果没有 UV 坐标，则直接返回
+    // 如果没有 UV 坐标,则直接返回
     if (model.uvCoordinates.empty()) {
         return;
     }
 
     // 使用哈希表记录每个唯一 UV 对应的新索引
     std::unordered_map<UVKey, int> uvMap;
-    std::vector<float> newUV;  // 存储去重后的 UV 坐标（每两个元素构成一组）
-    // 原始 UV 数组中组的数量（每组有2个元素：u,v）
+    std::vector<float> newUV;  // 存储去重后的 UV 坐标(每两个元素构成一组)
+    // 原始 UV 数组中组的数量(每组有2个元素:u,v)
     int uvCount = model.uvCoordinates.size() / 2;
-    // 建立一个映射表，从旧的 UV 索引到新的 UV 索引
+    // 建立一个映射表,从旧的 UV 索引到新的 UV 索引
     std::vector<int> indexMapping(uvCount, -1);
 
     for (int i = 0; i < uvCount; i++) {
         float u = model.uvCoordinates[i * 2];
         float v = model.uvCoordinates[i * 2 + 1];
-        // 将浮点数转换为整数，保留小数点后6位的精度
+        // 将浮点数转换为整数,保留小数点后6位的精度
         int iu = static_cast<int>(std::round(u * 1000000));
         int iv = static_cast<int>(std::round(v * 1000000));
         UVKey key = { iu, iv };
 
         auto it = uvMap.find(key);
         if (it == uvMap.end()) {
-            // 如果没有找到，则是新 UV，记录新的索引
+            // 如果没有找到,则是新 UV,记录新的索引
             int newIndex = newUV.size() / 2;
             uvMap[key] = newIndex;
             newUV.push_back(u);
@@ -155,16 +155,16 @@ void ModelDeduplicator::DeduplicateUV(ModelData& model) {
             indexMapping[i] = newIndex;
         }
         else {
-            // 如果已存在，则记录已有的新索引
+            // 如果已存在,则记录已有的新索引
             indexMapping[i] = it->second;
         }
     }
 
-    // 如果 uvFaces 不为空，则更新 uvFaces 中的索引
+    // 如果 uvFaces 不为空,则更新 uvFaces 中的索引
     if (!model.faces.empty()) {
         for (auto& face : model.faces) {
             for (auto& idx : face.uvIndices) {
-                // 注意：这里假设 uvIndices 中的索引都在有效范围内
+                // 注意:这里假设 uvIndices 中的索引都在有效范围内
                 idx = indexMapping[idx];
             }
         }
@@ -179,7 +179,7 @@ void ModelDeduplicator::DeduplicateFaces(ModelData& data) {
     std::vector<FaceKey> keys;
     keys.reserve(faceCountNum);
 
-    // 第一次遍历：计算每个面的规范化键并存入数组（避免重复排序）
+    // 第一次遍历:计算每个面的规范化键并存入数组(避免重复排序)
     for (size_t i = 0; i < data.faces.size(); i++) {
         const auto& face = data.faces[i];
         std::array<int, 4> faceArray = {
@@ -199,7 +199,7 @@ void ModelDeduplicator::DeduplicateFaces(ModelData& data) {
         freq[key]++;
     }
 
-    // 第二次遍历：过滤只出现一次的面
+    // 第二次遍历:过滤只出现一次的面
     std::vector<Face> newFaces;
     newFaces.reserve(data.faces.size());
 
@@ -213,14 +213,14 @@ void ModelDeduplicator::DeduplicateFaces(ModelData& data) {
 }
 
 
-// Greedy mesh 算法：合并相邻同材质、相同方向的面以减少面数
+// Greedy mesh 算法:合并相邻同材质、相同方向的面以减少面数
 void ModelDeduplicator::GreedyMesh(ModelData& data) {
     if (data.faces.empty()) return;
 
     //==========================================================================
-    // 第1步：初始化和标准UV坐标查找
+    // 第1步:初始化和标准UV坐标查找
     //==========================================================================
-    // 查找标准UV坐标的索引 (0,0), (1,0), (1,1), (0,1)，这些是合并的基础
+    // 查找标准UV坐标的索引 (0,0), (1,0), (1,1), (0,1),这些是合并的基础
     int uvIndex00 = -1, uvIndex10 = -1, uvIndex11 = -1, uvIndex01 = -1;
     for (size_t i = 0; i < data.uvCoordinates.size() / 2; ++i) {
         float u = data.uvCoordinates[i * 2];
@@ -232,15 +232,15 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         else if (u == 0.0f && v == 1.0f) uvIndex01 = i;
     }
 
-    // 如果找不到标准UV坐标，就提前返回，不进行贪心合并
+    // 如果找不到标准UV坐标,就提前返回,不进行贪心合并
     if (uvIndex00 == -1 || uvIndex10 == -1 || uvIndex11 == -1 || uvIndex01 == -1) {
-        return; // 直接结束，不进行合并
+        return; // 直接结束,不进行合并
     }
 
     //==========================================================================
-    // 第2步：定义数据结构
+    // 第2步:定义数据结构
     //==========================================================================
-    // 区域临时结构：用于表示可合并的矩形区域
+    // 区域临时结构:用于表示可合并的矩形区域
     struct Region {
         FaceType dir;          // 面的方向
         int material;          // 面的材质索引
@@ -260,22 +260,22 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     regions.reserve(data.faces.size());
     std::vector<Face> specialFaces;
     
-    // 跟踪哪些面被合并了（使用索引，而不是指针）
+    // 跟踪哪些面被合并了(使用索引,而不是指针)
     std::vector<bool> faceMerged(data.faces.size(), false);
 
     //==========================================================================
-    // 第3步：面分类与区域提取
+    // 第3步:面分类与区域提取
     //==========================================================================
-    // 遍历所有面，提取可合并的区域，将特殊面单独保存
+    // 遍历所有面,提取可合并的区域,将特殊面单独保存
     for (size_t faceIdx = 0; faceIdx < data.faces.size(); ++faceIdx) {
         const auto& face = data.faces[faceIdx];
-        // 特殊面保存起来，不参与贪心合并
+        // 特殊面保存起来,不参与贪心合并
         if (face.faceDirection == DO_NOT_CULL || face.faceDirection == UNKNOWN) {
             specialFaces.push_back(face);
             continue;
         }
         
-        // 检查是否为动态材质或特殊材质，如果是则跳过合并
+        // 检查是否为动态材质或特殊材质,如果是则跳过合并
         if (face.materialIndex >= 0 && face.materialIndex < data.materials.size()) {
             const Material& material = data.materials[face.materialIndex];
             if (material.type == ANIMATED) {
@@ -284,7 +284,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             }
         }
 
-        // 判断是否使用标准UV映射（必须包含所有四个标准点）
+        // 判断是否使用标准UV映射(必须包含所有四个标准点)
         bool isStandardMapping = false;
         if (uvIndex00 != -1 && uvIndex10 != -1 && uvIndex11 != -1 && uvIndex01 != -1) {
             bool has00 = false, has10 = false, has11 = false, has01 = false;
@@ -330,11 +330,11 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         // 根据面的方向确定对应的坐标轴
         int daxis, aaxis, baxis;
         switch (face.faceDirection) {
-        case UP:    daxis = 1; aaxis = 0; baxis = 2; break; // Y是深度，X和Z是面的轴
+        case UP:    daxis = 1; aaxis = 0; baxis = 2; break; // Y是深度,X和Z是面的轴
         case DOWN:  daxis = 1; aaxis = 0; baxis = 2; break;
-        case NORTH: daxis = 2; aaxis = 0; baxis = 1; break; // Z是深度，X和Y是面的轴
+        case NORTH: daxis = 2; aaxis = 0; baxis = 1; break; // Z是深度,X和Y是面的轴
         case SOUTH: daxis = 2; aaxis = 0; baxis = 1; break;
-        case WEST:  daxis = 0; aaxis = 2; baxis = 1; break; // X是深度，Z和Y是面的轴
+        case WEST:  daxis = 0; aaxis = 2; baxis = 1; break; // X是深度,Z和Y是面的轴
         case EAST:  daxis = 0; aaxis = 2; baxis = 1; break;
         default: continue; // 其他方向的面跳过
         }
@@ -358,7 +358,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             }
         }
 
-        // 计算顶点相对于最小点的位置，这样每个1x1的面都有标准化的顶点位置
+        // 计算顶点相对于最小点的位置,这样每个1x1的面都有标准化的顶点位置
         std::array<std::pair<float, float>, 4> relativePos;
         for (int i = 0; i < 4; ++i) {
             relativePos[i] = std::make_pair(
@@ -367,7 +367,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             );
         }
 
-        // 确定顶点的顺序索引，用于统计分析
+        // 确定顶点的顺序索引,用于统计分析
         std::array<int, 4> vertexOrder;
         for (int i = 0; i < 4; ++i) {
             if (std::abs(relativePos[i].first) < 0.01f && std::abs(relativePos[i].second) < 0.01f) {
@@ -415,12 +415,12 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     }
 
     //==========================================================================
-    // 第4步：区域分组
+    // 第4步:区域分组
     //==========================================================================
     // 按照面的方向、材质、平面位置和顶点顺序进行分组
     std::map<std::tuple<FaceType, int, float, std::array<int, 4>>, std::vector<Region>> groups;
     
-    // 使用哈希集合跟踪已处理的原始面索引，提高查找效率
+    // 使用哈希集合跟踪已处理的原始面索引,提高查找效率
     std::unordered_set<int> processedFaces;
     processedFaces.reserve(data.faces.size());
     
@@ -429,7 +429,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         groups[{r.dir, r.material, r.plane, r.vertexOrder}].push_back(r);
     }
 
-    // 处理所有孤立的单个面：即一个分组中只有一个面的情况
+    // 处理所有孤立的单个面:即一个分组中只有一个面的情况
     for (auto it = groups.begin(); it != groups.end();) {
         if (it->second.size() == 1) {
             // 将这个孤立面添加到特殊面列表
@@ -447,7 +447,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     }
 
     //==========================================================================
-    // 第5步：贪心合并
+    // 第5步:贪心合并
     //==========================================================================
     std::vector<Region> merged;
     merged.reserve(groups.size()); // 预分配内存减少重新分配
@@ -478,7 +478,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         int width = maxA - minA;   // 分组在A轴上的总宽度
         int height = maxB - minB;  // 分组在B轴上的总高度
         
-        // 如果区域太大，可能导致内存问题，跳过处理
+        // 如果区域太大,可能导致内存问题,跳过处理
         if (width > 1000 || height > 1000) {
             for (auto& r : regs) {
                 specialFaces.push_back(data.faces[r.originalFaceIndex]);
@@ -490,7 +490,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         //----------------------------------------------------------------------
         // 构建占位图和使用标记图
         //----------------------------------------------------------------------
-        // 创建占位图，标记每个格子是否被区域占用
+        // 创建占位图,标记每个格子是否被区域占用
         std::vector<std::vector<bool>> mask(height, std::vector<bool>(width, false));
         // 创建占位图对应的面索引
         std::vector<std::vector<int>> cellToRegionIdx(height, std::vector<int>(width, -1));
@@ -501,7 +501,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             int b0i = int(r.b0) - minB;
             int w = int(r.a1 - r.a0);
             int h = int(r.b1 - r.b0);
-            // 标记此区域占用的所有格子，并记录对应的原始区域索引
+            // 标记此区域占用的所有格子,并记录对应的原始区域索引
             for (int y = 0; y < h; ++y) {
                 for (int x = 0; x < w; ++x) {
                     mask[b0i + y][a0i + x] = true;
@@ -510,11 +510,11 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             }
         }
         
-        // 创建标记图，记录哪些格子已被合并处理
+        // 创建标记图,记录哪些格子已被合并处理
         std::vector<std::vector<bool>> used(height, std::vector<bool>(width, false));
         
         //----------------------------------------------------------------------
-        // 优化的贪心合并算法：寻找最大矩形
+        // 优化的贪心合并算法:寻找最大矩形
         //----------------------------------------------------------------------
         
         // 结构体用于存储可能的合并矩形
@@ -542,11 +542,11 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             }
         }
         
-        // 当还有未使用的格子时，继续寻找最大矩形
+        // 当还有未使用的格子时,继续寻找最大矩形
         while (true) {
             std::vector<PotentialRectangle> potentialRects;
             
-            // 尝试从每个可用格子开始，找出可能的最大矩形
+            // 尝试从每个可用格子开始,找出可能的最大矩形
             for (int startY = 0; startY < height; ++startY) {
                 for (int startX = 0; startX < width; ++startX) {
                     if (!mask[startY][startX] || used[startY][startX]) continue;
@@ -575,21 +575,21 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
                         potentialRects.push_back({startX, startY, currentWidth, currentHeight, area});
                     }
                     
-                    // 如果只有一行，也计算面积
+                    // 如果只有一行,也计算面积
                     if (currentHeight == 1) {
                         potentialRects.push_back({startX, startY, maxWidth, 1, maxWidth});
                     }
                 }
             }
             
-            // 如果没有找到可合并的矩形，则结束循环
+            // 如果没有找到可合并的矩形,则结束循环
             if (potentialRects.empty()) break;
             
-            // 按面积降序排序，选择最大面积的矩形
+            // 按面积降序排序,选择最大面积的矩形
             std::sort(potentialRects.begin(), potentialRects.end());
             const auto& bestRect = potentialRects[0];
             
-            // 如果最大矩形只有1x1大小，检查是否是孤立单元格
+            // 如果最大矩形只有1x1大小,检查是否是孤立单元格
             if (bestRect.width == 1 && bestRect.height == 1) {
                 // 将这个孤立的单元格标记为已使用
                 used[bestRect.y][bestRect.x] = true;
@@ -628,7 +628,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             int regionB0 = minB + bestRect.y;
             int regionB1 = regionB0 + bestRect.height;
             
-            // 查找与合并区域重叠最多的原始区域，继承其UV属性
+            // 查找与合并区域重叠最多的原始区域,继承其UV属性
             Region* bestMatchRegion = nullptr;
             float bestOverlap = 0.0f;
             
@@ -671,14 +671,14 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             nr.v1 = dv * bestRect.height;
             nr.originalFaceIndex = -1; // 合并区域不对应原始面
             
-            // 如果有最佳匹配区域，继承其顶点顺序
+            // 如果有最佳匹配区域,继承其顶点顺序
             if (bestMatchRegion) {
                 nr.vertexOrder = bestMatchRegion->vertexOrder;
             }
             
             merged.push_back(nr);
             
-            // 更新右扩展数组，因为有些格子已经被使用了
+            // 更新右扩展数组,因为有些格子已经被使用了
             for (int y = 0; y < height; ++y) {
                 for (int x = width - 1; x >= 0; --x) {
                     if (mask[y][x] && !used[y][x]) {
@@ -706,7 +706,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         }
     }
 
-    // 检查是否有未处理的原始面，将它们添加到特殊面
+    // 检查是否有未处理的原始面,将它们添加到特殊面
     for (size_t i = 0; i < regions.size(); ++i) {
         int originalFaceIdx = regions[i].originalFaceIndex;
         if (processedFaces.find(originalFaceIdx) == processedFaces.end()) {
@@ -715,7 +715,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     }
 
     //==========================================================================
-    // 第6步：重建网格
+    // 第6步:重建网格
     //==========================================================================
     ModelData newData;
     newData.materials = data.materials;
@@ -725,7 +725,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     std::unordered_map<UVKey, int> uvMap;
 
     //----------------------------------------------------------------------
-    // 处理合并后的区域，生成新的面
+    // 处理合并后的区域,生成新的面
     //----------------------------------------------------------------------
     for (auto& r : merged) {
         // 根据面的方向确定坐标轴
@@ -740,7 +740,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         default: continue;
         }
         
-        // 计算合并区域的四个顶点坐标（按顺序：左下、右下、右上、左上）
+        // 计算合并区域的四个顶点坐标(按顺序:左下、右下、右上、左上)
         std::array<std::array<float, 3>, 4> pts;
         auto setPt = [&](int idx, float a, float b) {
             pts[idx][daxis] = r.plane;
@@ -751,7 +751,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         // 根据面的方向设置不同的顶点顺序
         switch (r.dir) {
         case UP:
-            // 对于UP方向的面，反转顶点顺序以确保法向量方向正确
+            // 对于UP方向的面,反转顶点顺序以确保法向量方向正确
             setPt(0, r.a0, r.b1);  // 左上
             setPt(1, r.a1, r.b1);  // 右上
             setPt(2, r.a1, r.b0);  // 右下
@@ -765,7 +765,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             setPt(3, r.a0, r.b1);  // 左上
             break;
         case NORTH:
-            // NORTH方向法线反向，需要反转顶点顺序
+            // NORTH方向法线反向,需要反转顶点顺序
             setPt(0, r.a0, r.b1);  // 左上
             setPt(1, r.a1, r.b1);  // 右上
             setPt(2, r.a1, r.b0);  // 右下
@@ -779,7 +779,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             setPt(3, r.a0, r.b1);  // 左上
             break;
         case EAST:
-            // EAST方向法线反向，需要反转顶点顺序
+            // EAST方向法线反向,需要反转顶点顺序
             setPt(0, r.a0, r.b1);  // 左上
             setPt(1, r.a1, r.b1);  // 右上
             setPt(2, r.a1, r.b0);  // 右下
@@ -809,7 +809,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         
         // 为不同方向使用不同的UV排列
         if (r.dir == NORTH || r.dir == EAST) {
-            // 为反向法线的面使用反转的UV坐标，保持贴图方向正确
+            // 为反向法线的面使用反转的UV坐标,保持贴图方向正确
             baseUvRect = { {
                 {0.0f,      bh * 1.0f},  // 左上 - 对应0
                 {aw * 1.0f, bh * 1.0f},  // 右上 - 对应1
@@ -826,7 +826,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             } };
         }
 
-        // 应用UV变换（旋转和翻转）
+        // 应用UV变换(旋转和翻转)
         std::array<std::array<float, 2>, 4> uvRect = baseUvRect;
         
         // 计算UV矩形的中心点
@@ -834,7 +834,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         float centerV = (baseUvRect[0][1] + baseUvRect[2][1]) / 2.0f;
 
         // 根据顶点索引顺序进行UV旋转
-        // 构造顶点顺序字符串，避免八进制数字问题
+        // 构造顶点顺序字符串,避免八进制数字问题
         std::string vertexOrderStr = 
             std::to_string(r.vertexOrder[0]) + 
             std::to_string(r.vertexOrder[1]) + 
@@ -844,14 +844,14 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         // 创建变换矩阵
         Matrix2x2 transformMatrix = Matrix2x2::identity();
         
-        if (vertexOrderStr == "0123") { // [0,1,2,3] - 标准顺序，不需要旋转
+        if (vertexOrderStr == "0123") { // [0,1,2,3] - 标准顺序,不需要旋转
             //transformMatrix = Matrix2x2::rotation(90.0f);
             // 保持单位矩阵
         }
-        else if (vertexOrderStr == "0321") { // [0,3,2,1] - 垂直翻转（绕水平轴）
+        else if (vertexOrderStr == "0321") { // [0,3,2,1] - 垂直翻转(绕水平轴)
             //transformMatrix = Matrix2x2::rotation(270.0f);
         }
-        else if (vertexOrderStr == "1032") { // [1,0,3,2] - 水平翻转（绕垂直轴）
+        else if (vertexOrderStr == "1032") { // [1,0,3,2] - 水平翻转(绕垂直轴)
             transformMatrix = Matrix2x2::rotation(270.0f);
         }
         else if (vertexOrderStr == "1230") { // [1,2,3,0] - 顺时针旋转270度
@@ -863,11 +863,11 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         else if (vertexOrderStr == "2301") { // [2,3,0,1] - 顺时针旋转90度
            // transformMatrix = Matrix2x2::rotation(90.0f);
         }
-        else if (vertexOrderStr == "3012") { // [3,0,1,2] - 对角线翻转（主对角线）
+        else if (vertexOrderStr == "3012") { // [3,0,1,2] - 对角线翻转(主对角线)
             // 主对角线翻转相当于先旋转90度再水平翻转
             //transformMatrix = Matrix2x2::rotation(180.0f);
         }
-        else if (vertexOrderStr == "3210") { // [3,2,1,0] - 对角线翻转（副对角线）
+        else if (vertexOrderStr == "3210") { // [3,2,1,0] - 对角线翻转(副对角线)
             // 副对角线翻转相当于先旋转90度再垂直翻转
             transformMatrix = Matrix2x2::rotation(90.0f) ;
         }
@@ -879,7 +879,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             uvRect[i][1] = newV;
         }
         
-        // 找出变换后的左下角点的坐标（四个点中u和v值最小的点）
+        // 找出变换后的左下角点的坐标(四个点中u和v值最小的点)
         float minU = uvRect[0][0];
         float minV = uvRect[0][1];
         for (int i = 1; i < 4; ++i) {
@@ -887,7 +887,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             minV = std::fmin(minV, uvRect[i][1]);
         }
         
-        // 将所有点偏移到原点（减去最小u,v值）
+        // 将所有点偏移到原点(减去最小u,v值)
         for (int i = 0; i < 4; ++i) {
             uvRect[i][0] -= minU;
             uvRect[i][1] -= minV;
@@ -900,7 +900,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         
         // 添加面的顶点和UV坐标
         for (int i = 0; i < 4; ++i) {
-            // 添加顶点，利用哈希表去重
+            // 添加顶点,利用哈希表去重
             float x = pts[i][0], y = pts[i][1], z = pts[i][2];
             int rx = static_cast<int>(x * 10000 + 0.5f);  // 保留四位小数
             int ry = static_cast<int>(y * 10000 + 0.5f);
@@ -921,7 +921,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             }
             nf.vertexIndices[i] = vertexIndex;
 
-            // 添加UV坐标，利用哈希表去重
+            // 添加UV坐标,利用哈希表去重
             float u = uvRect[i][0], v = uvRect[i][1];
             int ru = static_cast<int>(u * 1000000 + 0.5f);  // 保留六位小数
             int rv = static_cast<int>(v * 1000000 + 0.5f);
@@ -944,11 +944,11 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     }
 
     //==========================================================================
-    // 第7步：处理特殊面
+    // 第7步:处理特殊面
     //==========================================================================
-    // 将之前保存的特殊面（不符合合并条件或无法合并的面）添加回模型
+    // 将之前保存的特殊面(不符合合并条件或无法合并的面)添加回模型
     for (const auto& face : specialFaces) {
-        // 直接使用原始特殊面的数据，只将顶点和UV索引转换为新模型中的索引
+        // 直接使用原始特殊面的数据,只将顶点和UV索引转换为新模型中的索引
         Face nf = face;
         
         // 处理特殊面的顶点
@@ -983,7 +983,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             float u = data.uvCoordinates[uvidx * 2];
             float v = data.uvCoordinates[uvidx * 2 + 1];
             
-            // 添加UV坐标，利用哈希表去重
+            // 添加UV坐标,利用哈希表去重
             int ru = static_cast<int>(u * 1000000 + 0.5f);
             int rv = static_cast<int>(v * 1000000 + 0.5f);
             UVKey uvkey{ ru, rv };
@@ -1006,7 +1006,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     }
 
     //==========================================================================
-    // 第8步：更新原始数据
+    // 第8步:更新原始数据
     //==========================================================================
     // 用新生成的数据替换原始数据
     data.vertices = std::move(newData.vertices);

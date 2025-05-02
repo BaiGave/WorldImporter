@@ -32,7 +32,7 @@ bool SaveColormapToFile(const std::vector<unsigned char>& pixelData,
     // 检查是否找到了纹理数据
     if (!pixelData.empty()) {
 
-        // 获取当前工作目录（即 exe 所在的目录）
+        // 获取当前工作目录(即 exe 所在的目录)
         char buffer[MAX_PATH];
         GetModuleFileNameA(NULL, buffer, MAX_PATH);
         std::string exePath = std::string(buffer);
@@ -41,7 +41,7 @@ bool SaveColormapToFile(const std::vector<unsigned char>& pixelData,
         size_t pos = exePath.find_last_of("\\/");
         std::string exeDir = exePath.substr(0, pos);
 
-        // 如果传入了 savePath, 则使用 savePath 作为保存目录，否则默认使用当前 exe 目录
+        // 如果传入了 savePath, 则使用 savePath 作为保存目录,否则默认使用当前 exe 目录
         if (savePath.empty()) {
             savePath = exeDir + "\\colormap";  // 默认保存到 exe 目录下的 textures 文件夹
         }
@@ -49,24 +49,24 @@ bool SaveColormapToFile(const std::vector<unsigned char>& pixelData,
             savePath = exeDir + "\\" + savePath;  // 使用提供的 savePath 路径
         }
 
-        // 创建保存目录（如果不存在）
+        // 创建保存目录(如果不存在)
         if (GetFileAttributesA(savePath.c_str()) == INVALID_FILE_ATTRIBUTES) {
-            // 文件夹不存在，创建它
+            // 文件夹不存在,创建它
             if (!CreateDirectoryA(savePath.c_str(), NULL)) {
                 std::cerr << "Failed to create directory: " << savePath << std::endl;
                 return false;
             }
         }
 
-        // 处理 blockId，去掉路径部分，保留最后的文件名
+        // 处理 blockId,去掉路径部分,保留最后的文件名
         size_t lastSlashPos = colormapName.find_last_of("/\\");
         std::string fileName = (lastSlashPos == std::string::npos) ? colormapName : colormapName.substr(lastSlashPos + 1);
 
-        // 构建保存路径，使用处理后的 blockId 作为文件名
+        // 构建保存路径,使用处理后的 blockId 作为文件名
         std::string filePath = savePath + "\\" + fileName + ".png";
         std::ofstream outputFile(filePath, std::ios::binary);
 
-        //返回savePath，作为value
+        //返回savePath,作为value
         savePath = filePath;
 
         if (outputFile.is_open()) {
@@ -107,7 +107,7 @@ int GetBiomeId(int blockX, int blockY, int blockZ) {
     int biomeY = mod16(blockY) / 4;
     int biomeZ = mod16(blockZ) / 4;
 
-    // 计算编码索引（16y + 4z + x）
+    // 计算编码索引(16y + 4z + x)
     int index = 16 * biomeY + 4 * biomeZ + biomeX;
 
     // 获取并返回群系ID
@@ -212,7 +212,7 @@ BiomeColors Biome::ParseBiomeColors(const nlohmann::json& biomeJson) {
         colors.adjDownfall = BiomeUtils::clamp(downfall, 0.0f, 1.0f);
     }
     else {
-        // 如果没有提供温度和降水量，则设置默认值
+        // 如果没有提供温度和降水量,则设置默认值
         colors.adjTemperature = 0.5f;
         colors.adjDownfall = 0.5f;
     }
@@ -233,18 +233,18 @@ BiomeColors Biome::ParseBiomeColors(const nlohmann::json& biomeJson) {
         // 干旱植物颜色处理 - 优先检查是否有直接颜色值
         int directDryFoliageColor = effects.value("dry_foliage_color", -1);
         if (directDryFoliageColor != -1) {
-            // 如果有直接颜色值，直接使用
+            // 如果有直接颜色值,直接使用
             colors.dryFoliage = directDryFoliageColor;
         } else {
             // 尝试使用dry_foliage.png文件
             auto dryFoliageColormap = GetColormapData("minecraft", "dry_foliage");
             if (!dryFoliageColormap.empty()) {
-                // 如果找到dry_foliage.png，使用它来计算颜色
+                // 如果找到dry_foliage.png,使用它来计算颜色
                 colors.dryFoliage = CalculateColorFromColormap(dryFoliageColormap,
                     colors.adjTemperature,
                     colors.adjDownfall);
             } else {
-                // 如果没有找到dry_foliage.png，回退到使用foliage.png和调整参数
+                // 如果没有找到dry_foliage.png,回退到使用foliage.png和调整参数
                 colors.dryFoliage = ParseColorWithFallback("dry_foliage_color", "foliage", 1.2f, 0.8f);
             }
         }
@@ -330,7 +330,7 @@ int Biome::GetColor(int biomeId, BiomeColorType colorType) {
 
 
 int Biome::GetBiomeColor(int blockX, int blockY, int blockZ, BiomeColorType colorType) {
-    // 生物群系过渡距离，默认值为4，可根据需要调整
+    // 生物群系过渡距离,默认值为4,可根据需要调整
     const int biomeTransitionDistance = 4;
     int count = 0;
     unsigned int rSum = 0, gSum = 0, bSum = 0;
@@ -345,27 +345,27 @@ int Biome::GetBiomeColor(int blockX, int blockY, int blockZ, BiomeColorType colo
             int chunkX, chunkZ;
             blockToChunk(curX, curZ, chunkX, chunkZ);
 
-            // 将当前块的Y坐标转换为子区块索引（保持与原 Y 坐标一致）
+            // 将当前块的Y坐标转换为子区块索引(保持与原 Y 坐标一致)
             int sectionY;
             blockYToSectionY(blockY, sectionY);
 
             // 创建缓存键
             auto blockKey = std::make_tuple(chunkX, chunkZ, sectionY);
 
-            // 检查 SectionCache 中是否存在对应的区块数据，否则加载缓存
+            // 检查 SectionCache 中是否存在对应的区块数据,否则加载缓存
             if (sectionCache.find(blockKey) == sectionCache.end()) {
                 LoadAndCacheBlockData(chunkX, chunkZ);
             }
 
             const auto& biomeData = sectionCache[blockKey].biomeData;
 
-            // 计算在子区块内的坐标，注意与生物群系数据排列有关
+            // 计算在子区块内的坐标,注意与生物群系数据排列有关
             int biomeX = mod16(curX) / 4;
             int biomeY = mod16(blockY) / 4;
             int biomeZ = mod16(curZ) / 4;
             int index = 16 * biomeY + 4 * biomeZ + biomeX;
 
-            // 获取生物群系ID（若超出范围，则默认为0）
+            // 获取生物群系ID(若超出范围,则默认为0)
             int biomeId = (index < biomeData.size()) ? biomeData[index] : 0;
 
             // 共享读锁确保 biomeRegistry 的线程安全
@@ -376,7 +376,7 @@ int Biome::GetBiomeColor(int blockX, int blockY, int blockZ, BiomeColorType colo
             // 默认颜色设置为白色
             int color = 0xFFFFFF;
             if (it != biomeRegistry.end()) {
-                // 获取独立颜色锁，确保颜色数据读取安全
+                // 获取独立颜色锁,确保颜色数据读取安全
                 std::lock_guard<std::mutex> colorLock(it->second.colorMutex);
                 switch (colorType) {
                 case BiomeColorType::Foliage:
@@ -438,7 +438,7 @@ int Biome::ParseColorWithFallback(nlohmann::json& effects,
         return effects[colorKey].get<int>();
     }
 
-    // 若JSON中无颜色，立即计算并缓存
+    // 若JSON中无颜色,立即计算并缓存
     auto colormap = Biome::GetColormapData("minecraft", colormapType);
     return CalculateColorFromColormap(colormap,
         Temperature * tempModifier,
@@ -489,28 +489,28 @@ int Biome::CalculateColorFromColormap(const std::string& filePath,
     adjTemperature = BiomeUtils::clamp(adjTemperature, 0.0f, 1.0f);
     adjDownfall = BiomeUtils::clamp(adjDownfall, 0.0f, 1.0f);
     
-    // 将降水值乘以温度值，确保在下三角形区域内
+    // 将降水值乘以温度值,确保在下三角形区域内
     adjDownfall = adjDownfall * adjTemperature;
     
     // 计算在颜色图中的坐标
-    // 颜色图以右下角为原点：温度从右往左递增(1->0)，降水从下往上递增(1->0)
-    // 但图片坐标系以左上角为原点：x从左往右递增(0->255)，y从上往下递增(0->255)
+    // 颜色图以右下角为原点:温度从右往左递增(1->0),降水从下往上递增(1->0)
+    // 但图片坐标系以左上角为原点:x从左往右递增(0->255),y从上往下递增(0->255)
     
-    // 温度映射：温度1.0对应x=0，温度0.0对应x=255
+    // 温度映射:温度1.0对应x=0,温度0.0对应x=255
     int tempCoord = static_cast<int>((1.0f - adjTemperature) * 255.0f);
     
-    // 降水映射：降水1.0对应y=0，降水0.0对应y=255
+    // 降水映射:降水1.0对应y=0,降水0.0对应y=255
     int downfallCoord = static_cast<int>((1.0f - adjDownfall) * 255.0f);
     
     // 确保坐标在有效范围内
     tempCoord = BiomeUtils::clamp(tempCoord, 0, 255);
     downfallCoord = BiomeUtils::clamp(downfallCoord, 0, 255);
     
-    // 在图片坐标系中，我们需要转换坐标
-    // x：直接使用温度映射（已经是从左往右的递增）
+    // 在图片坐标系中,我们需要转换坐标
+    // x:直接使用温度映射(已经是从左往右的递增)
     int x = tempCoord;
     
-    // y：直接使用降水映射（已经是从上往下的递增）
+    // y:直接使用降水映射(已经是从上往下的递增)
     int y = downfallCoord;
 
     // 计算像素偏移 - 使用图片坐标系
@@ -559,10 +559,10 @@ bool Biome::ExportToPNG(const std::vector<std::vector<int>>& biomeMap,
 
     std::vector<uint8_t> imageData(width * height * 3);
 
-    // 构建颜色映射（包含默认随机颜色生成）
+    // 构建颜色映射(包含默认随机颜色生成)
     std::map<int, std::tuple<uint8_t, uint8_t, uint8_t>> finalColorMap = colorMap;
 
-    // 解决方案：添加维度校验
+    // 解决方案:添加维度校验
     for (const auto& row : biomeMap) {
         if (row.size() != static_cast<size_t>(width)) {
             std::cerr << "Error: Biome map is not rectangular\n";
@@ -591,7 +591,7 @@ bool Biome::ExportToPNG(const std::vector<std::vector<int>>& biomeMap,
     // 创建完整的文件夹路径
     std::string folderPath = exeDir + "\\" + exportFolderName;
 
-    // 创建文件夹（如果不存在）
+    // 创建文件夹(如果不存在)
     BOOL folderCreated = CreateDirectoryA(folderPath.c_str(), NULL);
     if (!folderCreated && GetLastError() != ERROR_ALREADY_EXISTS) {
         std::cerr << "Error: Failed to create directory " << folderPath << std::endl;

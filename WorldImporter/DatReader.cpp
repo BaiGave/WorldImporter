@@ -10,7 +10,7 @@ std::vector<char> DatFileReader::readFile(const std::string& filePath) {
     // 判断文件是否是 Gzip 压缩的
     if (filePath.substr(filePath.find_last_of('.') + 1) == "dat") {
         std::wstring path = string_to_wstring(filePath);
-        // 如果是 .gz 文件，先解压
+        // 如果是 .gz 文件,先解压
         return DecompressGzip(path);
     }
 
@@ -33,7 +33,7 @@ std::vector<char> DatFileReader::readFile(const std::string& filePath) {
 }
 
 
-// 读取 .dat 文件，并返回 NBT 标签
+// 读取 .dat 文件,并返回 NBT 标签
 NbtTagPtr DatFileReader::readDatFile(const std::string& filePath) {
     // 读取文件内容
     std::vector<char> data = readFile(filePath);

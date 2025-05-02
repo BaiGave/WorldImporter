@@ -69,7 +69,7 @@ std::string JarReader::convertWStrToStr(const std::wstring& wstr) {
 
 JarReader::JarReader(const std::wstring& jarFilePath)
     : jarFilePath(jarFilePath), zipFile(nullptr), modType(ModType::Unknown), modNamespace("") {
-    // 在构造函数中只初始化成员变量，不打开文件
+    // 在构造函数中只初始化成员变量,不打开文件
     // 文件打开操作移至open()方法中
 }
 
@@ -105,7 +105,7 @@ std::string JarReader::getFileContent(const std::string& filePathInJar) {
     // 查找文件在 .jar 文件中的索引
     zip_file_t* fileInJar = zip_fopen(zipFile, filePathInJar.c_str(), 0);
     if (!fileInJar) {
-        // 静默失败，但记录日志
+        // 静默失败,但记录日志
         // std::cerr << "Could not find file in jar: " << filePathInJar << std::endl;
         return "";
     }
@@ -145,7 +145,7 @@ std::vector<unsigned char> JarReader::getBinaryFileContent(const std::string& fi
     // 查找文件在 .jar 文件中的索引
     zip_file_t* fileInJar = zip_fopen(zipFile, filePathInJar.c_str(), 0);
     if (!fileInJar) {
-        // 静默失败，但可以根据需要添加日志
+        // 静默失败,但可以根据需要添加日志
         return fileContent;
     }
 
@@ -269,7 +269,7 @@ void JarReader::cacheAllResources(
                 }
             }
         }
-        // 处理 .mcmeta 文件（新增）
+        // 处理 .mcmeta 文件(新增)
         else if (filePath.find("/textures/") != std::string::npos &&
             filePath.size() > 7 &&
             filePath.substr(filePath.size() - 7) == ".mcmeta")
@@ -328,7 +328,7 @@ void JarReader::cacheAllBiomes(std::unordered_map<std::string, nlohmann::json>& 
         std::string path(name);
         auto parts = splitPath(path);
 
-        // 验证路径结构：data/<namespace>/worldgen/biome/[...]/<name>.json
+        // 验证路径结构:data/<namespace>/worldgen/biome/[...]/<name>.json
         if (parts.size() < 5) continue; // 至少包含 data/ns/worldgen/biome + 文件名
         if (parts[0] != "data" || parts[2] != "worldgen" || parts[3] != "biome")
             continue;
@@ -336,7 +336,7 @@ void JarReader::cacheAllBiomes(std::unordered_map<std::string, nlohmann::json>& 
         // 提取命名空间
         std::string namespaceName = parts[1];
 
-        // 提取子路径并构建biomeId (例如：cave/andesite_caves)
+        // 提取子路径并构建biomeId (例如:cave/andesite_caves)
         std::vector<std::string> biomeParts;
         for (auto it = parts.begin() + 4; it != parts.end(); ++it) {
             if (it == parts.end() - 1) { // 处理文件名
@@ -383,7 +383,7 @@ void JarReader::cacheAllColormaps(std::unordered_map<std::string, std::vector<un
         std::string path(name);
         auto parts = splitPath(path);
 
-        // 验证路径结构：assets/<namespace>/textures/colormap/<name>.png
+        // 验证路径结构:assets/<namespace>/textures/colormap/<name>.png
         if (parts.size() != 5) continue;
         if (parts[0] != "assets") continue;
         if (parts[2] != "textures" || parts[3] != "colormap") continue;
@@ -486,21 +486,21 @@ std::string JarReader::getNeoForgeModId() {
 }
 
 std::string JarReader::extractModId(const std::string& content) {
-    // 解析 .toml 文件，提取 modId
+    // 解析 .toml 文件,提取 modId
     std::string modId;
 
-    // 清理 content，去除多余的空格和非打印字符
+    // 清理 content,去除多余的空格和非打印字符
     std::string cleanedContent = cleanUpContent(content);
     size_t startPos = cleanedContent.find("modId=\"");
     if (startPos != std::string::npos) {
-        // 从 "modId=\"" 后开始提取，跳过 7 个字符（modId="）
+        // 从 "modId=\"" 后开始提取,跳过 7 个字符(modId=")
         size_t endPos = cleanedContent.find("\"", startPos + 7); // 查找结束的引号位置
         if (endPos != std::string::npos) {
             modId = cleanedContent.substr(startPos + 7, endPos - (startPos + 7)); // 提取 modId 字符串
         }
     }
 
-    // 如果没有找到 modId，则返回空字符串
+    // 如果没有找到 modId,则返回空字符串
     return modId;
 }
 
@@ -509,12 +509,12 @@ std::string JarReader::cleanUpContent(const std::string& content) {
     bool inQuotes = false;
 
     for (char c : content) {
-        // 跳过空格，但保留换行符
+        // 跳过空格,但保留换行符
         if (std::isspace(c) && c != '\n' && !inQuotes) {
-            continue; // 跳过空格，除非在引号内
+            continue; // 跳过空格,除非在引号内
         }
 
-        // 处理引号内的内容，保留其中的所有字符
+        // 处理引号内的内容,保留其中的所有字符
         if (c == '\"') {
             inQuotes = !inQuotes; // 切换在引号内外
         }
@@ -537,7 +537,7 @@ bool JarReader::open() {
         return false;
     }
 
-    // 初始化mod类型和命名空间，这些操作从构造函数移到这里
+    // 初始化mod类型和命名空间,这些操作从构造函数移到这里
     // 检查是否为原版
     if (isVanilla()) {
         modType = ModType::Vanilla;

@@ -33,9 +33,9 @@ using namespace std;
 // --------------------------------------------------------------------------------
 // 文件缓存相关对象
 // --------------------------------------------------------------------------------
-// 统一的缓存表（预留桶数量，减少 rehash）
+// 统一的缓存表(预留桶数量,减少 rehash)
 std::unordered_map<std::tuple<int, int, int>, SectionCacheEntry, triple_hash> sectionCache(4096);
-// 添加静态邻居偏移数组，避免重复构造
+// 添加静态邻居偏移数组,避免重复构造
 static const std::array<std::tuple<int,int,int>,6> kSectionNeighborOffsets = {{
     {1, 0, 0}, {-1, 0, 0},
     {0, 1, 0}, {0, -1, 0},
@@ -43,7 +43,7 @@ static const std::array<std::tuple<int,int,int>,6> kSectionNeighborOffsets = {{
 }};
 // 实体方块缓存
 std::unordered_map<std::pair<int, int>, std::vector<std::shared_ptr<EntityBlock>>, pair_hash> entityBlockCache(1024);
-// 区域和高度图缓存（预留桶减少 rehash）
+// 区域和高度图缓存(预留桶减少 rehash)
 std::unordered_map<std::pair<int, int>, std::vector<char>, pair_hash> regionCache(1024);
 std::unordered_map<std::pair<int, int>, std::unordered_map<std::string, std::vector<int>>, pair_hash> heightMapCache(1024);
 std::vector<Block> globalBlockPalette;
@@ -54,7 +54,7 @@ std::unordered_map<std::string, FluidInfo> fluidDefinitions;
 // 文件操作相关函数
 // --------------------------------------------------------------------------------
 std::vector<int> decodeHeightMap(const std::vector<int64_t>& data) {
-    // 预分配256个高度值，避免多次重分配
+    // 预分配256个高度值,避免多次重分配
     std::vector<int> heights;
     heights.reserve(256);
     // 根据数据长度动态判断存储格式
@@ -112,7 +112,7 @@ const std::vector<char>& getRegionFromCache(int regionX, int regionZ) {
     // 使用查找避免重复哈希
     auto it = regionCache.find(regionKey);
     if (it == regionCache.end()) {
-        // 若未缓存，从磁盘读取区域文件并插入缓存
+        // 若未缓存,从磁盘读取区域文件并插入缓存
         std::vector<char> fileData = ReadFileToMemory(config.worldPath, regionX, regionZ);
         auto result = regionCache.emplace(regionKey, std::move(fileData));
         it = result.first;
@@ -134,7 +134,7 @@ void UpdateSkyLightNeighborFlags() {
         }
     }
 
-    // 检查邻居，并更新skyLightData为单元素-2，使用assign避免重新分配
+    // 检查邻居,并更新skyLightData为单元素-2,使用assign避免重新分配
     for (auto& entry : needsUpdate) {
         int chunkX = std::get<0>(entry.first);
         int chunkZ = std::get<1>(entry.first);
@@ -160,7 +160,7 @@ void UpdateSkyLightNeighborFlags() {
 // --------------------------------------------------------------------------------
 // 方块相关核心函数
 // --------------------------------------------------------------------------------
-// 新增函数：处理单个子区块
+// 新增函数:处理单个子区块
 void ProcessSection(int chunkX, int chunkZ, int sectionY, const NbtTagPtr& sectionTag) {
     // 获取方块数据
     auto blo = getBlockStates(sectionTag);
@@ -173,7 +173,7 @@ void ProcessSection(int chunkX, int chunkZ, int sectionY, const NbtTagPtr& secti
 
     static std::unordered_map<std::string, int> globalBlockMap; // 预处理全局调色板映射
 
-    // 预处理全局调色板，建立快速查找的映射
+    // 预处理全局调色板,建立快速查找的映射
     if (globalBlockMap.empty()) {
         for (size_t i = 0; i < globalBlockPalette.size(); ++i) {
             const Block& block = globalBlockPalette[i];
@@ -242,7 +242,7 @@ void ProcessSection(int chunkX, int chunkZ, int sectionY, const NbtTagPtr& secti
     auto processLightData = [&](const std::string& lightType, std::vector<int>& lightData) {
         auto lightTag = getChildByName(sectionTag, lightType);
         if (lightTag && lightTag->type == TagType::BYTE_ARRAY) {
-            // 批量解析，每个原始字节产生2个光照值
+            // 批量解析,每个原始字节产生2个光照值
             const auto& rawData = lightTag->payload;
             size_t rawSize = rawData.size();
             lightData.resize(4096);
@@ -413,10 +413,10 @@ void ProcessEntityBlocks(int chunkX, int chunkZ, const NbtTagPtr& blockEntitiesT
             // 解析 content 标签
             auto contentTag = getChildByName(entityTag, "content");
             if (contentTag && contentTag->type == TagType::COMPOUND) {
-                // 获取 tiles 标签，tiles 是一个 CompoundTag
+                // 获取 tiles 标签,tiles 是一个 CompoundTag
                 auto tilesTag = getChildByName(contentTag, "tiles");
                 if (tilesTag && tilesTag->type == TagType::COMPOUND) {
-                    // 遍历 tiles 复合标签中的每个键，例如 "minecraft:granite"、"minecraft:stone"
+                    // 遍历 tiles 复合标签中的每个键,例如 "minecraft:granite"、"minecraft:stone"
                     for (const auto& tileGroupTag : tilesTag->children) {
                         // 确保子标签类型为 ListTag
                         if (tileGroupTag->type != TagType::LIST)
@@ -428,9 +428,9 @@ void ProcessEntityBlocks(int chunkX, int chunkZ, const NbtTagPtr& blockEntitiesT
                         LittleTilesTileEntry tileEntry;
                         tileEntry.blockName = blockName;
 
-                        // 标记：第一个 IntArrayTag 作为颜色，其余均作为 box
+                        // 标记:第一个 IntArrayTag 作为颜色,其余均作为 box
                         bool isFirstArray = true;
-                        // 遍历 ListTag 下的每个子节点，均为 IntArrayTag
+                        // 遍历 ListTag 下的每个子节点,均为 IntArrayTag
                         for (const auto& intArrayTag : tileGroupTag->children) {
                             if (intArrayTag->type != TagType::INT_ARRAY)
                                 continue;
@@ -447,12 +447,12 @@ void ProcessEntityBlocks(int chunkX, int chunkZ, const NbtTagPtr& blockEntitiesT
                                 // 其他数组作为 box 数据
                                 // 预期每个 box 应为 7 个 int
                                 if (values.size() == 7) {
-                                    // 辅助：把一个字节拆成 [高半字节, 低半字节]
+                                    // 辅助:把一个字节拆成 [高半字节, 低半字节]
                                     auto splitNibble = [](unsigned char b) {
                                         return std::vector<int>{ (b >> 4) & 0x0F, b & 0x0F };
                                         };
 
-                                    // 在 box 处理逻辑里，拿到 intArrayTag->payload
+                                    // 在 box 处理逻辑里,拿到 intArrayTag->payload
                                     const auto& pl = intArrayTag->payload;
 
                                     unsigned char b0 = pl[3];
@@ -471,7 +471,7 @@ void ProcessEntityBlocks(int chunkX, int chunkZ, const NbtTagPtr& blockEntitiesT
                                     transformed.insert(transformed.end(), d2.begin(), d2.end());
 
 
-                                    // 接着追加后面 6 个 int（原始顺序不变）
+                                    // 接着追加后面 6 个 int(原始顺序不变)
                                     for (size_t i = 1; i < values.size(); ++i) {
                                         transformed.push_back(values[i]);
                                     }
@@ -480,7 +480,7 @@ void ProcessEntityBlocks(int chunkX, int chunkZ, const NbtTagPtr& blockEntitiesT
                                     tileEntry.boxDataList.push_back(transformed);
                                 }
                                 else {
-                                    // 如果数据不是 7 个 int，则直接保存原始数据，或根据需求做额外处理
+                                    // 如果数据不是 7 个 int,则直接保存原始数据,或根据需求做额外处理
                                     tileEntry.boxDataList.push_back(values);
                                 }
                             }
@@ -514,7 +514,7 @@ void ProcessEntityBlocks(int chunkX, int chunkZ, const NbtTagPtr& blockEntitiesT
 }
 
 
-// 修改 LoadAndCacheBlockData，使其处理整个 chunk 的所有子区块
+// 修改 LoadAndCacheBlockData,使其处理整个 chunk 的所有子区块
 void LoadAndCacheBlockData(int chunkX, int chunkZ) {
     // 计算区域坐标
     int regionX, regionZ;
@@ -582,7 +582,7 @@ void LoadAndCacheBlockData(int chunkX, int chunkZ) {
 // 缓存释放函数
 // --------------------------------------------------------------------------------
 void ReleaseSectionCache() {
-    // 先清空，再 shrink_to_fit（但 unordered_map 没有 shrink_to_fit，所以直接替换更有效）
+    // 先清空,再 shrink_to_fit(但 unordered_map 没有 shrink_to_fit,所以直接替换更有效)
     sectionCache.clear();
     sectionCache = {};  // 强制释放内存
 }
@@ -715,9 +715,9 @@ int GetLevel(int blockX, int blockY, int blockZ) {
         }
     }
 
-    return currentBlock.air ? -1 : -2; // 空气返回-1，固体返回-2
+    return currentBlock.air ? -1 : -2; // 空气返回-1,固体返回-2
 }
-// 获取方块ID时同时获取相邻方块的air状态，返回当前方块ID
+// 获取方块ID时同时获取相邻方块的air状态,返回当前方块ID
 int GetBlockIdWithNeighbors(
     int blockX, int blockY, int blockZ,
     bool* neighborIsAir,
@@ -729,15 +729,15 @@ int GetBlockIdWithNeighbors(
     bool isFluid = fluidDefinitions.find(currentBaseName) != fluidDefinitions.end();
     bool hasFluidData = (currentBlock.level != -1);
 
-    // 统一处理 neighborIsAir 数组（6个方向）
+    // 统一处理 neighborIsAir 数组(6个方向)
     if (neighborIsAir != nullptr) {
         static const std::array<std::tuple<int, int, int>, 6> directions = { {
-            {0, 1, 0},    // 上（Y+）
-            {0, -1, 0},   // 下（Y-）
-            {-1, 0, 0},   // 西（X-）
-            {1, 0, 0},    // 东（X+）
-            {0, 0, -1},   // 北（Z-）
-            {0, 0, 1}     // 南（Z+）
+            {0, 1, 0},    // 上(Y+)
+            {0, -1, 0},   // 下(Y-)
+            {-1, 0, 0},   // 西(X-)
+            {1, 0, 0},    // 东(X+)
+            {0, 0, -1},   // 北(Z-)
+            {0, 0, 1}     // 南(Z+)
         } };
 
         for (size_t i = 0; i < directions.size(); ++i) {
@@ -747,7 +747,7 @@ int GetBlockIdWithNeighbors(
             int ny = blockY + dy;
             int nz = blockZ + dz;
 
-            // 如果启用了保留边界面，则直接判断
+            // 如果启用了保留边界面,则直接判断
             if (config.keepBoundary &&
                 ((nx == config.maxX + 1) || (nx == config.minX - 1) ||
                     (nz == config.maxZ + 1) || (nz == config.minZ - 1))) {
@@ -771,7 +771,7 @@ int GetBlockIdWithNeighbors(
         }
     }
 
-    // 处理 fluidLevels 数组，仅在存在流体数据且数组不为空时进行
+    // 处理 fluidLevels 数组,仅在存在流体数据且数组不为空时进行
     if (hasFluidData && fluidLevels != nullptr) {
         // 中心块的流体等级
         fluidLevels[0] = GetLevel(blockX, blockY, blockZ);
@@ -801,8 +801,8 @@ int GetHeightMapY(int blockX, int blockZ, const std::string& heightMapType) {
     int chunkX, chunkZ;
     blockToChunk(blockX, blockZ, chunkX, chunkZ);
 
-    // 触发区块加载（确保高度图数据存在）
-    GetBlockId(blockX, 0, blockZ); // Y坐标任意，只为触发加载
+    // 触发区块加载(确保高度图数据存在)
+    GetBlockId(blockX, 0, blockZ); // Y坐标任意,只为触发加载
 
     // 查找缓存
     auto chunkKey = std::make_pair(chunkX, chunkZ);

@@ -14,7 +14,7 @@
 #include <concepts>     // C++20特性
 #include <span>         // C++20特性
 #include <ranges>       // C++20特性
-#include <compare>      // C++20特性：三路比较运算符
+#include <compare>      // C++20特性:三路比较运算符
 #include "JarReader.h"
 #include "config.h"
 #include "texture.h"
@@ -38,7 +38,7 @@ struct Material {
     int8_t  tintIndex;      // tint 索引
     MaterialType type;      // 材质类型
     
-    // 构造函数，默认为普通材质
+    // 构造函数,默认为普通材质
     Material() : name(""), texturePath(""), tintIndex(-1), type(NORMAL) {}
     Material(const std::string& name, const std::string& path, int8_t tint) 
         : name(name), texturePath(path), tintIndex(tint), type(NORMAL) {}
@@ -47,7 +47,7 @@ struct Material {
 };
 
 //---------------- 数据类型定义 ----------------
-// 在 ModelData 定义之前新增 Face 结构体定义，用于包含顶点索引、UV 索引、材质索引和面方向
+// 在 ModelData 定义之前新增 Face 结构体定义,用于包含顶点索引、UV 索引、材质索引和面方向
 struct Face {
     std::array<int, 4> vertexIndices; // 四个顶点索引
     std::array<int, 4> uvIndices;     // 四个 UV 索引
@@ -55,20 +55,20 @@ struct Face {
     FaceType faceDirection;           // 剔除方向
 };
 
-// 修改 ModelData，使用统一 Face 结构体替换原有的 faces、uvFaces、materialIndices 和 faceDirections
+// 修改 ModelData,使用统一 Face 结构体替换原有的 faces、uvFaces、materialIndices 和 faceDirections
 struct ModelData {
-    // 顶点数据（x,y,z顺序存储）
+    // 顶点数据(x,y,z顺序存储)
     std::vector<float> vertices;          // 每3个元素构成一个顶点
     std::vector<float> uvCoordinates;     // 每2个元素构成一个UV坐标
 
-    // 面数据（使用 Face 结构体优化性能，支持 GreedyMesh 算法）
+    // 面数据(使用 Face 结构体优化性能,支持 GreedyMesh 算法)
     std::vector<Face> faces;              // 包含顶点索引、UV索引、材质索引和面方向
 
-    // 材质系统（保持原优化方案）
+    // 材质系统(保持原优化方案)
     std::vector<Material> materials;      // 每个材质包含名称、纹理路径和 tint 索引
 };
 
-// 自定义顶点键：用整数表示，精度保留到小数点后6位
+// 自定义顶点键:用整数表示,精度保留到小数点后6位
 struct VertexKey {
     int x, y, z;
     
@@ -144,13 +144,13 @@ namespace std {
 }
 
 
-// 辅助函数：将字符串方向转换为FaceType枚举
+// 辅助函数:将字符串方向转换为FaceType枚举
 FaceType StringToFaceType(const std::string& dirString);
 
-// 辅助函数：根据面索引获取面方向 (每4个顶点构成一个面)
+// 辅助函数:根据面索引获取面方向 (每4个顶点构成一个面)
 FaceType GetFaceTypeByIndex(size_t faceIndex);
 
-// 辅助函数：将FaceType枚举转换为字符串
+// 辅助函数:将FaceType枚举转换为字符串
 std::string FaceTypeToString(FaceType faceType);
 
 //---------------- 缓存管理 ----------------
@@ -174,7 +174,7 @@ ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2);
 
 void MergeModelsDirectly(ModelData& data1, const ModelData& data2);
 
-// 使用C++20的span来改进参数传递（避免复制）
+// 使用C++20的span来改进参数传递(避免复制)
 void ApplyPositionOffset(ModelData& model, int x, int y, int z);
 void ApplyDoublePositionOffset(ModelData& model, double x, double y, double z);
 

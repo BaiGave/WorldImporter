@@ -20,7 +20,7 @@
 #include "hashutils.h"
 
 extern Config config;
-// 引入统一的哈希函数头文件，提供 pair_hash 和 triple_hash
+// 引入统一的哈希函数头文件,提供 pair_hash 和 triple_hash
 
 extern std::unordered_set<std::string> solidBlocks; // 改为哈希表
 extern std::unordered_set<std::string> fluidBlocks;
@@ -29,11 +29,11 @@ extern std::unordered_map<std::pair<int, int>, std::vector<char>, pair_hash> reg
 extern std::unordered_map<std::pair<int, int>, std::unordered_map<std::string, std::vector<int>>, pair_hash> heightMapCache;
 struct FluidInfo {
     std::string folder;
-    std::string property;          // 流体特殊属性（如waterlogged）
-    std::string level_property;    // level属性名称（默认为"level"）
+    std::string property;          // 流体特殊属性(如waterlogged)
+    std::string level_property;    // level属性名称(默认为"level")
     std::unordered_set<std::string> liquid_blocks; // 强制含水方块
-    std::string still_texture;     // 静止材质路径（如"_still"）
-    std::string flow_texture;      // 流动材质路径（如"_flow"）
+    std::string still_texture;     // 静止材质路径(如"_still")
+    std::string flow_texture;      // 流动材质路径(如"_flow")
 };
 extern std::unordered_map<std::string, FluidInfo> fluidDefinitions;
 
@@ -43,7 +43,7 @@ struct alignas(16) Block {
     bool air;
 
     Block(const std::string& name) : name(name), level(-1), air(true) {
-        // 用 string_view 减少 substr 拷贝，仅对 baseName 做一次 std::string 构造
+        // 用 string_view 减少 substr 拷贝,仅对 baseName 做一次 std::string 构造
         std::string_view fullName(name);
         size_t bracketPos = fullName.find('[');
         std::string_view baseNameView = (bracketPos != std::string_view::npos) ?
@@ -76,7 +76,7 @@ struct alignas(16) Block {
         /* 新版流体处理逻辑 */
         bool fluidProcessed = false;
 
-        // 阶段1：检查强制含水方块
+        // 阶段1:检查强制含水方块
         if (!fluidProcessed) {
             for (const auto& fluidEntry : fluidDefinitions) {
                 const FluidInfo& info = fluidEntry.second;
@@ -87,7 +87,7 @@ struct alignas(16) Block {
                 }
             }
         }
-        // 阶段2：检查流体属性（如waterlogged）
+        // 阶段2:检查流体属性(如waterlogged)
         for (const auto& fluidEntry : fluidDefinitions) {
             const std::string& fluidName = fluidEntry.first;
             const FluidInfo& info = fluidEntry.second;
@@ -103,7 +103,7 @@ struct alignas(16) Block {
 
         
 
-        // 阶段3：处理流体自身level属性
+        // 阶段3:处理流体自身level属性
         if (!fluidProcessed) {
             const auto& it = fluidDefinitions.find(baseName);
             if (it != fluidDefinitions.end()) {
@@ -129,7 +129,7 @@ struct alignas(16) Block {
     }
     Block(const std::string& name, bool air) : name(name), level(-1), air(air) {}
 
-    // 方法：获取命名空间部分
+    // 方法:获取命名空间部分
     std::string GetNamespace() const {
         size_t colonPos = name.find(':'); // 查找第一个冒号的位置
         if (colonPos != std::string::npos) { // 如果找到冒号
@@ -140,7 +140,7 @@ struct alignas(16) Block {
         }
     }
 
-    // 方法：获取方块名称部分（冒号之后的部分）
+    // 方法:获取方块名称部分(冒号之后的部分)
     std::string GetName() const {
         size_t colonPos = name.find(':'); // 查找第一个冒号的位置
         if (colonPos != std::string::npos) { // 如果找到冒号
@@ -155,17 +155,17 @@ struct alignas(16) Block {
         size_t colonPos = name.find(':'); // 查找第一个冒号的位置
         size_t bracketPos = name.find('[');  // 查找第一个方括号的位置
 
-        // 如果没有冒号，返回完整字符串
+        // 如果没有冒号,返回完整字符串
         if (colonPos == std::string::npos) {
             return name.substr(0, bracketPos == std::string::npos ? name.size() : bracketPos).c_str();
         }
 
-        // 如果有冒号，返回冒号之后到方括号之间的部分
+        // 如果有冒号,返回冒号之后到方括号之间的部分
         if (bracketPos == std::string::npos) {
             return name.substr(colonPos + 1);
         }
 
-        // 如果冒号后在方括号之前，返回这部分
+        // 如果冒号后在方括号之前,返回这部分
         if (colonPos + 1 < bracketPos) {
             return name.substr(colonPos + 1, bracketPos - colonPos - 1).c_str();
         }
@@ -177,15 +177,15 @@ struct alignas(16) Block {
     std::string GetNameAndNameSpaceWithoutState() const {
         size_t bracketPos = name.find('[');  // 查找第一个方括号的位置
 
-        // 如果没有方括号，返回完整的字符串
+        // 如果没有方括号,返回完整的字符串
         if (bracketPos == std::string::npos) {
             return name;
         }
 
-        // 如果有方括号，返回方括号之前的部分
+        // 如果有方括号,返回方括号之前的部分
         return name.substr(0, bracketPos);
     }
-    // 保留命名空间和基础名字，只处理状态键值对
+    // 保留命名空间和基础名字,只处理状态键值对
     std::string GetModifiedNameWithNamespace() const {
         // 提取命名空间部分
         size_t colonPos = name.find(':');
@@ -215,7 +215,7 @@ struct alignas(16) Block {
             stateStr = "";
         }
 
-        // 解析状态键值对，并过滤掉指定的键
+        // 解析状态键值对,并过滤掉指定的键
         std::vector<std::string> statePairs;
         std::string pair;
 
@@ -245,7 +245,7 @@ struct alignas(16) Block {
             }
         }
 
-        // 重新组合状态键值对，并替换冒号为等号
+        // 重新组合状态键值对,并替换冒号为等号
         std::string filteredState;
         for (const auto& pair : filteredPairs) {
             if (!filteredState.empty()) {
@@ -277,7 +277,7 @@ struct alignas(16) Block {
         size_t bracketPos = name.find('[');
         std::string baseName = (bracketPos != std::string::npos) ? name.substr(0, bracketPos) : name;
 
-        // 如果没有状态部分，直接返回原名
+        // 如果没有状态部分,直接返回原名
         if (bracketPos == std::string::npos) {
             return name;
         }
@@ -341,7 +341,7 @@ struct alignas(16) Block {
         }
     }
 
-    // 新函数：同时获取 GetName 和 GetBlockNameWithoutProperties 的效果
+    // 新函数:同时获取 GetName 和 GetBlockNameWithoutProperties 的效果
     std::string GetModifiedName() const {
         size_t colonPos = name.find(':');
         std::string baseNamePart;
@@ -350,7 +350,7 @@ struct alignas(16) Block {
             baseNamePart = name.substr(colonPos + 1); // 获取冒号后的内容
         }
         else {
-            baseNamePart = name; // 没有命名空间时，整个字符串作为基础名
+            baseNamePart = name; // 没有命名空间时,整个字符串作为基础名
         }
 
         size_t bracketPos = baseNamePart.find('[');
@@ -410,7 +410,7 @@ struct alignas(16) Block {
         }
 
         if (filteredPairs.empty()) {
-            // 如果没有状态键值对，直接返回 blockName
+            // 如果没有状态键值对,直接返回 blockName
             return blockName;
         }
         else {
@@ -424,7 +424,7 @@ struct alignas(16) Block {
 };
 
 struct alignas(16) SectionCacheEntry {
-    // 把频繁访问的大数组放在前面，减少访存跨缓存行
+    // 把频繁访问的大数组放在前面,减少访存跨缓存行
     std::vector<int> skyLight;      // 天空光照数据
     std::vector<int> blockLight;    // 方块光照数据
     std::vector<int> blockData;     // 方块数据
@@ -462,7 +462,7 @@ std::string GetBlockNameById(int blockId);
 
 std::string GetBlockNamespaceById(int blockId);
 
-// 获取方块ID时同时获取相邻方块的air状态，返回当前方块ID
+// 获取方块ID时同时获取相邻方块的air状态,返回当前方块ID
 int GetBlockIdWithNeighbors(
     int blockX, int blockY, int blockZ,
     bool* neighborIsAir = nullptr,
@@ -475,7 +475,7 @@ int GetHeightMapY(int blockX, int blockZ, const std::string& heightMapType);
 std::vector<Block> GetGlobalBlockPalette();
 
 
-// 初始化，注册"minecraft:air"为ID0
+// 初始化,注册"minecraft:air"为ID0
 void InitializeGlobalBlockPalette();
 
 

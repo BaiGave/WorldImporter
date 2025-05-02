@@ -11,8 +11,8 @@
 #include <regex>
 #include <tuple>
 #include <future>
-#include <chrono>  // 新增：用于时间测量
-#include <iostream>  // 新增：用于输出时间
+#include <chrono>  // 新增:用于时间测量
+#include <iostream>  // 新增:用于输出时间
 #include <thread>
 #include <atomic>
 #include "ModelDeduplicator.h"
@@ -21,10 +21,10 @@
 #include "hashutils.h"
 
 using namespace std;
-using namespace std::chrono;  // 新增：方便使用 chrono
+using namespace std::chrono;  // 新增:方便使用 chrono
 
 std::unordered_set<std::pair<int, int>, pair_hash> processedChunks; // 存储已处理的块的集合
-std::mutex entityCacheMutex; // 互斥量，确保线程安全
+std::mutex entityCacheMutex; // 互斥量,确保线程安全
 
 void RegionModelExporter::ExportModels(const string& outputName) {
     // 初始化坐标范围
@@ -101,9 +101,9 @@ void RegionModelExporter::ExportModels(const string& outputName) {
         sectionYStart, sectionYEnd, L0, L1, L2, L3);
 
     auto processModel = [](const ChunkTask& task) -> ModelData {
-        // 如果 LOD0renderDistance 为 0 且是普通区块，跳过生成
+        // 如果 LOD0renderDistance 为 0 且是普通区块,跳过生成
         if (config.LOD0renderDistance == 0 && task.lodLevel == 0.0f) {
-            // LOD0 禁用时，将中央区块按 LOD1 生成
+            // LOD0 禁用时,将中央区块按 LOD1 生成
             return GenerateLODChunkModel(task.chunkX, task.sectionY, task.chunkZ, 1.0f);
         }
         if (task.lodLevel == 0.0f) {
@@ -197,7 +197,7 @@ void RegionModelExporter::LoadChunks(int chunkXStart, int chunkXEnd, int chunkZS
     int L2d2 = LOD2renderDistance * LOD2renderDistance;
     int L3d2 = LOD3renderDistance * LOD3renderDistance;
 
-    // 扩大区块范围，使其比将要导入的区块大一圈
+    // 扩大区块范围,使其比将要导入的区块大一圈
     chunkXStart--;
     chunkXEnd++;
     chunkZStart--;
@@ -309,7 +309,7 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
 
                 string ns = GetBlockNamespaceById(id);
 
-                // 标准化方块名称（去掉命名空间，处理状态）
+                // 标准化方块名称(去掉命名空间,处理状态)
                 size_t colonPos = blockName.find(':');
                 if (colonPos != string::npos) {
                     blockName = blockName.substr(colonPos + 1);
@@ -321,14 +321,14 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
                     blockModel = GetRandomModelFromCache(ns, blockName);
 
                     if (blockModel.vertices.empty()) {
-                        // 如果是流体方块，生成流体模型
+                        // 如果是流体方块,生成流体模型
                         liquidModel = GenerateFluidModel(fluidLevels);
                         AssignFluidMaterials(liquidModel, currentBlock.name);
                         blockModel = liquidModel;
                     }
                     else
                     {
-                        // 如果是流体方块，生成流体模型
+                        // 如果是流体方块,生成流体模型
                         liquidModel = GenerateFluidModel(fluidLevels);
                         AssignFluidMaterials(liquidModel, currentBlock.name);
                         
@@ -360,7 +360,7 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
                     }
 
                     FaceType dir = blockModel.faces[faceIdx].faceDirection; // 获取面的方向
-                    // 如果是DO_NOT_CULL，保留该面
+                    // 如果是DO_NOT_CULL,保留该面
                     if (dir == FaceType::DO_NOT_CULL) {
                         validFaceIndices.push_back(faceIdx);
                     }
@@ -368,7 +368,7 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
                         auto it = neighborIndexMap.find(dir);
                         if (it != neighborIndexMap.end()) {
                             int neighborIdx = it->second;
-                            if (!neighbors[neighborIdx]) { // 如果邻居存在（非空气），跳过该面
+                            if (!neighbors[neighborIdx]) { // 如果邻居存在(非空气),跳过该面
                                 continue;
                             }
                         }
@@ -376,7 +376,7 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
                     }
                 }
 
-                // 重建面数据（使用新的Face结构体）
+                // 重建面数据(使用新的Face结构体)
                 ModelData filteredModel;
                 filteredModel.faces.reserve(validFaceIndices.size());
 
@@ -385,7 +385,7 @@ ModelData RegionModelExporter::GenerateChunkModel(int chunkX, int sectionY, int 
                     filteredModel.faces.push_back(blockModel.faces[faceIdx]);
                 }
 
-                // 顶点和UV数据保持不变（后续合并时会去重）
+                // 顶点和UV数据保持不变(后续合并时会去重)
                 filteredModel.vertices = blockModel.vertices;
                 filteredModel.uvCoordinates = blockModel.uvCoordinates;
                 filteredModel.materials = blockModel.materials;

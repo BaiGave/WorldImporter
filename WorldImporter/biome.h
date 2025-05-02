@@ -52,7 +52,7 @@ struct BiomeInfo {
 
 class Biome {
 public:
-    // 获取或注册群系ID（线程安全）
+    // 获取或注册群系ID(线程安全)
     static int GetId(const std::string& fullName);
 
     static int GetColor(int biomeId, BiomeColorType colorType);

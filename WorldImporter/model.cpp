@@ -31,7 +31,7 @@ std::string getExecutableDir() {
 }
 
 //---------------- 几何变换 ----------------
-// 应用缩放（以0.5,0.5,0.5为中心）
+// 应用缩放(以0.5,0.5,0.5为中心)
 void ApplyScaleToVertices(std::span<float> vertices, float sx, float sy, float sz) {
     constexpr float center = 0.5f;
     for (size_t i = 0; i < vertices.size(); i += 3) {
@@ -51,11 +51,11 @@ void ApplyScaleToVertices(std::span<float> vertices, float sx, float sy, float s
         vertices[i + 2] = z + center;
     }
 }
-// 应用旋转（以0.5,0.5,0.5为中心，按X->Y->Z轴顺序）
+// 应用旋转(以0.5,0.5,0.5为中心,按X->Y->Z轴顺序)
 void ApplyRotationToVertices(std::span<float> vertices, float rx, float ry, float rz) {
     constexpr float center = 0.5f;
 
-    // 转换角度为弧度（按原始值直接使用，若需/16则改为 rx/16.0f）
+    // 转换角度为弧度(按原始值直接使用,若需/16则改为 rx/16.0f)
     const float radX = rx * (M_PI / 180.0f);
     const float radY = ry * (M_PI / 180.0f);
     const float radZ = rz * (M_PI / 180.0f);
@@ -71,7 +71,7 @@ void ApplyRotationToVertices(std::span<float> vertices, float rx, float ry, floa
         float y = vertices[i + 1] - center;
         float z = vertices[i + 2] - center;
 
-        // 按X轴旋转（与element处理逻辑一致）
+        // 按X轴旋转(与element处理逻辑一致)
         if (rx != 0.0f) {
             float new_y = y * cosX - z * sinX;
             float new_z = y * sinX + z * cosX;
@@ -79,7 +79,7 @@ void ApplyRotationToVertices(std::span<float> vertices, float rx, float ry, floa
             z = new_z;
         }
 
-        // 按Y轴旋转（与element处理逻辑一致）
+        // 按Y轴旋转(与element处理逻辑一致)
         if (ry != 0.0f) {
             float new_x = x * cosY + z * sinY;
             float new_z = -x * sinY + z * cosY;
@@ -87,7 +87,7 @@ void ApplyRotationToVertices(std::span<float> vertices, float rx, float ry, floa
             z = new_z;
         }
 
-        // 按Z轴旋转（与element处理逻辑一致）
+        // 按Z轴旋转(与element处理逻辑一致)
         if (rz != 0.0f) {
             float new_x = x * cosZ - y * sinZ;
             float new_y = x * sinZ + y * cosZ;
@@ -103,14 +103,14 @@ void ApplyRotationToVertices(std::span<float> vertices, float rx, float ry, floa
 }
 
 
-// 旋转函数 - 使用整数参数的版本，C++20版本
+// 旋转函数 - 使用整数参数的版本,C++20版本
 void ApplyRotationToVertices(std::span<float> vertices, int rotationX, int rotationY) {
     // 参数校验
     if (vertices.size() % 3 != 0) {
         throw std::invalid_argument("Invalid vertex data size");
     }
 
-    // 绕 X 轴旋转（90度增量）
+    // 绕 X 轴旋转(90度增量)
     for (size_t i = 0; i < vertices.size(); i += 3) {
         float& x = vertices[i];
         float& y = vertices[i + 1];
@@ -140,7 +140,7 @@ void ApplyRotationToVertices(std::span<float> vertices, int rotationX, int rotat
         z += 0.5f;
     }
 
-    // 绕 Y 轴旋转（90度增量）
+    // 绕 Y 轴旋转(90度增量)
     for (size_t i = 0; i < vertices.size(); i += 3) {
         float& x = vertices[i];
         float& y = vertices[i + 1];
@@ -171,7 +171,7 @@ void ApplyRotationToVertices(std::span<float> vertices, int rotationX, int rotat
     }
 }
 
-// 带旋转中心的UV旋转（内联优化）
+// 带旋转中心的UV旋转(内联优化)
 static inline void fastRotateUV(float& u, float& v, float cosA, float sinA) {
     constexpr float centerU = 0.5f;
     constexpr float centerV = 0.5f;
@@ -188,7 +188,7 @@ static inline void fastRotateUV(float& u, float& v, float cosA, float sinA) {
     v = newV < 0.0f ? 0.0f : (newV > 1.0f ? 1.0f : newV);
 }
 
-// 预计算三角函数值（包含常见角度优化）
+// 预计算三角函数值(包含常见角度优化)
 static void getCosSin(int angle, float& cosA, float& sinA) {
     angle = (angle % 360 + 360) % 360;
 
@@ -205,7 +205,7 @@ static void getCosSin(int angle, float& cosA, float& sinA) {
     sinA = std::sin(rad);
 }
 
-// 优化后的UV分离，使用Face结构体中的uvIndices
+// 优化后的UV分离,使用Face结构体中的uvIndices
 static void createUniqueUVs(ModelData& modelData) {
     std::vector<float> newUVs;
     const size_t faceCount = modelData.faces.size();
@@ -213,7 +213,7 @@ static void createUniqueUVs(ModelData& modelData) {
     
     newUVs.reserve(vertexCount * 2); // 每个点2个UV坐标
     
-    // 遍历每个Face，提取并重建UV坐标，更新uvIndices
+    // 遍历每个Face,提取并重建UV坐标,更新uvIndices
     for (size_t fi = 0; fi < faceCount; ++fi) {
         Face& face = modelData.faces[fi];
         for (int j = 0; j < 4; ++j) {
@@ -224,7 +224,7 @@ static void createUniqueUVs(ModelData& modelData) {
                 newUVs.push_back(modelData.uvCoordinates[oldIdx * 2 + 1]);
                 face.uvIndices[j] = static_cast<int>(newUVs.size()/2 - 1); // 更新为新索引
             } else {
-                // 无效索引处理，使用默认UV值
+                // 无效索引处理,使用默认UV值
                 newUVs.push_back(0.0f);
                 newUVs.push_back(0.0f);
                 face.uvIndices[j] = static_cast<int>(newUVs.size()/2 - 1);
@@ -235,7 +235,7 @@ static void createUniqueUVs(ModelData& modelData) {
     modelData.uvCoordinates = std::move(newUVs);
 }
 
-// 应用旋转到单个Face的UV（批量处理优化）
+// 应用旋转到单个Face的UV(批量处理优化)
 static void applyFaceRotation(ModelData& modelData, size_t faceIdx, int angle) {
     if (angle == 0 || faceIdx >= modelData.faces.size()) return;
     
@@ -255,7 +255,7 @@ static void applyFaceRotation(ModelData& modelData, size_t faceIdx, int angle) {
     }
 }
 
-// 主逻辑优化（预处理面类型+并行处理）
+// 主逻辑优化(预处理面类型+并行处理)
 void ApplyRotationToUV(ModelData& modelData, int rotationX, int rotationY) {
     createUniqueUVs(modelData);
     
@@ -436,14 +436,14 @@ void ApplyRotationToFaceDirections(std::vector<Face>& faces, int rotationX, int 
         // 不旋转 DO_NOT_CULL
         if (face.faceDirection == FaceType::DO_NOT_CULL) continue;
         
-        // 绕 X 轴旋转（90度增量）
+        // 绕 X 轴旋转(90度增量)
         switch (rotationX) {
         case 270: face.faceDirection = rotateX(face.faceDirection); break;
         case 180: face.faceDirection = rotateX(rotateX(face.faceDirection)); break;
         case 90: face.faceDirection = rotateXReverse(face.faceDirection); break;
         }
         
-        // 绕 Y 轴旋转（90度增量）
+        // 绕 Y 轴旋转(90度增量)
         switch (rotationY) {
         case 90: face.faceDirection = rotateY(face.faceDirection); break;
         case 180: face.faceDirection = rotateY(rotateY(face.faceDirection)); break;
@@ -471,7 +471,7 @@ void ApplyDoublePositionOffset(ModelData& model, double x, double y, double z) {
 //============== 模型数据处理模块 ==============//
 //---------------- JSON处理 ----------------
 nlohmann::json LoadParentModel(const std::string& namespaceName, const std::string& blockId, nlohmann::json& currentModelJson) {
-    // 如果当前模型没有 parent 属性，直接返回
+    // 如果当前模型没有 parent 属性,直接返回
     if (!currentModelJson.contains("parent")) {
         return currentModelJson;
     }
@@ -479,7 +479,7 @@ nlohmann::json LoadParentModel(const std::string& namespaceName, const std::stri
     // 获取当前模型的 parent
     std::string parentModelId = currentModelJson["parent"];
 
-    // 判断 parentModelId 是否包含冒号（即是否包含命名空间）
+    // 判断 parentModelId 是否包含冒号(即是否包含命名空间)
     size_t colonPos = parentModelId.find(':');
     std::string parentNamespace = "minecraft";  // 默认使用minecraft作为当前的 namespaceName
 
@@ -502,7 +502,7 @@ nlohmann::json LoadParentModel(const std::string& namespaceName, const std::stri
             // 合并父模型的属性到当前模型中
             currentModelJson = MergeModelJson(parentModelJson, currentModelJson);
 
-            // 如果父模型没有 parent 属性，停止递归
+            // 如果父模型没有 parent 属性,停止递归
             if (!parentModelJson.contains("parent")) {
                 return currentModelJson;
             }
@@ -512,10 +512,10 @@ nlohmann::json LoadParentModel(const std::string& namespaceName, const std::stri
         }
     }
 
-    // 缓存未命中，加载父模型
+    // 缓存未命中,加载父模型
     nlohmann::json parentModelJson = GetModelJson(parentNamespace, parentModelId);
 
-    // 如果父模型不存在，直接返回当前模型
+    // 如果父模型不存在,直接返回当前模型
     if (parentModelJson.is_null()) {
         return currentModelJson;
     }
@@ -529,7 +529,7 @@ nlohmann::json LoadParentModel(const std::string& namespaceName, const std::stri
     // 合并父模型的属性到当前模型中
     currentModelJson = MergeModelJson(parentModelJson, currentModelJson);
 
-    // 如果父模型没有 parent 属性，停止递归
+    // 如果父模型没有 parent 属性,停止递归
     if (!parentModelJson.contains("parent")) {
         return currentModelJson;
     }
@@ -564,7 +564,7 @@ nlohmann::json MergeModelJson(const nlohmann::json& parentModelJson, const nlohm
             // 仅当子级不存在该键时处理父级的键
             if (!mergedModelJson["textures"].contains(key)) {
                 std::string textureValue = item.value().get<std::string>();
-                // 处理变量引用（如 #texture）
+                // 处理变量引用(如 #texture)
                 if (!textureValue.empty() && textureValue[0] == '#') {
                     std::string varName = textureValue.substr(1);
                     if (textureMap.find(varName) != textureMap.end()) {
@@ -665,7 +665,7 @@ void processTextures(const nlohmann::json& modelJson, ModelData& data,
                 newMaterial.texturePath = textureSavePath;
                 newMaterial.tintIndex = -1;  // 默认值
                 
-                // 检测材质类型（是否为动态材质或CTM）
+                // 检测材质类型(是否为动态材质或CTM)
                 newMaterial.type = DetectMaterialType(namespaceName, pathPart);
                 
                 int materialIndex = data.materials.size();
@@ -697,7 +697,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
             auto faces = element["faces"];
 
 
-            // 转换原始坐标为 OBJ 坐标系（/16）
+            // 转换原始坐标为 OBJ 坐标系(/16)
             float x1 = from[0].get<float>() / 16.0f;
             float y1 = from[1].get<float>() / 16.0f;
             float z1 = from[2].get<float>() / 16.0f;
@@ -714,22 +714,22 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
             // 生成基础顶点数据
             std::unordered_map<std::string, std::vector<std::vector<float>>> elementVertices;
             
-            // 对于极薄块，只生成一个面
+            // 对于极薄块,只生成一个面
             if (isThinX || isThinY || isThinZ) {
                 // 根据薄的维度确定生成哪个面
                 if (isThinX) {
-                    // X方向极薄，只保留东面或西面
+                    // X方向极薄,只保留东面或西面
                     if (x1 <= 0.01f) {
-                        // 靠近西边界，只保留西面
+                        // 靠近西边界,只保留西面
                         elementVertices["west"] = { {x1, y1, z2}, {x1, y2, z2}, {x1, y2, z1}, {x1, y1, z1} };
                     } else {
                         // 否则保留东面
                         elementVertices["east"] = { {x2, y1, z1}, {x2, y2, z1}, {x2, y2, z2}, {x2, y1, z2} };
                     }
                 } else if (isThinY) {
-                    // Y方向极薄，只保留顶面或底面
+                    // Y方向极薄,只保留顶面或底面
                     if (y1 <= 0.01f) {
-                        // 靠近底部，只保留底面
+                        // 靠近底部,只保留底面
                         elementVertices["down"] = { {x2, y1, z2}, {x1, y1, z2}, {x1, y1, z1}, {x2, y1, z1} };
                         
                     } else {
@@ -738,9 +738,9 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                        
                     }
                 } else if (isThinZ) {
-                    // Z方向极薄，只保留南面或北面
+                    // Z方向极薄,只保留南面或北面
                     if (z1 <= 0.01f) {
-                        // 靠近北边界，只保留北面
+                        // 靠近北边界,只保留北面
                         elementVertices["north"] = { {x1, y1, z1}, {x1, y2, z1}, {x2, y2, z1}, {x2, y1, z1} };
                     } else {
                         // 否则保留南面
@@ -751,7 +751,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                 // 从faces中查找我们保留的面的数据
                 std::vector<std::string> facesToErase;
                 for (auto& faceEntry : elementVertices) {
-                    // 如果faces中没有对应的面定义，记录要移除的键
+                    // 如果faces中没有对应的面定义,记录要移除的键
                     if (faces.find(faceEntry.first) == faces.end()) {
                         facesToErase.push_back(faceEntry.first);
                     }
@@ -761,8 +761,8 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                     elementVertices.erase(key);
                 }
             } else {
-                // 正常厚度的区块，按常规方式生成所有面
-                // 遍历元素的面，动态生成顶点数据
+                // 正常厚度的区块,按常规方式生成所有面
+                // 遍历元素的面,动态生成顶点数据
                 for (auto& face : faces.items()) {
                     std::string faceName = face.key();
                     if (faceName == "north") {
@@ -842,7 +842,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                 }
 
                 // 处理rescale参数
-                // 在旋转处理部分的缩放逻辑修改如下：
+                // 在旋转处理部分的缩放逻辑修改如下:
                 bool rescale = rotation.value("rescale", false);
                 if (rescale) {
                     // 将原始角度转回度数进行比较
@@ -850,7 +850,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                     bool applyScaling = false;
                     float scale = 1.0f;
 
-                    // 检查是否为22.5°或45°的整数倍（考虑浮点精度）
+                    // 检查是否为22.5°或45°的整数倍(考虑浮点精度)
                     if (std::fabs(angle_deg_conv - 22.5f) < 1e-6 || std::fabs(angle_deg_conv + 22.5f) < 1e-6) {
                         applyScaling = true;
                         scale = std::sqrt(2.0f - std::sqrt(2.0f)); // 22.5°对应的缩放因子
@@ -861,7 +861,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                     }
 
                     if (applyScaling) {
-                        // 根据旋转轴应用缩放，保留原有旋转中心偏移逻辑
+                        // 根据旋转轴应用缩放,保留原有旋转中心偏移逻辑
                         for (auto& faceEntry : elementVertices) {
                             auto& vertices = faceEntry.second;
                             for (auto& vertex : vertices) {
@@ -898,7 +898,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                 }
             }
 
-            // --- 新增：检测并移除相反方向的重叠面 ---
+            // --- 新增:检测并移除相反方向的重叠面 ---
             auto getOppositeFace = [](const std::string& faceName) -> std::string {
                 if (faceName == "north") return "south";
                 if (faceName == "south") return "north";
@@ -929,7 +929,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
 
             // 用于记录需要覆盖 uv 的信息
             std::vector<std::string> facesToRemove;
-            // 创建映射，记录哪个面被哪个面替代，键是被移除的面名称，值是保留的面名称
+            // 创建映射,记录哪个面被哪个面替代,键是被移除的面名称,值是保留的面名称
             std::unordered_map<std::string, std::string> faceReplacementMap;
             
             for (const auto& faceEntry : elementVertices) {
@@ -961,7 +961,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                 elementVertices.erase(face);
             }
 
-            // 遍历每个面的数据，判断面是否存在，如果存在则处理
+            // 遍历每个面的数据,判断面是否存在,如果存在则处理
             for (auto& face : faces.items()) {
                 std::string faceName = face.key();
                 
@@ -1004,7 +1004,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                         std::stringstream vertexStream;
                         vertexStream << std::fixed << std::setprecision(4);
                         
-                        // 按照几何坐标排序，以确保相同的面（即使顶点顺序不同）有相同的键
+                        // 按照几何坐标排序,以确保相同的面(即使顶点顺序不同)有相同的键
                         std::vector<std::string> vertexKeys;
                         for (const auto& v : faceVertices) {
                             std::stringstream vs;
@@ -1132,7 +1132,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                         bool flipX = uvRegion[0] > uvRegion[2]; // X方向镜像
                         bool flipY = uvRegion[1] > uvRegion[3]; // Y方向镜像
                         
-                        // 确保UV坐标范围正确（起点小于终点）
+                        // 确保UV坐标范围正确(起点小于终点)
                         if (flipX) {
                             std::swap(uvRegion[0], uvRegion[2]);
                         }
@@ -1140,7 +1140,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                             std::swap(uvRegion[1], uvRegion[3]);
                         }
                         
-                        // 计算四个 UV 坐标点（左下，左上，右上，右下）
+                        // 计算四个 UV 坐标点(左下,左上,右上,右下)
                         std::vector<std::vector<float>> uvCoords = {
                             {uvRegion[2] / 16.0f, 1 - uvRegion[3] / 16.0f},
                             {uvRegion[2] / 16.0f, 1 - uvRegion[1] / 16.0f},
@@ -1149,14 +1149,14 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                         };
 
                         
-                        // 应用镜像翻转（如果需要）
+                        // 应用镜像翻转(如果需要)
                         if (flipX) {
-                            // 水平镜像：交换左右顶点
+                            // 水平镜像:交换左右顶点
                             std::swap(uvCoords[0], uvCoords[3]); // 交换左下和右下
                             std::swap(uvCoords[1], uvCoords[2]); // 交换左上和右上
                         }
                         if (flipY) {
-                            // 垂直镜像：交换上下顶点
+                            // 垂直镜像:交换上下顶点
                             std::swap(uvCoords[0], uvCoords[1]); // 交换左下和左上
                             std::swap(uvCoords[3], uvCoords[2]); // 交换右下和右上
                         }
@@ -1234,7 +1234,7 @@ ModelData ProcessModelData(const nlohmann::json& modelJson, const std::string& b
         processElements(modelJson, data, textureKeyToMaterialIndex);
     }
     else {
-        // 当模型中没有 "elements" 字段时，生成实体方块模型
+        // 当模型中没有 "elements" 字段时,生成实体方块模型
         data = SpecialBlock::GenerateSpecialBlockModel(blockName);
     }
     
@@ -1245,7 +1245,7 @@ ModelData ProcessModelData(const nlohmann::json& modelJson, const std::string& b
 // 将model类型的json文件变为网格数据
 ModelData ProcessModelJson(const std::string& namespaceName, const std::string& blockId,
     int rotationX, int rotationY, bool uvlock, int randomIndex,const std::string& blockstateName) {
-    // 生成唯一缓存键（添加模型索引）
+    // 生成唯一缓存键(添加模型索引)
     std::string cacheKey = namespaceName + ":" + blockId + ":" + std::to_string(randomIndex);
 
     // 在访问缓存前加锁
@@ -1267,7 +1267,7 @@ ModelData ProcessModelJson(const std::string& namespaceName, const std::string& 
         ApplyRotationToFaceDirections(cachedModel.faces, rotationX, rotationY);
         return cachedModel;
     }
-    // 缓存未命中，正常加载模型
+    // 缓存未命中,正常加载模型
     nlohmann::json modelJson = GetModelJson(namespaceName, blockId);
 
     ModelData modelData;
@@ -1277,15 +1277,15 @@ ModelData ProcessModelJson(const std::string& namespaceName, const std::string& 
     // 递归加载父模型并合并属性
     modelJson = LoadParentModel(namespaceName, blockId, modelJson);
     
-    // 处理模型数据（不包含旋转）
+    // 处理模型数据(不包含旋转)
     modelData = ProcessModelData(modelJson,blockstateName);
 
 
-    // 将原始数据存入缓存（不包含旋转）
+    // 将原始数据存入缓存(不包含旋转)
     modelCache[cacheKey] = modelData;
 
     if (rotationX != 0 || rotationY != 0) {
-        // 如果指定了旋转，则应用旋转
+        // 如果指定了旋转,则应用旋转
         ApplyRotationToVertices(std::span<float>(modelData.vertices.data(), modelData.vertices.size()), rotationX, rotationY);
     }
     if (uvlock)
@@ -1304,9 +1304,9 @@ ModelData ProcessModelJson(const std::string& namespaceName, const std::string& 
 ModelData MergeModelData(const ModelData& data1, const ModelData& data2) {
     ModelData mergedData;
 
-    //------------------------ 阶段1：顶点处理 ------------------------
+    //------------------------ 阶段1:顶点处理 ------------------------
     std::unordered_map<VertexKey, int> vertexMap;
-    // 预估合并后顶点数量，避免重复 rehash
+    // 预估合并后顶点数量,避免重复 rehash
     vertexMap.reserve((data1.vertices.size() + data2.vertices.size()) / 3);
     std::vector<float> uniqueVertices;
     uniqueVertices.reserve(data1.vertices.size() + data2.vertices.size());
@@ -1319,7 +1319,7 @@ ModelData MergeModelData(const ModelData& data1, const ModelData& data2) {
             float x = vertices[i * 3];
             float y = vertices[i * 3 + 1];
             float z = vertices[i * 3 + 2];
-            // 转为整数表示（保留6位小数）
+            // 转为整数表示(保留6位小数)
             int rx = static_cast<int>(std::round(x * 1000000.0f));
             int ry = static_cast<int>(std::round(y * 1000000.0f));
             int rz = static_cast<int>(std::round(z * 1000000.0f));
@@ -1344,7 +1344,7 @@ ModelData MergeModelData(const ModelData& data1, const ModelData& data2) {
     processVertices(data2.vertices);
     mergedData.vertices = std::move(uniqueVertices);
 
-    //------------------------ 阶段2：UV处理 ------------------------
+    //------------------------ 阶段2:UV处理 ------------------------
     std::unordered_map<UVKey, int> uvMap;
     uvMap.reserve((data1.uvCoordinates.size() + data2.uvCoordinates.size()) / 2);
     std::vector<float> uniqueUVs;
@@ -1379,8 +1379,8 @@ ModelData MergeModelData(const ModelData& data1, const ModelData& data2) {
     processUVs(data2.uvCoordinates);
     mergedData.uvCoordinates = std::move(uniqueUVs);
 
-    //------------------------ 阶段3：面数据处理 ------------------------
-    // 先处理材质映射，以便在处理面时使用
+    //------------------------ 阶段3:面数据处理 ------------------------
+    // 先处理材质映射,以便在处理面时使用
     std::vector<int> materialIndexMap;
     {
         // 使用哈希映射快速判断 data1 中已存在的材质
@@ -1457,12 +1457,12 @@ ModelData MergeModelData(const ModelData& data1, const ModelData& data2) {
     remapFaces(data1.faces, true);
     remapFaces(data2.faces, false);
 
-    //------------------------ 阶段4：材质数据合并 ------------------------
+    //------------------------ 阶段4:材质数据合并 ------------------------
     // 材质数据已在上面处理完成
 
-    //------------------------ 阶段5：合并其他数据 ------------------------
+    //------------------------ 阶段5:合并其他数据 ------------------------
     // 合并处理tintIndex
-    // 注意：这里使用新的方式处理tint索引，我们需要遍历所有材质检查tintIndex
+    // 注意:这里使用新的方式处理tint索引,我们需要遍历所有材质检查tintIndex
     bool hasTintIndex1 = false;
     for (const auto& material : data1.materials)
     {
@@ -1472,7 +1472,7 @@ ModelData MergeModelData(const ModelData& data1, const ModelData& data2) {
             break;
         }
     }
-    // 如果data1没有tint索引，检查data2
+    // 如果data1没有tint索引,检查data2
     if (!hasTintIndex1)
     {
         for (size_t i = 0; i < data2.materials.size(); ++i)
@@ -1491,12 +1491,12 @@ ModelData MergeModelData(const ModelData& data1, const ModelData& data2) {
     return mergedData;
 }
 
-// 以下方法用于合并两个模型数据，针对流体/水方块模型，对重复面做严格剔除：
-// 如果 mesh2 的面被包含在 mesh1 的某个面内，则跳过该面及其对应数据
+// 以下方法用于合并两个模型数据,针对流体/水方块模型,对重复面做严格剔除:
+// 如果 mesh2 的面被包含在 mesh1 的某个面内,则跳过该面及其对应数据
 ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2) {
     ModelData mergedData;
 
-    //------------------------ 阶段1：顶点处理 ------------------------
+    //------------------------ 阶段1:顶点处理 ------------------------
     std::unordered_map<VertexKey, int> vertexMap;
     vertexMap.reserve((data1.vertices.size() + data2.vertices.size()) / 3);
     std::vector<float> uniqueVertices;
@@ -1510,7 +1510,7 @@ ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2) {
             float x = vertices[i * 3];
             float y = vertices[i * 3 + 1];
             float z = vertices[i * 3 + 2];
-            // 转为整数表示（保留6位小数）
+            // 转为整数表示(保留6位小数)
             int rx = static_cast<int>(std::round(x * 1000000.0f));
             int ry = static_cast<int>(std::round(y * 1000000.0f));
             int rz = static_cast<int>(std::round(z * 1000000.0f));
@@ -1535,7 +1535,7 @@ ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2) {
     processVertices(data2.vertices);
     mergedData.vertices = std::move(uniqueVertices);
 
-    //------------------------ 阶段2：UV处理 ------------------------
+    //------------------------ 阶段2:UV处理 ------------------------
     std::unordered_map<UVKey, int> uvMap;
     uvMap.reserve((data1.uvCoordinates.size() + data2.uvCoordinates.size()) / 2);
     std::vector<float> uniqueUVs;
@@ -1570,7 +1570,7 @@ ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2) {
     processUVs(data2.uvCoordinates);
     mergedData.uvCoordinates = std::move(uniqueUVs);
 
-    //------------------------ 阶段3：材质数据处理 ------------------------
+    //------------------------ 阶段3:材质数据处理 ------------------------
     std::unordered_map<std::string, int> materialMap;
     materialMap.reserve(data1.materials.size());
     mergedData.materials = data1.materials;
@@ -1592,8 +1592,8 @@ ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2) {
         }
     }
 
-    //------------------------ 阶段4：网格体1面数据处理 ------------------------
-    // 直接将 data1 的面（及 UV 面）数据进行重映射后加入 mergedData
+    //------------------------ 阶段4:网格体1面数据处理 ------------------------
+    // 直接将 data1 的面(及 UV 面)数据进行重映射后加入 mergedData
     auto remapFaces = [&](const std::vector<Face>& faces, bool isData1) {
         // data2 的顶点需要加上 data1 原始顶点数偏移
         int vertexIndexOffset = isData1 ? 0 : data1.vertices.size() / 3;
@@ -1683,9 +1683,9 @@ ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2) {
     remapUVFaces(data1.faces, true);
     int mesh1FaceCount = data1.faces.size(); // mesh1 面数量
 
-    //------------------------ 阶段5：辅助几何检测函数 ------------------------
+    //------------------------ 阶段5:辅助几何检测函数 ------------------------
 
-    // 计算面（四边形）的法向，使用前三个顶点
+    // 计算面(四边形)的法向,使用前三个顶点
     auto computeNormal = [&](const std::vector<float>& vertices, const std::array<int, 4>& faceIndices) -> std::array<float, 3> {
         float x0 = vertices[faceIndices[0] * 3];
         float y0 = vertices[faceIndices[0] * 3 + 1];
@@ -1706,7 +1706,7 @@ ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2) {
         return normal;
         };
 
-    // 根据法向判断投影时丢弃哪个坐标轴：返回 0 表示丢弃 x，1 表示丢弃 y，2 表示丢弃 z
+    // 根据法向判断投影时丢弃哪个坐标轴:返回 0 表示丢弃 x,1 表示丢弃 y,2 表示丢弃 z
     auto determineDropAxis = [&](const std::array<float, 3>& normal) -> int {
         float absX = std::fabs(normal[0]);
         float absY = std::fabs(normal[1]);
@@ -1719,7 +1719,7 @@ ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2) {
             return 2;
         };
 
-    // 将某个顶点投影到二维平面，dropAxis 指定丢弃的坐标
+    // 将某个顶点投影到二维平面,dropAxis 指定丢弃的坐标
     auto projectPoint = [&](const std::vector<float>& vertices, int vertexIndex, int dropAxis) -> std::pair<float, float> {
         float x = vertices[vertexIndex * 3];
         float y = vertices[vertexIndex * 3 + 1];
@@ -1729,7 +1729,7 @@ ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2) {
         else return { x, y };
         };
 
-    // 判断二维点 p 是否在三角形 (a, b, c) 内（采用重心坐标法）
+    // 判断二维点 p 是否在三角形 (a, b, c) 内(采用重心坐标法)
     auto pointInTriangle = [&](const std::pair<float, float>& p,
         const std::pair<float, float>& a,
         const std::pair<float, float>& b,
@@ -1742,7 +1742,7 @@ ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2) {
             return (alpha >= 0.0f && beta >= 0.0f && gamma >= 0.0f);
         };
 
-    // 判断二维点 p 是否在四边形内（将四边形分解为两个三角形）
+    // 判断二维点 p 是否在四边形内(将四边形分解为两个三角形)
     auto pointInQuad = [&](const std::array<int, 4>& quadIndices, const std::vector<float>& vertices, const std::pair<float, float>& p, int dropAxis) -> bool {
         std::vector<std::pair<float, float>> proj;
         for (int idx : quadIndices) {
@@ -1753,9 +1753,9 @@ ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2) {
         return false;
         };
 
-    // 判断 mesh2 的某个面（给定其4个顶点索引，均为 mergedData.vertices 的下标）是否被包含在 mesh1 的任一面内
+    // 判断 mesh2 的某个面(给定其4个顶点索引,均为 mergedData.vertices 的下标)是否被包含在 mesh1 的任一面内
     auto isFaceContained = [&](const std::array<int, 4>& faceIndices2) -> bool {
-        // 遍历所有 mesh1 的面（已在 mergedData.faces 中，前 mesh1FaceCount 个面）
+        // 遍历所有 mesh1 的面(已在 mergedData.faces 中,前 mesh1FaceCount 个面)
         for (size_t i = 0; i < static_cast<size_t>(mesh1FaceCount); i++) {
             const auto& faceIndices1 = mergedData.faces[i].vertexIndices;
             auto normal = computeNormal(mergedData.vertices, faceIndices1);
@@ -1774,7 +1774,7 @@ ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2) {
         return false;
         };
 
-    //------------------------ 阶段6：网格体2面数据处理（严格检查重复面） ------------------------
+    //------------------------ 阶段6:网格体2面数据处理(严格检查重复面) ------------------------
     int data2FaceCount = data2.faces.size();
     int data2VertexOffset = data1.vertices.size() / 3;
     int data2UVOffset = data1.uvCoordinates.size() / 2;
@@ -1786,11 +1786,11 @@ ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2) {
             faceIndices[j] = vertexIndexMap[originalIndex];
         }
 
-        // 获取 data2 对应面的 faceDirections（假设每个面有4个方向信息，索引为 i*4 ~ i*4+3）
+        // 获取 data2 对应面的 faceDirections(假设每个面有4个方向信息,索引为 i*4 ~ i*4+3)
         // 根据 Face 结构体获取剔除标志
         bool doNotCull = (data2.faces[i].faceDirection == FaceType::DO_NOT_CULL);
 
-        // 如果不标记 DO_NOT_CULL 且该面完全被包含在 mesh1 的某个面内，则跳过该面
+        // 如果不标记 DO_NOT_CULL 且该面完全被包含在 mesh1 的某个面内,则跳过该面
         if (!doNotCull && isFaceContained(faceIndices))
             continue;
 
@@ -1814,7 +1814,7 @@ ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2) {
 }
 
 void MergeModelsDirectly(ModelData& data1, const ModelData& data2) {
-    // 优化：预分配并按倍增扩容，减少内存重分配
+    // 优化:预分配并按倍增扩容,减少内存重分配
     {
         size_t oldV = data1.vertices.size();
         size_t addV = data2.vertices.size();
@@ -1915,7 +1915,7 @@ void MergeModelsDirectly(ModelData& data1, const ModelData& data2) {
     }
 }
 
-// 辅助函数：将字符串方向转换为FaceType枚举
+// 辅助函数:将字符串方向转换为FaceType枚举
 FaceType StringToFaceType(const std::string& dirString) {
     if (dirString == "down") return FaceType::DOWN;
     if (dirString == "up") return FaceType::UP;
@@ -1927,7 +1927,7 @@ FaceType StringToFaceType(const std::string& dirString) {
     return FaceType::UNKNOWN;
 }
 
-// 辅助函数：将FaceType枚举转换为字符串
+// 辅助函数:将FaceType枚举转换为字符串
 std::string FaceTypeToString(FaceType faceType) {
     switch (faceType) {
         case FaceType::DOWN: return "down";
@@ -1941,9 +1941,9 @@ std::string FaceTypeToString(FaceType faceType) {
     }
 }
 
-// 辅助函数：根据面索引获取面方向 (每4个顶点构成一个面)
+// 辅助函数:根据面索引获取面方向 (每4个顶点构成一个面)
 FaceType GetFaceTypeByIndex(size_t faceIndex) {
-    // 标准立方体模型的面顺序通常是：底面、顶面、北面、南面、西面、东面
+    // 标准立方体模型的面顺序通常是:底面、顶面、北面、南面、西面、东面
     size_t normalizedIndex = faceIndex / 4; // 每个面由4个顶点索引组成
     switch (normalizedIndex % 6) {
         case 0: return FaceType::DOWN;  // 底面

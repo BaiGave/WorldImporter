@@ -12,17 +12,17 @@ int toYZX(int x, int y, int z) {
     return encoded;
 }
 
-// 如果结果是负数，添加16，使其变为正数，确保返回的坐标在 [0, 15] 范围内
+// 如果结果是负数,添加16,使其变为正数,确保返回的坐标在 [0, 15] 范围内
 int mod16(int value) {
     int result = value % 16;  // 计算余数
     if (result < 0) {
-        result += 16;  // 如果是负数，转换为正数
+        result += 16;  // 如果是负数,转换为正数
     }
     return result;
 }
 
 
-// 如果结果是负数，添加32，使其变为正数，确保返回的坐标在 [0, 31] 范围内
+// 如果结果是负数,添加32,使其变为正数,确保返回的坐标在 [0, 31] 范围内
 int mod32(int value) {
     int result = value % 32;
     return result < 0 ? result + 32 : result;
