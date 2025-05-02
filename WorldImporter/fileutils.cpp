@@ -93,7 +93,7 @@ std::vector<char> ReadFileToMemory(const std::string& directoryPath, int regionX
     // 打开文件
     std::ifstream file(filePath, std::ios::binary);
     if (!file) {
-        std::cerr << "错误: 打开文件失败！" << std::endl;
+        std::cerr << "错误: 打开文件失败!" << std::endl;
         return {};  // 返回空vector表示失败
     }
 
@@ -101,7 +101,7 @@ std::vector<char> ReadFileToMemory(const std::string& directoryPath, int regionX
     std::vector<char> fileData;
     fileData.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
     if (fileData.empty()) {
-        std::cerr << "错误: 文件为空或读取失败！" << std::endl;
+        std::cerr << "错误: 文件为空或读取失败!" << std::endl;
         return {};  // 返回空vector表示失败
     }
 
@@ -115,7 +115,7 @@ unsigned CalculateOffset(const vector<char>& fileData, int x, int z) {
 
     // 检查是否越界
     if (index + 3 >= fileData.size()) {
-        cerr << "错误: 无效的索引或文件大小。" << endl;
+        cerr << "错误: 无效的索引或文件大小." << endl;
         return 0; // 返回 0 表示计算失败
     }
 

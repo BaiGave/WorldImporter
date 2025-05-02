@@ -77,7 +77,7 @@ std::vector<char> GetChunkNBTData(const std::vector<char>& fileData, int x, int 
     unsigned offset = CalculateOffset(fileData, mod32(x), mod32(z));
 
     if (offset == 0) {
-        cerr << "错误: 偏移计算失败。" << endl;
+        cerr << "错误: 偏移计算失败." << endl;
         return {};
     }
 
@@ -93,15 +93,15 @@ std::vector<char> GetChunkNBTData(const std::vector<char>& fileData, int x, int 
             if (DecompressData(chunkData, decompressedData)) {
                 return decompressedData;
             } else {
-                cerr << "错误: 解压失败。" << endl;
+                cerr << "错误: 解压失败." << endl;
                 return {};
             }
         } else {
-            cerr << "错误: 区块数据超出了文件边界。" << endl;
+            cerr << "错误: 区块数据超出了文件边界." << endl;
             return {};
         }
     } else {
-        cerr << "错误: 从偏移位置读取5个字节的数据不够。" << endl;
+        cerr << "错误: 从偏移位置读取5个字节的数据不够." << endl;
         return {};
     }
 }
