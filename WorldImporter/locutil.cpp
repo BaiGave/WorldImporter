@@ -8,7 +8,6 @@ int minSectionY;
 // 计算 YZX 编码后的数字
 int toYZX(int x, int y, int z) {
     int encoded = (y << 8) | (z << 4) | x;
-    //std::cout << "Encoded YZX (" << x << ", " << y << ", " << z << ") -> " << encoded << std::endl;
     return encoded;
 }
 

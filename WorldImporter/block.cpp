@@ -35,6 +35,7 @@ using namespace std;
 // --------------------------------------------------------------------------------
 // 统一的缓存表(预留桶数量,减少 rehash)
 std::unordered_map<std::tuple<int, int, int>, SectionCacheEntry, triple_hash> sectionCache(4096);
+std::unordered_map<std::pair<int, int>, std::vector<char>, pair_hash> regionCache(1024);
 // 添加静态邻居偏移数组,避免重复构造
 static const std::array<std::tuple<int,int,int>,6> kSectionNeighborOffsets = {{
     {1, 0, 0}, {-1, 0, 0},
@@ -43,9 +44,8 @@ static const std::array<std::tuple<int,int,int>,6> kSectionNeighborOffsets = {{
 }};
 // 实体方块缓存
 std::unordered_map<std::pair<int, int>, std::vector<std::shared_ptr<EntityBlock>>, pair_hash> entityBlockCache(1024);
-// 区域和高度图缓存(预留桶减少 rehash)
-std::unordered_map<std::pair<int, int>, std::vector<char>, pair_hash> regionCache(1024);
 std::unordered_map<std::pair<int, int>, std::unordered_map<std::string, std::vector<int>>, pair_hash> heightMapCache(1024);
+
 std::vector<Block> globalBlockPalette;
 std::unordered_set<std::string> solidBlocks;
 std::unordered_set<std::string> fluidBlocks;
@@ -53,7 +53,7 @@ std::unordered_map<std::string, FluidInfo> fluidDefinitions;
 // --------------------------------------------------------------------------------
 // 文件操作相关函数
 // --------------------------------------------------------------------------------
-std::vector<int> decodeHeightMap(const std::vector<int64_t>& data) {
+std::vector<int> DecodeHeightMap(const std::vector<int64_t>& data) {
     // 预分配256个高度值,避免多次重分配
     std::vector<int> heights;
     heights.reserve(256);
@@ -106,7 +106,7 @@ std::vector<char> GetChunkNBTData(const std::vector<char>& fileData, int x, int 
     }
 }
 
-const std::vector<char>& getRegionFromCache(int regionX, int regionZ) {
+const std::vector<char>& GetRegionFromCache(int regionX, int regionZ) {
     // 创建区域缓存的键值
     auto regionKey = std::make_pair(regionX, regionZ);
     // 使用查找避免重复哈希
@@ -154,8 +154,6 @@ void UpdateSkyLightNeighborFlags() {
         }
     }
 }
-
-
 
 // --------------------------------------------------------------------------------
 // 方块相关核心函数
@@ -521,7 +519,7 @@ void LoadAndCacheBlockData(int chunkX, int chunkZ) {
     chunkToRegion(chunkX, chunkZ, regionX, regionZ);
 
     // 获取区域数据
-    const auto& regionData = getRegionFromCache(regionX, regionZ);
+    const auto& regionData = GetRegionFromCache(regionX, regionZ);
 
     // 获取区块数据
     std::vector<char> chunkData = GetChunkNBTData(regionData, mod32(chunkX), mod32(chunkZ));
@@ -547,7 +545,7 @@ void LoadAndCacheBlockData(int chunkX, int chunkZ) {
                 const int64_t* rawData = reinterpret_cast<const int64_t*>(mapDataTag->payload.data());
                 std::vector<int64_t> longData(rawData, rawData + numLongs);
 
-                std::vector<int> heights = decodeHeightMap(longData);
+                std::vector<int> heights = DecodeHeightMap(longData);
                 heightMapCache[std::make_pair(chunkX, chunkZ)][mapType] = heights;
             }
         }

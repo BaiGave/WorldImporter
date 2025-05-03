@@ -7,10 +7,8 @@ using namespace std;
 using namespace chrono;
 
 void init() {
-    // 删除纹理文件夹可以并行执行
-    std::jthread folder_deletion_thread([&]() {
-        DeleteTexturesFolder();
-    });
+    // 删除纹理文件夹
+    DeleteTexturesFolder();
     
     // 配置必须先加载
     SetGlobalLocale();
@@ -23,10 +21,6 @@ void init() {
     RegisterFluidTextures();
     InitializeGlobalBlockPalette();
     
-    // 等待删除纹理文件夹的线程完成
-    if (folder_deletion_thread.joinable()) {
-        folder_deletion_thread.join();
-    }
 }
 
 int main() {

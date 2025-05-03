@@ -438,7 +438,7 @@ extern std::unordered_map<std::tuple<int, int, int>, SectionCacheEntry, triple_h
 
 // 获取区块NBT数据的函数
 std::vector<char> GetChunkNBTData(const std::vector<char>& fileData, int x, int z);
-const std::vector<char>& getRegionFromCache(int regionX, int regionZ);
+const std::vector<char>& GetRegionFromCache(int regionX, int regionZ);
 
 void LoadAndCacheBlockData(int chunkX, int chunkZ);
 

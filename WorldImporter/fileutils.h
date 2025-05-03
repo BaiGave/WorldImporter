@@ -6,17 +6,15 @@
 #include <iostream>
 
 std::vector<char> ReadFileToMemory(const std::string& directoryPath, int regionX, int regionZ);
-unsigned CalculateOffset(const std::vector<char>& fileData, int x, int z);
-unsigned ExtractChunkLength(const std::vector<char>& fileData, unsigned offset);
 
-bool ExportChunkNBTDataToFile(const std::vector<char>& data, const std::string& filePath);
+unsigned CalculateOffset(const std::vector<char>& fileData, int x, int z);
+
+unsigned ExtractChunkLength(const std::vector<char>& fileData, unsigned offset);
 
 void GenerateSolidsJson(const std::string& outputPath, const std::vector<std::string>& targetParentPaths);
 
 // 设置全局 locale 为支持中文,支持 UTF-8 编码
 void SetGlobalLocale();
-
-void printBytes(const std::vector<char>& data);
 
 void LoadSolidBlocks(const std::string& filepath);
 

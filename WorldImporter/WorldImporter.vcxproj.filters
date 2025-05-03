@@ -35,12 +35,6 @@
       <UniqueIdentifier>{9E7A1D3C-F23A-4BB1-8C67-F3B2D5C1F1A6}</UniqueIdentifier>
     </Filter>
     <!-- 导出模块 -->
-    <Filter Include="源文件\Export">
-      <UniqueIdentifier>{9E7A1D3C-F23A-4BB1-8C67-F3B2D5C1F1A7}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="头文件\Export">
-      <UniqueIdentifier>{9E7A1D3C-F23A-4BB1-8C67-F3B2D5C1F1A8}</UniqueIdentifier>
-    </Filter>
     <!-- 工具模块 -->
     <Filter Include="源文件\Utils">
       <UniqueIdentifier>{9E7A1D3C-F23A-4BB1-8C67-F3B2D5C1F1A9}</UniqueIdentifier>
@@ -56,10 +50,16 @@
     <Filter Include="源文件\Core\Model">
       <UniqueIdentifier>{cb23d563-c8b3-4e48-b7c3-9e708dba008f}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\Core\Load">
+    <Filter Include="头文件\Exporter">
+      <UniqueIdentifier>{9E7A1D3C-F23A-4BB1-8C67-F3B2D5C1F1A8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Exporter">
+      <UniqueIdentifier>{9E7A1D3C-F23A-4BB1-8C67-F3B2D5C1F1A7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Core\Loader">
       <UniqueIdentifier>{ccfb225f-ce5c-482c-978e-31d15b831e75}</UniqueIdentifier>
     </Filter>
-    <Filter Include="源文件\Core\Load">
+    <Filter Include="源文件\Core\Loader">
       <UniqueIdentifier>{aa759359-5b73-43ae-b6f8-0185a72b0658}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
@@ -99,25 +99,25 @@
       <Filter>源文件\World</Filter>
     </ClCompile>
     <ClCompile Include="ModelDeduplicator.cpp">
-      <Filter>源文件\Export</Filter>
+      <Filter>源文件\Exporter</Filter>
     </ClCompile>
     <ClCompile Include="PointCloudExporter.cpp">
-      <Filter>源文件\Export</Filter>
+      <Filter>源文件\Exporter</Filter>
     </ClCompile>
     <ClCompile Include="RegionModelExporter.cpp">
-      <Filter>源文件\Export</Filter>
+      <Filter>源文件\Exporter</Filter>
     </ClCompile>
     <ClCompile Include="ObjExporter.cpp">
-      <Filter>源文件\Export</Filter>
+      <Filter>源文件\Exporter</Filter>
     </ClCompile>
     <ClCompile Include="DatReader.cpp">
-      <Filter>源文件\Core\Load</Filter>
+      <Filter>源文件\Core\Loader</Filter>
     </ClCompile>
     <ClCompile Include="JarReader.cpp">
-      <Filter>源文件\Core\Load</Filter>
+      <Filter>源文件\Core\Loader</Filter>
     </ClCompile>
     <ClCompile Include="GlobalCache.cpp">
-      <Filter>源文件\Core\Load</Filter>
+      <Filter>源文件\Core\Loader</Filter>
     </ClCompile>
     <ClCompile Include="EntityBlock.cpp">
       <Filter>源文件\Blocks</Filter>
@@ -132,13 +132,16 @@
       <Filter>源文件\Blocks</Filter>
     </ClCompile>
     <ClCompile Include="config.cpp">
-      <Filter>源文件\Core\Load</Filter>
+      <Filter>源文件\Core\Loader</Filter>
     </ClCompile>
     <ClCompile Include="ChunkGroupAllocator.cpp">
-      <Filter>源文件\Export</Filter>
+      <Filter>源文件\Exporter</Filter>
     </ClCompile>
     <ClCompile Include="decompressor.cpp">
       <Filter>源文件\Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="SolidsJsonGenerator.cpp">
+      <Filter>源文件\Exporter</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -174,16 +177,16 @@
       <Filter>头文件\World</Filter>
     </ClInclude>
     <ClInclude Include="ModelDeduplicator.h">
-      <Filter>头文件\Export</Filter>
+      <Filter>头文件\Exporter</Filter>
     </ClInclude>
     <ClInclude Include="ObjExporter.h">
-      <Filter>头文件\Export</Filter>
+      <Filter>头文件\Exporter</Filter>
     </ClInclude>
     <ClInclude Include="PointCloudExporter.h">
-      <Filter>头文件\Export</Filter>
+      <Filter>头文件\Exporter</Filter>
     </ClInclude>
     <ClInclude Include="RegionModelExporter.h">
-      <Filter>头文件\Export</Filter>
+      <Filter>头文件\Exporter</Filter>
     </ClInclude>
     <ClInclude Include="hashutils.h">
       <Filter>头文件\Utils</Filter>
@@ -198,25 +201,28 @@
       <Filter>头文件\Utils</Filter>
     </ClInclude>
     <ClInclude Include="DatReader.h">
-      <Filter>头文件\Core\Load</Filter>
+      <Filter>头文件\Core\Loader</Filter>
     </ClInclude>
     <ClInclude Include="GlobalCache.h">
-      <Filter>头文件\Core\Load</Filter>
+      <Filter>头文件\Core\Loader</Filter>
     </ClInclude>
     <ClInclude Include="JarReader.h">
-      <Filter>头文件\Core\Load</Filter>
+      <Filter>头文件\Core\Loader</Filter>
     </ClInclude>
     <ClInclude Include="LODManager.h">
       <Filter>头文件\Blocks</Filter>
     </ClInclude>
     <ClInclude Include="ChunkGroupAllocator.h">
-      <Filter>头文件\Export</Filter>
+      <Filter>头文件\Exporter</Filter>
     </ClInclude>
     <ClInclude Include="config.h">
-      <Filter>头文件\Core\Load</Filter>
+      <Filter>头文件\Core\Loader</Filter>
     </ClInclude>
     <ClInclude Include="decompressor.h">
       <Filter>头文件\Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="SolidsJsonGenerator.h">
+      <Filter>头文件\Exporter</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
