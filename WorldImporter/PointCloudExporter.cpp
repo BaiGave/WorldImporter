@@ -96,7 +96,8 @@ void PointCloudExporter::ExportPointCloud() {
         for (int y = yStart; y <= yEnd; ++y) {
             for (int z = zStart; z <= zEnd; ++z) {
                 int blockId = GetBlockId(x, y, z);
-                string blockName = GetBlockNameById(blockId);
+                Block b = GetBlockById(blockId);
+                std::string blockName = b.GetModifiedNameWithNamespace();
                 /*if (blockName=="minecraft:azalea_leaves[]")
                 {
                     std::cout << blockName;

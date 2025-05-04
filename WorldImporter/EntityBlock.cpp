@@ -42,9 +42,10 @@ ModelData YuushyaShowBlockEntity::GenerateModel() const {
 
         if (!block.isShown) continue;
 
+        Block b = GetBlockById(id);
+        std::string blockName = b.GetModifiedNameWithNamespace();
+        std::string ns = b.GetNamespace();
         // 获取模型数据
-        std::string blockName = GetBlockNameById(id);
-        std::string ns = GetBlockNamespaceById(id);
         size_t colonPos = blockName.find(':');
         if (colonPos != std::string::npos) blockName = blockName.substr(colonPos + 1);
         ModelData blockModel = GetRandomModelFromCache(ns, blockName);

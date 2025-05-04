@@ -7,6 +7,7 @@
 
 // 自定义哈希函数,用于std::pair
 struct pair_hash {
+    pair_hash() = default;
     template <class T1, class T2>
     std::size_t operator()(const std::pair<T1, T2>& p) const noexcept {
         auto h1 = std::hash<T1>{}(p.first);
@@ -17,6 +18,7 @@ struct pair_hash {
 
 // 自定义哈希函数,用于std::tuple(三元组)
 struct triple_hash {
+    triple_hash() = default;
     template <class T1, class T2, class T3>
     std::size_t operator()(const std::tuple<T1, T2, T3>& t) const noexcept {
         auto h1 = std::hash<T1>{}(std::get<0>(t));
@@ -24,4 +26,12 @@ struct triple_hash {
         auto h3 = std::hash<T3>{}(std::get<2>(t));
         return h1 ^ (h2 << 1) ^ (h3 << 2);
     }
-}; 
+};
+struct TupleHash {
+    std::size_t operator()(const std::tuple<int, int, int>& t) const {
+        auto h1 = std::hash<int>()(std::get<0>(t));
+        auto h2 = std::hash<int>()(std::get<1>(t));
+        auto h3 = std::hash<int>()(std::get<2>(t));
+        return h1 ^ (h2 << 1) ^ (h3 << 2);
+    }
+};

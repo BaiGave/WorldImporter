@@ -1,4 +1,5 @@
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <string>
 #include <mutex>
@@ -9,9 +10,9 @@
 // 前向声明依赖类型
 class JarReader;
 
-// 版本配置全局变量(需在其他地方定义)
-
 // 外部声明
+extern std::unordered_set<std::string> solidBlocks;
+extern std::unordered_set<std::string> fluidBlocks;
 
 // ========= 全局缓存声明 =========
 namespace GlobalCache {

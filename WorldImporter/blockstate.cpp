@@ -10,13 +10,9 @@
 
 std::unordered_map<std::string, std::unordered_map<std::string, ModelData>> BlockModelCache;
 
-std::unordered_map<std::string,
-    std::unordered_map<std::string,
-    std::vector<WeightedModelData>>> VariantModelCache;
+std::unordered_map<std::string,std::unordered_map<std::string,std::vector<WeightedModelData>>> VariantModelCache;
 
-std::unordered_map<std::string,
-    std::unordered_map<std::string,
-    std::vector<std::vector<WeightedModelData>>>> MultipartModelCache;
+std::unordered_map<std::string,std::unordered_map<std::string,std::vector<std::vector<WeightedModelData>>>> MultipartModelCache;
 // --------------------------------------------------------------------------------
 // 条件匹配函数
 // --------------------------------------------------------------------------------

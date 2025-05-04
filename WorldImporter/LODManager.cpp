@@ -16,16 +16,19 @@
 
 using namespace std;
 using namespace std::chrono;
-// 全局变量:存储每个块(chunkX, sectionY, chunkZ)对应的 LOD 值
-std::unordered_map<std::tuple<int, int, int>, float, TupleHash> g_chunkLODs;
 
+std::unordered_map<std::tuple<int, int, int>, float, TupleHash> g_chunkLODs;
 // 缓存方块ID到颜色的映射
 std::unordered_map<std::string, std::string> blockColorCache;
 
 std::mutex blockColorCacheMutex;
+
 std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, int z, const std::string& faceDirection, float gamma = 2.0) {
-    std::string ns = GetBlockNamespaceById(blockId);
-    std::string blockName = GetBlockNameById(blockId);
+
+    Block b = GetBlockById(blockId);
+    std::string blockName = b.GetModifiedNameWithNamespace();
+    std::string ns = b.GetNamespace();
+
     size_t colonPos = blockName.find(':');
     if (colonPos != std::string::npos) {
         blockName = blockName.substr(colonPos + 1);

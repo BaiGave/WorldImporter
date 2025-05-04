@@ -14,6 +14,11 @@
 #ifdef _WIN32
 #include <windows.h>
 #endif
+
+
+std::unordered_set<std::string> solidBlocks;
+std::unordered_set<std::string> fluidBlocks;
+
 // ========= 全局变量定义 =========
 namespace GlobalCache {
     // 缓存数据

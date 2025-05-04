@@ -10,9 +10,11 @@
 
 using namespace std;
 
-// 模型缓存(假设有一个全局缓存 Map)
+// 流体注册数据
+std::unordered_map<std::string, FluidInfo> fluidDefinitions;
+// 模型缓存
 static std::unordered_map<int, ModelData> fluidModelCache;
-static std::mutex fluidModelCacheMutex; // Mutex to protect the cache
+static std::mutex fluidModelCacheMutex; 
 
 float getHeight(int level) {
     if (level == 0)
