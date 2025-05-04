@@ -195,38 +195,40 @@ void InitializeAllCaches() {
             }
             
             // 检查mods目录是否存在且路径有效
-            if (!config.modsPath.empty()) {
-                std::wstring modsPathW = string_to_wstring(config.modsPath);
-                WIN32_FIND_DATAW fdFile;
-                HANDLE hFind = FindFirstFileW(modsPathW.c_str(), &fdFile);
-                if (hFind != INVALID_HANDLE_VALUE && (fdFile.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-                    // 目录存在,处理mod文件
-                    FindClose(hFind);
-                    
-                    for (const auto& mod : listdir(modsPathW)) {
-                        //判断是否以.jar结尾
-                        std::string modStr = wstring_to_string(mod);
-                        if (modStr.length() > 4 && modStr.substr(modStr.length() - 4) == ".jar") {
-                            std::wstring modPath = modsPathW;
-                            if (modPath.back() != L'\\' && modPath.back() != L'/') {
-                                modPath += L"\\";
-                            }
-                            modPath += mod;
-                            
-                            std::string modid = GetModIdFromJar(modPath, modLoaderType);
-                            // 如果无法获取modid,使用文件名(不含扩展名)作为备用modid
-                            if (modid.empty()) {
-                                modid = modStr.substr(0, modStr.length() - 4); // 移除.jar后缀
-                            }
-                            GlobalCache::jarQueue.push(modPath);
-                            GlobalCache::jarOrder.push_back(modid);
-                        }
-                    }
-                } else {
-                    if (hFind != INVALID_HANDLE_VALUE) {
+            if (config.modsPath != "None"){
+                if (!config.modsPath.empty()) {
+                    std::wstring modsPathW = string_to_wstring(config.modsPath);
+                    WIN32_FIND_DATAW fdFile;
+                    HANDLE hFind = FindFirstFileW(modsPathW.c_str(), &fdFile);
+                    if (hFind != INVALID_HANDLE_VALUE && (fdFile.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+                        // 目录存在,处理mod文件
                         FindClose(hFind);
+                        
+                        for (const auto& mod : listdir(modsPathW)) {
+                            //判断是否以.jar结尾
+                            std::string modStr = wstring_to_string(mod);
+                            if (modStr.length() > 4 && modStr.substr(modStr.length() - 4) == ".jar") {
+                                std::wstring modPath = modsPathW;
+                                if (modPath.back() != L'\\' && modPath.back() != L'/') {
+                                    modPath += L"\\";
+                                }
+                                modPath += mod;
+                                
+                                std::string modid = GetModIdFromJar(modPath, modLoaderType);
+                                // 如果无法获取modid,使用文件名(不含扩展名)作为备用modid
+                                if (modid.empty()) {
+                                    modid = modStr.substr(0, modStr.length() - 4); // 移除.jar后缀
+                                }
+                                GlobalCache::jarQueue.push(modPath);
+                                GlobalCache::jarOrder.push_back(modid);
+                            }
+                        }
+                    } else {
+                        if (hFind != INVALID_HANDLE_VALUE) {
+                            FindClose(hFind);
+                        }
+                        std::cerr << "Warning: Mods directory not found or not accessible: " << config.modsPath << std::endl;
                     }
-                    std::cerr << "Warning: Mods directory not found or not accessible: " << config.modsPath << std::endl;
                 }
             }
             
