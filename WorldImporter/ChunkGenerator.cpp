@@ -64,11 +64,7 @@ ModelData ChunkGenerator::GenerateChunkModel(int chunkX, int sectionY, int chunk
                 std::array<bool, 6> neighbors; // 邻居是否为空气
                 std::array<int, 10> fluidLevels; // 流体液位
 
-                int id = GetBlockIdWithNeighbors(
-                    x, y, z,
-                    neighbors.data(),
-                    fluidLevels.data()
-                );
+                int id = GetBlockIdWithNeighbors(x, y, z,neighbors.data(),fluidLevels.data());
                 Block currentBlock = GetBlockById(id);
                 string blockName = currentBlock.GetModifiedNameWithNamespace();
                 if (blockName == "minecraft:air" ) continue;

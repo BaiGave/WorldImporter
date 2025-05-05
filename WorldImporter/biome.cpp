@@ -255,18 +255,6 @@ BiomeColors Biome::ParseBiomeColors(const nlohmann::json& biomeJson) {
     return colors;
 }
 
-void Biome::PrintAllRegisteredBiomes() {
-    std::lock_guard<std::shared_mutex> lock(registryMutex);
-
-    std::cout << "已注册生物群系 (" << biomeRegistry.size() << " 个):\n";
-    for (const auto& entry : biomeRegistry) {
-        std::cout << "  ID: " << entry.second.id
-            << "\t名称: " << entry.first << "\n";
-
-    }
-
-
-}
 
 int Biome::GetId(const std::string& fullName) {
     std::unique_lock<std::shared_mutex> lock(registryMutex);

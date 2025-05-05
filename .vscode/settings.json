@@ -2,6 +2,8 @@
     "files.associations": {
         "unordered_set": "cpp",
         "xstring": "cpp",
-        "mutex": "cpp"
+        "mutex": "cpp",
+        "chrono": "cpp",
+        "vector": "cpp"
     }
 }

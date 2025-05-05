@@ -1,33 +1,15 @@
-﻿#include "PointCloudExporter.h"
+﻿#include "init.h"
+#include "PointCloudExporter.h"
 #include "RegionModelExporter.h"
-
 Config config;  // 定义全局变量
 
 using namespace std;
 using namespace chrono;
 
-void init() {
-    // 删除纹理文件夹
-    DeleteTexturesFolder();
-    
-    // 配置必须先加载
-    SetGlobalLocale();
-    config = LoadConfig("config\\config.json");
-    
-    // 配置加载完成后,再初始化缓存
-    InitializeAllCaches();
-    LoadSolidBlocks(config.solidBlocksFile);
-    LoadFluidBlocks(config.fluidsFile);
-    RegisterFluidTextures();
-    InitializeGlobalBlockPalette();
-    
-}
 
 int main() {
-    auto start_time = high_resolution_clock::now();
     init();
-    
-    
+    auto start_time = high_resolution_clock::now();
     if (config.status == 1) {
         // 如果是 1,导出区域内所有方块模型
         RegionModelExporter::ExportModels("region_models");

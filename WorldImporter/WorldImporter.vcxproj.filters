@@ -74,6 +74,12 @@
     <Filter Include="源文件\Core\Loader">
       <UniqueIdentifier>{3b5c5888-00f3-4009-870c-9bbbb5d8f2da}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\Api">
+      <UniqueIdentifier>{66f568f6-32cb-438c-8f02-25479edfa078}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Api">
+      <UniqueIdentifier>{d8db5137-d58e-4e06-9776-33a2964d9b66}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <!-- 核心文件 -->
@@ -167,6 +173,12 @@
     <ClCompile Include="ChunkGenerator.cpp">
       <Filter>源文件\Exporter</Filter>
     </ClCompile>
+    <ClCompile Include="init.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="api.cpp">
+      <Filter>源文件\Api</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <!-- 核心文件 -->
@@ -259,6 +271,12 @@
     </ClInclude>
     <ClInclude Include="ChunkGenerator.h">
       <Filter>头文件\Exporter</Filter>
+    </ClInclude>
+    <ClInclude Include="init.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="api.h">
+      <Filter>头文件\Api</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

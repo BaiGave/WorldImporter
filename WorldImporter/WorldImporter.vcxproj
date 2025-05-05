@@ -137,6 +137,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="api.cpp" />
     <ClCompile Include="biome.cpp" />
     <ClCompile Include="block.cpp" />
     <ClCompile Include="blockstate.cpp" />
@@ -145,6 +146,7 @@
     <ClCompile Include="ChunkGroupAllocator.cpp" />
     <ClCompile Include="ChunkLoader.cpp" />
     <ClCompile Include="config.cpp" />
+    <ClCompile Include="init.cpp" />
     <ClCompile Include="locutil.cpp" />
     <ClCompile Include="DatReader.cpp" />
     <ClCompile Include="decompressor.cpp" />
@@ -167,6 +169,7 @@
     <ClCompile Include="texture.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="api.h" />
     <ClInclude Include="biome.h" />
     <ClInclude Include="block.h" />
     <ClInclude Include="blockstate.h" />
@@ -175,6 +178,7 @@
     <ClInclude Include="ChunkGroupAllocator.h" />
     <ClInclude Include="ChunkLoader.h" />
     <ClInclude Include="config.h" />
+    <ClInclude Include="init.h" />
     <ClInclude Include="locutil.h" />
     <ClInclude Include="DatReader.h" />
     <ClInclude Include="decompressor.h" />
