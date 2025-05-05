@@ -511,6 +511,97 @@ ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::s
     return ModelData();
 }
 
+// 获取可用模型数量
+int GetAvailableModelCount(const std::string& namespaceName, const std::string& blockId) {
+    // 检查主缓存
+    if (BlockModelCache.count(namespaceName) &&
+        BlockModelCache[namespaceName].count(blockId)) {
+        return 1; // 主缓存只有一个模型
+    }
+
+    // 检查 variant 缓存
+    if (VariantModelCache.count(namespaceName) &&
+        VariantModelCache[namespaceName].count(blockId)) {
+        auto& models = VariantModelCache[namespaceName][blockId];
+        return static_cast<int>(models.size());
+    }
+
+    // 检查 multipart 缓存
+    if (MultipartModelCache.count(namespaceName) &&
+        MultipartModelCache[namespaceName].count(blockId)) {
+        auto& partList = MultipartModelCache[namespaceName][blockId];
+        size_t maxCount = 0;
+        for (const auto& parts : partList) {
+            if (parts.size() > maxCount) {
+                maxCount = parts.size();
+            }
+        }
+        return static_cast<int>(maxCount);
+    }
+
+    return 0; // 无可用模型
+}
+
+// 获取指定索引的模型
+ModelData GetModelFromCacheByIndex(const std::string& namespaceName, const std::string& blockId, int modelIndex) {
+    // 检查索引是否有效
+    if (modelIndex < 0) {
+        // 无效索引，返回随机模型
+        return GetRandomModelFromCache(namespaceName, blockId);
+    }
+
+    // 检查主缓存
+    if (BlockModelCache.count(namespaceName) &&
+        BlockModelCache[namespaceName].count(blockId)) {
+        if (modelIndex == 0) {
+            return BlockModelCache[namespaceName][blockId];
+        }
+        return ModelData(); // 索引超出范围
+    }
+
+    // 检查 variant 缓存
+    if (VariantModelCache.count(namespaceName) &&
+        VariantModelCache[namespaceName].count(blockId)) {
+        auto& models = VariantModelCache[namespaceName][blockId];
+        if (modelIndex < static_cast<int>(models.size())) {
+            return models[modelIndex].model;
+        }
+        return ModelData(); // 索引超出范围
+    }
+
+    // 检查 multipart 缓存
+    if (MultipartModelCache.count(namespaceName) &&
+        MultipartModelCache[namespaceName].count(blockId)) {
+        auto& partList = MultipartModelCache[namespaceName][blockId];
+        
+        // 检查索引是否超出范围
+        size_t maxCount = 0;
+        for (const auto& parts : partList) {
+            if (parts.size() > maxCount) {
+                maxCount = parts.size();
+            }
+        }
+        
+        if (modelIndex >= static_cast<int>(maxCount)) {
+            return ModelData(); // 索引超出范围
+        }
+        
+        // 使用指定索引合并模型
+        ModelData merged;
+        for (auto& parts : partList) {
+            int index = modelIndex;
+            if (index >= static_cast<int>(parts.size())) {
+                index = 0; // 如果当前组中没有该位置的模型，则默认选第一个
+            }
+            merged = MergeModelData(merged, parts[index].model);
+        }
+        return merged;
+    }
+
+    // 返回空模型
+    return ModelData();
+}
+
 void LoadBlockstateJson(const std::string& namespaceName, const std::vector<std::string>& blockIds) {
     for (const auto& blockId : blockIds) {
         // 解析 blockId 和条件

@@ -2,6 +2,7 @@
 #include "block.h"
 #include "biome.h"
 #include "config.h"
+#include "RegionModelExporter.h"
 
 class WorldAPI {
 public:
@@ -14,4 +15,7 @@ public:
     static Config GetConfig();
     static void LoadConfig(const std::string& configFile);
     static void UpdateConfig(const Config& newConfig);
+    
+    // 导出区域模型
+    static void ExportRegionModel(const std::string& outputName);
 };

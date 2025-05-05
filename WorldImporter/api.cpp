@@ -33,3 +33,7 @@ void WorldAPI::LoadConfig(const std::string& configFile) {
 void WorldAPI::UpdateConfig(const Config& newConfig) {
     config = newConfig;
 }
+
+void WorldAPI::ExportRegionModel(const std::string& outputName) {
+    RegionModelExporter::ExportModels(outputName);
+}
