@@ -137,11 +137,18 @@ void RegionModelExporter::ExportModels(const string& outputName) {
                     if (idx >= chunkGroups.size()) break;
                     const auto& group = chunkGroups[idx];
                     ModelData groupModel;
+                    groupModel.vertices.reserve(4096 * group.tasks.size());
+                    groupModel.faces.reserve(8192 * group.tasks.size());
+                    groupModel.uvCoordinates.reserve(4096 * group.tasks.size());
                     std::unordered_map<string, string> localMaterials;
 
                     // 合并组内所有区块模型
                     for (const auto& task : group.tasks) {
-                        ModelData chunkModel = processModel(task);
+                        ModelData chunkModel;
+                            chunkModel.vertices.reserve(4096);
+                            chunkModel.faces.reserve(8192);
+                            chunkModel.uvCoordinates.reserve(4096);
+                            chunkModel = processModel(task);
                         if (groupModel.vertices.empty()) {
                             groupModel = std::move(chunkModel);
                         } else {
