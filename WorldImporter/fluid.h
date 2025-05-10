@@ -6,6 +6,15 @@
 #include <unordered_map>
 #include "model.h"
 
+struct FluidInfo {
+    std::string folder;
+    std::string property;          // 流体特殊属性(如waterlogged)
+    std::string level_property;    // level属性名称(默认为"level")
+    std::unordered_set<std::string> liquid_blocks; // 强制含水方块
+    std::string still_texture;     // 静止材质路径(如"_still")
+    std::string flow_texture;      // 流动材质路径(如"_flow")
+};
+extern std::unordered_map<std::string, FluidInfo> fluidDefinitions;
 // 获取流体高度的函数
 float getHeight(int level);
 

@@ -58,6 +58,12 @@ nlohmann::json GetBlockstateJson(
 );
 ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::string& blockId);
 
+// 根据指定索引获取模型，而非随机
+ModelData GetModelFromCacheByIndex(const std::string& namespaceName, const std::string& blockId, int modelIndex);
+
+// 获取指定方块可用的模型数量
+int GetAvailableModelCount(const std::string& namespaceName, const std::string& blockId);
+
 // 处理所有方块状态变种并合并模型
 void ProcessAllBlockstateVariants();
 

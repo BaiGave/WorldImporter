@@ -5,16 +5,13 @@
 #include "RegionModelExporter.h"
 #include "block.h"
 #include "model.h"
+#include "hashutils.h"
 
-struct TupleHash {
-    std::size_t operator()(const std::tuple<int, int, int>& t) const {
-        auto h1 = std::hash<int>()(std::get<0>(t));
-        auto h2 = std::hash<int>()(std::get<1>(t));
-        auto h3 = std::hash<int>()(std::get<2>(t));
-        return h1 ^ (h2 << 1) ^ (h3 << 2);
-    }
+enum BlockType {
+    AIR,
+    FLUID,
+    SOLID
 };
-extern std::unordered_map<std::tuple<int, int, int>, float, TupleHash> g_chunkLODs;
 class LODManager {
 public:
     // 获取指定块的 LOD 值

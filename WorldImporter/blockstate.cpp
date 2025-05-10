@@ -10,13 +10,9 @@
 
 std::unordered_map<std::string, std::unordered_map<std::string, ModelData>> BlockModelCache;
 
-std::unordered_map<std::string,
-    std::unordered_map<std::string,
-    std::vector<WeightedModelData>>> VariantModelCache;
+std::unordered_map<std::string,std::unordered_map<std::string,std::vector<WeightedModelData>>> VariantModelCache;
 
-std::unordered_map<std::string,
-    std::unordered_map<std::string,
-    std::vector<std::vector<WeightedModelData>>>> MultipartModelCache;
+std::unordered_map<std::string,std::unordered_map<std::string,std::vector<std::vector<WeightedModelData>>>> MultipartModelCache;
 // --------------------------------------------------------------------------------
 // 条件匹配函数
 // --------------------------------------------------------------------------------
@@ -133,10 +129,7 @@ std::unordered_map<std::string, std::string> ParseKeyValuePairs(const std::strin
 }
 
 // 检查 subset 的所有键值对是否存在于 superset 中且值相同
-bool IsSubset(
-    const std::unordered_map<std::string, std::string>& subset,
-    const std::unordered_map<std::string, std::string>& superset
-) {
+bool IsSubset(const std::unordered_map<std::string, std::string>& subset,const std::unordered_map<std::string, std::string>& superset) {
     for (const auto& kv : subset) {
         auto it = superset.find(kv.first);
         
@@ -215,7 +208,6 @@ nlohmann::json GetBlockstateJson(const std::string& namespaceName, const std::st
     std::cerr << "Blockstate not found: " << namespaceName << ":" << blockId << std::endl;
     return nlohmann::json();
 }
-
 
 // --------------------------------------------------------------------------------
 // 方块状态 JSON 处理
@@ -451,6 +443,165 @@ std::unordered_map<std::string, ModelData> ProcessBlockstateJson(const std::stri
     return result;
 }
 
+ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::string& blockId) {
+    // 先检查主缓存
+    if (BlockModelCache.count(namespaceName) &&
+        BlockModelCache[namespaceName].count(blockId)) {
+        return BlockModelCache[namespaceName][blockId];
+    }
+
+    // 检查 variant 缓存
+    if (VariantModelCache.count(namespaceName) &&
+        VariantModelCache[namespaceName].count(blockId)) {
+        auto& models = VariantModelCache[namespaceName][blockId];
+        int totalWeight = 0;
+        for (const auto& wm : models) {
+            totalWeight += wm.weight;
+        }
+
+        if (totalWeight > 0) {
+            static std::random_device rd;
+            static std::mt19937 gen(rd());
+            std::uniform_int_distribution<> dis(1, totalWeight);
+            int randomWeight = dis(gen);
+            int cumulative = 0;
+            for (const auto& wm : models) {
+                cumulative += wm.weight;
+                if (randomWeight <= cumulative) {
+                    return wm.model;
+                }
+            }
+        }
+    }
+
+    // 检查 multipart 缓存:在 multipart 时只进行一次随机,
+    // 对每个组选取对应位置的模型(如果该位置没有则使用第一个)
+    if (MultipartModelCache.count(namespaceName) &&
+        MultipartModelCache[namespaceName].count(blockId)) {
+        auto& partList = MultipartModelCache[namespaceName][blockId];
+
+        // 计算所有组中模型数的最大值作为随机索引的范围
+        size_t maxCount = 0;
+        for (const auto& parts : partList) {
+            if (parts.size() > maxCount) {
+                maxCount = parts.size();
+            }
+        }
+        if (maxCount == 0) {
+            return ModelData();
+        }
+
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        std::uniform_int_distribution<> dis(0, maxCount - 1);
+        int randomIndex = dis(gen);
+
+        ModelData merged;
+        for (auto& parts : partList) {
+            int index = randomIndex;
+            if (index >= parts.size()) {
+                index = 0; // 如果当前组中没有该位置的模型,则默认选第一个
+            }
+            merged = MergeModelData(merged, parts[index].model);
+        }
+        return merged;
+    }
+
+    // 返回空模型
+    return ModelData();
+}
+
+// 获取可用模型数量
+int GetAvailableModelCount(const std::string& namespaceName, const std::string& blockId) {
+    // 检查主缓存
+    if (BlockModelCache.count(namespaceName) &&
+        BlockModelCache[namespaceName].count(blockId)) {
+        return 1; // 主缓存只有一个模型
+    }
+
+    // 检查 variant 缓存
+    if (VariantModelCache.count(namespaceName) &&
+        VariantModelCache[namespaceName].count(blockId)) {
+        auto& models = VariantModelCache[namespaceName][blockId];
+        return static_cast<int>(models.size());
+    }
+
+    // 检查 multipart 缓存
+    if (MultipartModelCache.count(namespaceName) &&
+        MultipartModelCache[namespaceName].count(blockId)) {
+        auto& partList = MultipartModelCache[namespaceName][blockId];
+        size_t maxCount = 0;
+        for (const auto& parts : partList) {
+            if (parts.size() > maxCount) {
+                maxCount = parts.size();
+            }
+        }
+        return static_cast<int>(maxCount);
+    }
+
+    return 0; // 无可用模型
+}
+
+// 获取指定索引的模型
+ModelData GetModelFromCacheByIndex(const std::string& namespaceName, const std::string& blockId, int modelIndex) {
+    // 检查索引是否有效
+    if (modelIndex < 0) {
+        // 无效索引，返回随机模型
+        return GetRandomModelFromCache(namespaceName, blockId);
+    }
+
+    // 检查主缓存
+    if (BlockModelCache.count(namespaceName) &&
+        BlockModelCache[namespaceName].count(blockId)) {
+        if (modelIndex == 0) {
+            return BlockModelCache[namespaceName][blockId];
+        }
+        return ModelData(); // 索引超出范围
+    }
+
+    // 检查 variant 缓存
+    if (VariantModelCache.count(namespaceName) &&
+        VariantModelCache[namespaceName].count(blockId)) {
+        auto& models = VariantModelCache[namespaceName][blockId];
+        if (modelIndex < static_cast<int>(models.size())) {
+            return models[modelIndex].model;
+        }
+        return ModelData(); // 索引超出范围
+    }
+
+    // 检查 multipart 缓存
+    if (MultipartModelCache.count(namespaceName) &&
+        MultipartModelCache[namespaceName].count(blockId)) {
+        auto& partList = MultipartModelCache[namespaceName][blockId];
+        
+        // 检查索引是否超出范围
+        size_t maxCount = 0;
+        for (const auto& parts : partList) {
+            if (parts.size() > maxCount) {
+                maxCount = parts.size();
+            }
+        }
+        
+        if (modelIndex >= static_cast<int>(maxCount)) {
+            return ModelData(); // 索引超出范围
+        }
+        
+        // 使用指定索引合并模型
+        ModelData merged;
+        for (auto& parts : partList) {
+            int index = modelIndex;
+            if (index >= static_cast<int>(parts.size())) {
+                index = 0; // 如果当前组中没有该位置的模型，则默认选第一个
+            }
+            merged = MergeModelData(merged, parts[index].model);
+        }
+        return merged;
+    }
+
+    // 返回空模型
+    return ModelData();
+}
+
 void LoadBlockstateJson(const std::string& namespaceName, const std::vector<std::string>& blockIds) {
     for (const auto& blockId : blockIds) {
         // 解析 blockId 和条件
@@ -477,8 +628,8 @@ void LoadBlockstateJson(const std::string& namespaceName, const std::vector<std:
 
         // 读取 blockstate JSON
         nlohmann::json blockstateJson = GetBlockstateJson(namespaceName, baseBlockId);
-        
-        
+
+
         if (blockstateJson.is_null()) {
             continue;
         }
@@ -501,7 +652,7 @@ void LoadBlockstateJson(const std::string& namespaceName, const std::vector<std:
                 if (condition.empty() || IsSubset(variantMap, conditionMap)) {
                     int rotationX = 0, rotationY = 0;
                     bool uvlock = false;
-                    
+
 
                     if (variant.value().contains("x")) {
                         rotationX = variant.value()["x"].get<int>();
@@ -512,12 +663,12 @@ void LoadBlockstateJson(const std::string& namespaceName, const std::vector<std:
                     if (variant.value().contains("uvlock")) {
                         uvlock = variant.value()["uvlock"].get<bool>();
                     }
-                    
+
                     // 处理模型加权数组
                     if (variant.value().is_array()) {
                         std::vector<WeightedModelData> weightedModels;
                         std::string cacheKey = namespaceName + ":" + baseBlockId + ":" + variantKey;
-                        
+
                         int t = 0;
                         for (const auto& item : variant.value()) {
                             int rotationX = 0, rotationY = 0;
@@ -531,7 +682,7 @@ void LoadBlockstateJson(const std::string& namespaceName, const std::vector<std:
                             if (item.contains("uvlock")) {
                                 uvlock = item["uvlock"].get<bool>();
                             }
-                            
+
                             int weight = item.contains("weight") ? item["weight"].get<int>() : 1;
                             std::string modelId = item.contains("model") ? item["model"].get<std::string>() : "";
 
@@ -546,12 +697,12 @@ void LoadBlockstateJson(const std::string& namespaceName, const std::vector<std:
 
                                 // 生成模型数据
                                 ModelData model = ProcessModelJson(modelNamespace, modelId,
-                                    rotationX, rotationY, uvlock,t, blockstateName);
+                                    rotationX, rotationY, uvlock, t, blockstateName);
 
                                 weightedModels.push_back({ model, weight });
                                 t = t + 1;
                             }
-                            
+
                         }
 
                         // 存入缓存
@@ -570,7 +721,7 @@ void LoadBlockstateJson(const std::string& namespaceName, const std::vector<std:
                                 modelId = modelId.substr(colonPos + 1);
                             }
 
-                            mergedModel = ProcessModelJson(modelNamespace, modelId, rotationX, rotationY, uvlock,0, blockstateName);
+                            mergedModel = ProcessModelJson(modelNamespace, modelId, rotationX, rotationY, uvlock, 0, blockstateName);
                             BlockModelCache[namespaceName][blockId] = mergedModel;
                         }
                     }
@@ -722,74 +873,6 @@ void LoadBlockstateJson(const std::string& namespaceName, const std::vector<std:
 
 
     }
-}
-
-ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::string& blockId) {
-    // 先检查主缓存
-    if (BlockModelCache.count(namespaceName) &&
-        BlockModelCache[namespaceName].count(blockId)) {
-        return BlockModelCache[namespaceName][blockId];
-    }
-
-    // 检查 variant 缓存
-    if (VariantModelCache.count(namespaceName) &&
-        VariantModelCache[namespaceName].count(blockId)) {
-        auto& models = VariantModelCache[namespaceName][blockId];
-        int totalWeight = 0;
-        for (const auto& wm : models) {
-            totalWeight += wm.weight;
-        }
-
-        if (totalWeight > 0) {
-            static std::random_device rd;
-            static std::mt19937 gen(rd());
-            std::uniform_int_distribution<> dis(1, totalWeight);
-            int randomWeight = dis(gen);
-            int cumulative = 0;
-            for (const auto& wm : models) {
-                cumulative += wm.weight;
-                if (randomWeight <= cumulative) {
-                    return wm.model;
-                }
-            }
-        }
-    }
-
-    // 检查 multipart 缓存:在 multipart 时只进行一次随机,
-    // 对每个组选取对应位置的模型(如果该位置没有则使用第一个)
-    if (MultipartModelCache.count(namespaceName) &&
-        MultipartModelCache[namespaceName].count(blockId)) {
-        auto& partList = MultipartModelCache[namespaceName][blockId];
-
-        // 计算所有组中模型数的最大值作为随机索引的范围
-        size_t maxCount = 0;
-        for (const auto& parts : partList) {
-            if (parts.size() > maxCount) {
-                maxCount = parts.size();
-            }
-        }
-        if (maxCount == 0) {
-            return ModelData();
-        }
-
-        static std::random_device rd;
-        static std::mt19937 gen(rd());
-        std::uniform_int_distribution<> dis(0, maxCount - 1);
-        int randomIndex = dis(gen);
-
-        ModelData merged;
-        for (auto& parts : partList) {
-            int index = randomIndex;
-            if (index >= parts.size()) {
-                index = 0; // 如果当前组中没有该位置的模型,则默认选第一个
-            }
-            merged = MergeModelData(merged, parts[index].model);
-        }
-        return merged;
-    }
-
-    // 返回空模型
-    return ModelData();
 }
 
 void ProcessBlockstateForBlocks(const std::vector<Block>& blocks) {

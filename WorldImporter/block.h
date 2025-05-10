@@ -10,34 +10,24 @@
 #include <string_view>
 #include <tuple>
 #include <unordered_map>
+#include <shared_mutex>
 #include <unordered_set>
 #include <vector>
 
 // 项目头文件
 #include "config.h"
 #include "model.h"
+#include "chunk.h"
 #include "nbtutils.h"
 #include "hashutils.h"
-
+#include "Fluid.h"
+#include "GlobalCache.h"
 extern Config config;
-// 引入统一的哈希函数头文件,提供 pair_hash 和 triple_hash
 
-extern std::unordered_set<std::string> solidBlocks; // 改为哈希表
-extern std::unordered_set<std::string> fluidBlocks;
-extern std::unordered_set<std::string> alwaysWaterlogged;
-extern std::unordered_map<std::pair<int, int>, std::vector<char>, pair_hash> regionCache;
-extern std::unordered_map<std::pair<int, int>, std::unordered_map<std::string, std::vector<int>>, pair_hash> heightMapCache;
-struct FluidInfo {
-    std::string folder;
-    std::string property;          // 流体特殊属性(如waterlogged)
-    std::string level_property;    // level属性名称(默认为"level")
-    std::unordered_set<std::string> liquid_blocks; // 强制含水方块
-    std::string still_texture;     // 静止材质路径(如"_still")
-    std::string flow_texture;      // 流动材质路径(如"_flow")
-};
-extern std::unordered_map<std::string, FluidInfo> fluidDefinitions;
 
-struct alignas(16) Block {
+
+
+struct Block {
     std::string name;
     int8_t level;
     bool air;
@@ -423,7 +413,7 @@ struct alignas(16) Block {
     }
 };
 
-struct alignas(16) SectionCacheEntry {
+struct SectionCacheEntry {
     // 把频繁访问的大数组放在前面,减少访存跨缓存行
     std::vector<int> skyLight;      // 天空光照数据
     std::vector<int> blockLight;    // 方块光照数据
@@ -434,19 +424,16 @@ struct alignas(16) SectionCacheEntry {
 
 extern std::vector<Block> globalBlockPalette;
 extern std::unordered_map<std::tuple<int, int, int>, SectionCacheEntry, triple_hash> sectionCache;
-
-
-// 获取区块NBT数据的函数
-std::vector<char> GetChunkNBTData(const std::vector<char>& fileData, int x, int z);
-const std::vector<char>& GetRegionFromCache(int regionX, int regionZ);
+extern std::unordered_map<std::pair<int, int>, std::unordered_map<std::string, std::vector<int>>, pair_hash> heightMapCache;
 
 void LoadAndCacheBlockData(int chunkX, int chunkZ);
-
-void ReleaseSectionCache();
 
 void UpdateSkyLightNeighborFlags();
 
 int GetBlockId(int blockX, int blockY, int blockZ);
+
+// 获取方块ID时同时获取相邻方块的air状态,返回当前方块ID
+int GetBlockIdWithNeighbors(int blockX, int blockY, int blockZ,bool* neighborIsAir = nullptr,int* fluidLevels = nullptr);
 
 int GetSkyLight(int blockX, int blockY, int blockZ);
 
@@ -454,22 +441,10 @@ int GetBlockLight(int blockX, int blockY, int blockZ);
 
 int GetLevel(int blockX, int blockY, int blockZ);
 
+int GetHeightMapY(int blockX, int blockZ, const std::string& heightMapType);
+
 // 获取方块名称转换为Block对象
 Block GetBlockById(int blockId);
-
-// 通过ID获取方块名称
-std::string GetBlockNameById(int blockId);
-
-std::string GetBlockNamespaceById(int blockId);
-
-// 获取方块ID时同时获取相邻方块的air状态,返回当前方块ID
-int GetBlockIdWithNeighbors(
-    int blockX, int blockY, int blockZ,
-    bool* neighborIsAir = nullptr,
-    int* fluidLevels = nullptr
-);
-
-int GetHeightMapY(int blockX, int blockZ, const std::string& heightMapType);
 
 // 返回全局的block对照表(Block对象)
 std::vector<Block> GetGlobalBlockPalette();

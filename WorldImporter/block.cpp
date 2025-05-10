@@ -5,7 +5,6 @@
 #include <fstream>
 #include <iostream>
 #include <locale>
-#include <memory>
 #include <random>
 #include <sstream>
 #include <string>
@@ -18,6 +17,7 @@
 // --- 项目头文件 ---
 #include "config.h"
 #include "block.h"
+#include "RegionCache.h"
 #include "model.h"
 #include "EntityBlock.h"
 #include "blockstate.h"
@@ -34,93 +34,28 @@ using namespace std;
 // 文件缓存相关对象
 // --------------------------------------------------------------------------------
 // 统一的缓存表(预留桶数量,减少 rehash)
+#include <shared_mutex>
+
+// 带读写锁的区块缓存
+std::shared_mutex sectionCacheMutex;
 std::unordered_map<std::tuple<int, int, int>, SectionCacheEntry, triple_hash> sectionCache(4096);
-std::unordered_map<std::pair<int, int>, std::vector<char>, pair_hash> regionCache(1024);
-// 添加静态邻居偏移数组,避免重复构造
-static const std::array<std::tuple<int,int,int>,6> kSectionNeighborOffsets = {{
-    {1, 0, 0}, {-1, 0, 0},
-    {0, 1, 0}, {0, -1, 0},
-    {0, 0, 1}, {0, 0, -1}
-}};
+
 // 实体方块缓存
-std::unordered_map<std::pair<int, int>, std::vector<std::shared_ptr<EntityBlock>>, pair_hash> entityBlockCache(1024);
+std::unordered_map<std::pair<int, int>, std::vector<std::shared_ptr<EntityBlock>>, pair_hash> EntityBlockCache(1024);
 std::unordered_map<std::pair<int, int>, std::unordered_map<std::string, std::vector<int>>, pair_hash> heightMapCache(1024);
 
 std::vector<Block> globalBlockPalette;
-std::unordered_set<std::string> solidBlocks;
-std::unordered_set<std::string> fluidBlocks;
-std::unordered_map<std::string, FluidInfo> fluidDefinitions;
+
+// 添加静态邻居偏移数组,避免重复构造
+static const std::array<std::tuple<int, int, int>, 6> kSectionNeighborOffsets = { {
+    {1, 0, 0}, {-1, 0, 0},
+    {0, 1, 0}, {0, -1, 0},
+    {0, 0, 1}, {0, 0, -1}
+} };
+
 // --------------------------------------------------------------------------------
 // 文件操作相关函数
 // --------------------------------------------------------------------------------
-std::vector<int> DecodeHeightMap(const std::vector<int64_t>& data) {
-    // 预分配256个高度值,避免多次重分配
-    std::vector<int> heights;
-    heights.reserve(256);
-    // 根据数据长度动态判断存储格式
-    int bitsPerEntry = (data.size() == 37) ? 9 : 8;
-    int entriesPerLong = 64 / bitsPerEntry;
-    int mask = (1 << bitsPerEntry) - 1;
-    for (const auto& longVal : data) {
-        int64_t value = reverseEndian(longVal);
-        for (int i = 0; i < entriesPerLong; ++i) {
-            heights.push_back(static_cast<int>((value >> (i * bitsPerEntry)) & mask));
-            if (heights.size() >= 256) break;
-        }
-        if (heights.size() >= 256) break;
-    }
-    heights.resize(256);
-    return heights;
-}
-
-std::vector<char> GetChunkNBTData(const std::vector<char>& fileData, int x, int z) {
-    unsigned offset = CalculateOffset(fileData, mod32(x), mod32(z));
-
-    if (offset == 0) {
-        cerr << "错误: 偏移计算失败." << endl;
-        return {};
-    }
-
-    unsigned length = ExtractChunkLength(fileData, offset);
-    if (offset + 5 <= fileData.size()) {
-        int startOffset = offset + 5;
-        int endIndex = startOffset + length - 1;
-
-        if (endIndex < fileData.size()) {
-            vector<char> chunkData(fileData.begin() + startOffset, fileData.begin() + endIndex + 1);
-            vector<char> decompressedData;
-
-            if (DecompressData(chunkData, decompressedData)) {
-                return decompressedData;
-            } else {
-                cerr << "错误: 解压失败." << endl;
-                return {};
-            }
-        } else {
-            cerr << "错误: 区块数据超出了文件边界." << endl;
-            return {};
-        }
-    } else {
-        cerr << "错误: 从偏移位置读取5个字节的数据不够." << endl;
-        return {};
-    }
-}
-
-const std::vector<char>& GetRegionFromCache(int regionX, int regionZ) {
-    // 创建区域缓存的键值
-    auto regionKey = std::make_pair(regionX, regionZ);
-    // 使用查找避免重复哈希
-    auto it = regionCache.find(regionKey);
-    if (it == regionCache.end()) {
-        // 若未缓存,从磁盘读取区域文件并插入缓存
-        std::vector<char> fileData = ReadFileToMemory(config.worldPath, regionX, regionZ);
-        auto result = regionCache.emplace(regionKey, std::move(fileData));
-        it = result.first;
-    }
-    // 返回缓存中的区域文件数据
-    return it->second;
-}
-
 void UpdateSkyLightNeighborFlags() {
     std::unordered_map<std::tuple<int, int, int>, bool, triple_hash> needsUpdate;
 
@@ -508,12 +443,19 @@ void ProcessEntityBlocks(int chunkX, int chunkZ, const NbtTagPtr& blockEntitiesT
 
     // 存入缓存
     auto chunkKey = std::make_pair(chunkX, chunkZ);
-    entityBlockCache[chunkKey] = entityBlocks;
+    EntityBlockCache[chunkKey] = entityBlocks;
 }
 
 
 // 修改 LoadAndCacheBlockData,使其处理整个 chunk 的所有子区块
 void LoadAndCacheBlockData(int chunkX, int chunkZ) {
+    auto key = std::make_tuple(chunkX, chunkZ, 0);
+    {
+        std::shared_lock<std::shared_mutex> read_lock(sectionCacheMutex);
+        if (sectionCache.find(key) != sectionCache.end()) return;
+    }
+    std::unique_lock<std::shared_mutex> write_lock(sectionCacheMutex);
+    if (sectionCache.find(key) != sectionCache.end()) return;
     // 计算区域坐标
     int regionX, regionZ;
     chunkToRegion(chunkX, chunkZ, regionX, regionZ);
@@ -577,14 +519,6 @@ void LoadAndCacheBlockData(int chunkX, int chunkZ) {
 }
 
 // --------------------------------------------------------------------------------
-// 缓存释放函数
-// --------------------------------------------------------------------------------
-void ReleaseSectionCache() {
-    // 先清空,再 shrink_to_fit(但 unordered_map 没有 shrink_to_fit,所以直接替换更有效)
-    sectionCache.clear();
-    sectionCache = {};  // 强制释放内存
-}
-// --------------------------------------------------------------------------------
 // 方块ID查询相关函数
 // --------------------------------------------------------------------------------
 // 获取方块ID
@@ -609,117 +543,8 @@ int GetBlockId(int blockX, int blockY, int blockZ) {
     return (yzx < blockData.size()) ? blockData[yzx] : 0;
 }
 
-// 获取天空光照
-int GetSkyLight(int blockX, int blockY, int blockZ) {
-    int chunkX, chunkZ;
-    blockToChunk(blockX, blockZ, chunkX, chunkZ);
-
-    int sectionY;
-    blockYToSectionY(blockY, sectionY);
-    int adjustedSectionY = AdjustSectionY(sectionY);
-    auto blockKey = std::make_tuple(chunkX, chunkZ, adjustedSectionY);
-
-    if (sectionCache.find(blockKey) == sectionCache.end()) {
-        LoadAndCacheBlockData(chunkX, chunkZ);
-    }
-
-    const auto& skyLightData = sectionCache[blockKey].skyLight;
-    if (skyLightData.size() == 1) {
-        return skyLightData[0]; // 标记为-1或-2
-    }
-
-    int relativeX = mod16(blockX);
-    int relativeY = mod16(blockY);
-    int relativeZ = mod16(blockZ);
-    int yzx = toYZX(relativeX, relativeY, relativeZ);
-
-    return (yzx < skyLightData.size()) ? skyLightData[yzx] : 0;
-}
-
-int GetBlockLight(int blockX, int blockY, int blockZ) {
-    int chunkX, chunkZ;
-    blockToChunk(blockX, blockZ, chunkX, chunkZ);
-
-    int sectionY;
-    blockYToSectionY(blockY, sectionY);
-    int adjustedSectionY = AdjustSectionY(sectionY);
-    auto blockKey = std::make_tuple(chunkX, chunkZ, adjustedSectionY);
-
-    if (sectionCache.find(blockKey) == sectionCache.end()) {
-        LoadAndCacheBlockData(chunkX, chunkZ);
-    }
-
-    const auto& blockLightData = sectionCache[blockKey].blockLight;
-    if (blockLightData.size() == 1) {
-        return blockLightData[0]; // 标记为-1或-2
-    }
-
-    int relativeX = mod16(blockX);
-    int relativeY = mod16(blockY);
-    int relativeZ = mod16(blockZ);
-    int yzx = toYZX(relativeX, relativeY, relativeZ);
-
-    return (yzx < blockLightData.size()) ? blockLightData[yzx] : 0;
-}
-// --------------------------------------------------------------------------------
-// 方块扩展信息查询函数
-// --------------------------------------------------------------------------------
-Block GetBlockById(int blockId) {
-    if (blockId >= 0 && blockId < globalBlockPalette.size()) {
-        return globalBlockPalette[blockId];
-    } else {
-        return Block("minecraft:air", true);
-    }
-}
-
-std::string GetBlockNameById(int blockId) {
-    if (blockId >= 0 && blockId < globalBlockPalette.size()) {
-        return globalBlockPalette[blockId].GetModifiedNameWithNamespace();
-    } else {
-        return "minecraft:air";
-    }
-}
-
-std::string GetBlockNamespaceById(int blockId) {
-    if (blockId >= 0 && blockId < globalBlockPalette.size()) {
-        return globalBlockPalette[blockId].GetNamespace();
-    }
-    else {
-        return "minecraft";
-    }
-}
-
-int GetLevel(int blockX, int blockY, int blockZ) {
-    int currentId = GetBlockId(blockX, blockY, blockZ);
-    Block currentBlock = GetBlockById(currentId);
-    std::string baseName = currentBlock.GetNameAndNameSpaceWithoutState(); // 获取带命名空间的完整名称
-
-    // 判断当前方块是否是注册流体或已有level标记
-    bool isFluid = fluidDefinitions.find(baseName) != fluidDefinitions.end();
-
-    if (isFluid || currentBlock.level == 0) {
-        // 检查上方方块
-        int upperId = GetBlockId(blockX, blockY + 1, blockZ);
-        Block upperBlock = GetBlockById(upperId);
-        std::string upperBaseName = upperBlock.GetNameAndNameSpaceWithoutState();
-
-        bool upperIsFluid = fluidDefinitions.find(upperBaseName) != fluidDefinitions.end();
-
-        if (upperIsFluid || upperBlock.level == 0) {
-            return 8; // 上方是流体
-        }
-        else {
-            return currentBlock.level; // 当前流体level
-        }
-    }
-
-    return currentBlock.air ? -1 : -2; // 空气返回-1,固体返回-2
-}
 // 获取方块ID时同时获取相邻方块的air状态,返回当前方块ID
-int GetBlockIdWithNeighbors(
-    int blockX, int blockY, int blockZ,
-    bool* neighborIsAir,
-    int* fluidLevels) {
+int GetBlockIdWithNeighbors(int blockX, int blockY, int blockZ, bool* neighborIsAir, int* fluidLevels) {
     int currentId = GetBlockId(blockX, blockY, blockZ);
     Block currentBlock = GetBlockById(currentId);
     std::string currentBaseName = currentBlock.GetNameAndNameSpaceWithoutState();
@@ -824,6 +649,95 @@ int GetHeightMapY(int blockX, int blockZ, const std::string& heightMapType) {
     // 返回高度值
     return (index < 256) ? typeIter->second[index] : -1;
 }
+
+int GetLevel(int blockX, int blockY, int blockZ) {
+    int currentId = GetBlockId(blockX, blockY, blockZ);
+    Block currentBlock = GetBlockById(currentId);
+    std::string baseName = currentBlock.GetNameAndNameSpaceWithoutState(); // 获取带命名空间的完整名称
+
+    // 判断当前方块是否是注册流体或已有level标记
+    bool isFluid = fluidDefinitions.find(baseName) != fluidDefinitions.end();
+
+    if (isFluid || currentBlock.level == 0) {
+        // 检查上方方块
+        int upperId = GetBlockId(blockX, blockY + 1, blockZ);
+        Block upperBlock = GetBlockById(upperId);
+        std::string upperBaseName = upperBlock.GetNameAndNameSpaceWithoutState();
+
+        bool upperIsFluid = fluidDefinitions.find(upperBaseName) != fluidDefinitions.end();
+
+        if (upperIsFluid || upperBlock.level == 0) {
+            return 8; // 上方是流体
+        }
+        else {
+            return currentBlock.level; // 当前流体level
+        }
+    }
+
+    return currentBlock.air ? -1 : -2; // 空气返回-1,固体返回-2
+}
+
+int GetSkyLight(int blockX, int blockY, int blockZ) {
+    int chunkX, chunkZ;
+    blockToChunk(blockX, blockZ, chunkX, chunkZ);
+
+    int sectionY;
+    blockYToSectionY(blockY, sectionY);
+    int adjustedSectionY = AdjustSectionY(sectionY);
+    auto blockKey = std::make_tuple(chunkX, chunkZ, adjustedSectionY);
+
+    if (sectionCache.find(blockKey) == sectionCache.end()) {
+        LoadAndCacheBlockData(chunkX, chunkZ);
+    }
+
+    const auto& skyLightData = sectionCache[blockKey].skyLight;
+    if (skyLightData.size() == 1) {
+        return skyLightData[0]; // 标记为-1或-2
+    }
+
+    int relativeX = mod16(blockX);
+    int relativeY = mod16(blockY);
+    int relativeZ = mod16(blockZ);
+    int yzx = toYZX(relativeX, relativeY, relativeZ);
+
+    return (yzx < skyLightData.size()) ? skyLightData[yzx] : 0;
+}
+
+int GetBlockLight(int blockX, int blockY, int blockZ) {
+    int chunkX, chunkZ;
+    blockToChunk(blockX, blockZ, chunkX, chunkZ);
+
+    int sectionY;
+    blockYToSectionY(blockY, sectionY);
+    int adjustedSectionY = AdjustSectionY(sectionY);
+    auto blockKey = std::make_tuple(chunkX, chunkZ, adjustedSectionY);
+
+    if (sectionCache.find(blockKey) == sectionCache.end()) {
+        LoadAndCacheBlockData(chunkX, chunkZ);
+    }
+
+    const auto& blockLightData = sectionCache[blockKey].blockLight;
+    if (blockLightData.size() == 1) {
+        return blockLightData[0]; // 标记为-1或-2
+    }
+
+    int relativeX = mod16(blockX);
+    int relativeY = mod16(blockY);
+    int relativeZ = mod16(blockZ);
+    int yzx = toYZX(relativeX, relativeY, relativeZ);
+
+    return (yzx < blockLightData.size()) ? blockLightData[yzx] : 0;
+}
+
+Block GetBlockById(int blockId) {
+    if (blockId >= 0 && blockId < globalBlockPalette.size()) {
+        return globalBlockPalette[blockId];
+    } else {
+        return Block("minecraft:air", true);
+    }
+}
+
+
 // --------------------------------------------------------------------------------
 // 全局方块配置相关函数
 // --------------------------------------------------------------------------------

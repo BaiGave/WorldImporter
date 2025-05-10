@@ -56,11 +56,29 @@
     <Filter Include="源文件\Exporter">
       <UniqueIdentifier>{9E7A1D3C-F23A-4BB1-8C67-F3B2D5C1F1A7}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\Core\Loader">
+    <Filter Include="源文件\Core\Cache">
+      <UniqueIdentifier>{2b5fba8f-c00a-4934-91f7-56d611c4c435}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Core\Cache">
+      <UniqueIdentifier>{e76bb87b-5458-43ca-9784-e5a87de2531d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Core\Reader">
+      <UniqueIdentifier>{aa759359-5b73-43ae-b6f8-0185a72b0658}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Core\Reader">
       <UniqueIdentifier>{ccfb225f-ce5c-482c-978e-31d15b831e75}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\Core\Loader">
+      <UniqueIdentifier>{278f5f53-4ccb-4c8a-ab1a-8e38d86180e9}</UniqueIdentifier>
+    </Filter>
     <Filter Include="源文件\Core\Loader">
-      <UniqueIdentifier>{aa759359-5b73-43ae-b6f8-0185a72b0658}</UniqueIdentifier>
+      <UniqueIdentifier>{3b5c5888-00f3-4009-870c-9bbbb5d8f2da}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Api">
+      <UniqueIdentifier>{66f568f6-32cb-438c-8f02-25479edfa078}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件\Api">
+      <UniqueIdentifier>{d8db5137-d58e-4e06-9776-33a2964d9b66}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -111,13 +129,10 @@
       <Filter>源文件\Exporter</Filter>
     </ClCompile>
     <ClCompile Include="DatReader.cpp">
-      <Filter>源文件\Core\Loader</Filter>
+      <Filter>源文件\Core\Reader</Filter>
     </ClCompile>
     <ClCompile Include="JarReader.cpp">
-      <Filter>源文件\Core\Loader</Filter>
-    </ClCompile>
-    <ClCompile Include="GlobalCache.cpp">
-      <Filter>源文件\Core\Loader</Filter>
+      <Filter>源文件\Core\Reader</Filter>
     </ClCompile>
     <ClCompile Include="EntityBlock.cpp">
       <Filter>源文件\Blocks</Filter>
@@ -132,7 +147,7 @@
       <Filter>源文件\Blocks</Filter>
     </ClCompile>
     <ClCompile Include="config.cpp">
-      <Filter>源文件\Core\Loader</Filter>
+      <Filter>源文件\Core\Reader</Filter>
     </ClCompile>
     <ClCompile Include="ChunkGroupAllocator.cpp">
       <Filter>源文件\Exporter</Filter>
@@ -142,6 +157,27 @@
     </ClCompile>
     <ClCompile Include="SolidsJsonGenerator.cpp">
       <Filter>源文件\Exporter</Filter>
+    </ClCompile>
+    <ClCompile Include="GlobalCache.cpp">
+      <Filter>源文件\Core\Cache</Filter>
+    </ClCompile>
+    <ClCompile Include="RegionCache.cpp">
+      <Filter>源文件\Core\Cache</Filter>
+    </ClCompile>
+    <ClCompile Include="chunk.cpp">
+      <Filter>源文件\World</Filter>
+    </ClCompile>
+    <ClCompile Include="ChunkLoader.cpp">
+      <Filter>源文件\Core\Loader</Filter>
+    </ClCompile>
+    <ClCompile Include="ChunkGenerator.cpp">
+      <Filter>源文件\Exporter</Filter>
+    </ClCompile>
+    <ClCompile Include="init.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="api.cpp">
+      <Filter>源文件\Api</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -201,13 +237,10 @@
       <Filter>头文件\Utils</Filter>
     </ClInclude>
     <ClInclude Include="DatReader.h">
-      <Filter>头文件\Core\Loader</Filter>
-    </ClInclude>
-    <ClInclude Include="GlobalCache.h">
-      <Filter>头文件\Core\Loader</Filter>
+      <Filter>头文件\Core\Reader</Filter>
     </ClInclude>
     <ClInclude Include="JarReader.h">
-      <Filter>头文件\Core\Loader</Filter>
+      <Filter>头文件\Core\Reader</Filter>
     </ClInclude>
     <ClInclude Include="LODManager.h">
       <Filter>头文件\Blocks</Filter>
@@ -216,13 +249,34 @@
       <Filter>头文件\Exporter</Filter>
     </ClInclude>
     <ClInclude Include="config.h">
-      <Filter>头文件\Core\Loader</Filter>
+      <Filter>头文件\Core\Reader</Filter>
     </ClInclude>
     <ClInclude Include="decompressor.h">
       <Filter>头文件\Utils</Filter>
     </ClInclude>
     <ClInclude Include="SolidsJsonGenerator.h">
       <Filter>头文件\Exporter</Filter>
+    </ClInclude>
+    <ClInclude Include="GlobalCache.h">
+      <Filter>头文件\Core\Cache</Filter>
+    </ClInclude>
+    <ClInclude Include="RegionCache.h">
+      <Filter>头文件\Core\Cache</Filter>
+    </ClInclude>
+    <ClInclude Include="chunk.h">
+      <Filter>头文件\World</Filter>
+    </ClInclude>
+    <ClInclude Include="ChunkLoader.h">
+      <Filter>头文件\Core\Loader</Filter>
+    </ClInclude>
+    <ClInclude Include="ChunkGenerator.h">
+      <Filter>头文件\Exporter</Filter>
+    </ClInclude>
+    <ClInclude Include="init.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="api.h">
+      <Filter>头文件\Api</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
