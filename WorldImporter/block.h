@@ -24,9 +24,6 @@
 #include "GlobalCache.h"
 extern Config config;
 
-
-
-
 struct Block {
     std::string name;
     int8_t level;
@@ -128,40 +125,6 @@ struct Block {
         else { // 如果没有找到冒号
             return "minecraft"; // 默认命名空间
         }
-    }
-
-    // 方法:获取方块名称部分(冒号之后的部分)
-    std::string GetName() const {
-        size_t colonPos = name.find(':'); // 查找第一个冒号的位置
-        if (colonPos != std::string::npos) { // 如果找到冒号
-            return name.substr(colonPos + 1); // 返回冒号之后的部分
-        }
-        else { // 如果没有找到冒号
-            return name; // 返回完整的字符串
-        }
-    }
-
-    std::string GetNameWithoutState() const {
-        size_t colonPos = name.find(':'); // 查找第一个冒号的位置
-        size_t bracketPos = name.find('[');  // 查找第一个方括号的位置
-
-        // 如果没有冒号,返回完整字符串
-        if (colonPos == std::string::npos) {
-            return name.substr(0, bracketPos == std::string::npos ? name.size() : bracketPos).c_str();
-        }
-
-        // 如果有冒号,返回冒号之后到方括号之间的部分
-        if (bracketPos == std::string::npos) {
-            return name.substr(colonPos + 1);
-        }
-
-        // 如果冒号后在方括号之前,返回这部分
-        if (colonPos + 1 < bracketPos) {
-            return name.substr(colonPos + 1, bracketPos - colonPos - 1).c_str();
-        }
-
-        // 否则返回空
-        return "";
     }
 
     std::string GetNameAndNameSpaceWithoutState() const {
