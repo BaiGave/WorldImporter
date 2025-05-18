@@ -128,6 +128,7 @@
       <Optimization>MaxSpeed</Optimization>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
+      <BrowseInformation>true</BrowseInformation>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -135,9 +136,11 @@
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
+    <Bscmake>
+      <PreserveSbr>true</PreserveSbr>
+    </Bscmake>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="api.cpp" />
     <ClCompile Include="biome.cpp" />
     <ClCompile Include="block.cpp" />
     <ClCompile Include="blockstate.cpp" />
@@ -148,11 +151,9 @@
     <ClCompile Include="config.cpp" />
     <ClCompile Include="init.cpp" />
     <ClCompile Include="locutil.cpp" />
-    <ClCompile Include="DatReader.cpp" />
     <ClCompile Include="decompressor.cpp" />
     <ClCompile Include="EntityBlock.cpp" />
     <ClCompile Include="RegionCache.cpp" />
-    <ClCompile Include="SolidsJsonGenerator.cpp" />
     <ClCompile Include="SpecialBlock.cpp" />
     <ClCompile Include="fileutils.cpp" />
     <ClCompile Include="Fluid.cpp" />
@@ -169,7 +170,6 @@
     <ClCompile Include="texture.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="api.h" />
     <ClInclude Include="biome.h" />
     <ClInclude Include="block.h" />
     <ClInclude Include="blockstate.h" />
@@ -180,12 +180,10 @@
     <ClInclude Include="config.h" />
     <ClInclude Include="init.h" />
     <ClInclude Include="locutil.h" />
-    <ClInclude Include="DatReader.h" />
     <ClInclude Include="decompressor.h" />
     <ClInclude Include="EntityBlock.h" />
     <ClInclude Include="hashutils.h" />
     <ClInclude Include="RegionCache.h" />
-    <ClInclude Include="SolidsJsonGenerator.h" />
     <ClInclude Include="SpecialBlock.h" />
     <ClInclude Include="fileutils.h" />
     <ClInclude Include="Fluid.h" />

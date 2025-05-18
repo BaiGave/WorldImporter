@@ -464,7 +464,7 @@ void LoadAndCacheBlockData(int chunkX, int chunkZ) {
     const auto& regionData = GetRegionFromCache(regionX, regionZ);
 
     // 获取区块数据
-    std::vector<char> chunkData = GetChunkNBTData(regionData, mod32(chunkX), mod32(chunkZ));
+    std::vector<char> chunkData = GetChunkNBTData(regionData, chunkX, chunkZ);
     size_t index = 0;
     auto tag = readTag(chunkData, index);
 

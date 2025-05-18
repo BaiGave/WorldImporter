@@ -74,12 +74,6 @@
     <Filter Include="源文件\Core\Loader">
       <UniqueIdentifier>{3b5c5888-00f3-4009-870c-9bbbb5d8f2da}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\Api">
-      <UniqueIdentifier>{66f568f6-32cb-438c-8f02-25479edfa078}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="源文件\Api">
-      <UniqueIdentifier>{d8db5137-d58e-4e06-9776-33a2964d9b66}</UniqueIdentifier>
-    </Filter>
   </ItemGroup>
   <ItemGroup>
     <!-- 核心文件 -->
@@ -128,9 +122,6 @@
     <ClCompile Include="ObjExporter.cpp">
       <Filter>源文件\Exporter</Filter>
     </ClCompile>
-    <ClCompile Include="DatReader.cpp">
-      <Filter>源文件\Core\Reader</Filter>
-    </ClCompile>
     <ClCompile Include="JarReader.cpp">
       <Filter>源文件\Core\Reader</Filter>
     </ClCompile>
@@ -155,9 +146,6 @@
     <ClCompile Include="decompressor.cpp">
       <Filter>源文件\Utils</Filter>
     </ClCompile>
-    <ClCompile Include="SolidsJsonGenerator.cpp">
-      <Filter>源文件\Exporter</Filter>
-    </ClCompile>
     <ClCompile Include="GlobalCache.cpp">
       <Filter>源文件\Core\Cache</Filter>
     </ClCompile>
@@ -175,9 +163,6 @@
     </ClCompile>
     <ClCompile Include="init.cpp">
       <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="api.cpp">
-      <Filter>源文件\Api</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -236,9 +221,6 @@
     <ClInclude Include="nbtutils.h">
       <Filter>头文件\Utils</Filter>
     </ClInclude>
-    <ClInclude Include="DatReader.h">
-      <Filter>头文件\Core\Reader</Filter>
-    </ClInclude>
     <ClInclude Include="JarReader.h">
       <Filter>头文件\Core\Reader</Filter>
     </ClInclude>
@@ -253,9 +235,6 @@
     </ClInclude>
     <ClInclude Include="decompressor.h">
       <Filter>头文件\Utils</Filter>
-    </ClInclude>
-    <ClInclude Include="SolidsJsonGenerator.h">
-      <Filter>头文件\Exporter</Filter>
     </ClInclude>
     <ClInclude Include="GlobalCache.h">
       <Filter>头文件\Core\Cache</Filter>
@@ -274,9 +253,6 @@
     </ClInclude>
     <ClInclude Include="init.h">
       <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="api.h">
-      <Filter>头文件\Api</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

@@ -5,40 +5,53 @@
 #include <vector>
 #include <iostream>
 
-std::vector<char> ReadFileToMemory(const std::string& directoryPath, int regionX, int regionZ);
 
-unsigned CalculateOffset(const std::vector<char>& fileData, int x, int z);
-
-unsigned ExtractChunkLength(const std::vector<char>& fileData, unsigned offset);
-
-void GenerateSolidsJson(const std::string& outputPath, const std::vector<std::string>& targetParentPaths);
-
-// 设置全局 locale 为支持中文,支持 UTF-8 编码
+/**
+ * @brief 设置全局区域设置(locale)为支持中文,使用UTF-8编码
+ */
 void SetGlobalLocale();
 
-void LoadSolidBlocks(const std::string& filepath);
-
-void LoadFluidBlocks(const std::string& filepath);
-
-void DeleteFiles(const std::wstring& path, const std::wstring& pattern);
-
-void DeleteDirectory(const std::wstring& path);
-
-void DeleteTexturesFolder();
-
-void RegisterFluidTextures();
-// 将 wstring 转换为 UTF-8 编码的 string
+/**
+ * @brief 将宽字符串(wstring)转换为UTF-8编码的字符串
+ * 
+ * @param wstr 输入的宽字符串
+ * @return std::string 转换后的UTF-8字符串
+ */
 std::string wstring_to_string(const std::wstring& wstr);
 
-// 将 string 转换为 UTF-8 编码的 wstring
+/**
+ * @brief 将UTF-8字符串转换为宽字符串(wstring)
+ * 
+ * @param str 输入的UTF-8字符串
+ * @return std::wstring 转换后的宽字符串
+ */
 std::wstring string_to_wstring(const std::string& str);
 
-// 将std::wstring转换为Windows系统默认的多字节编码(通常为 GBK 或 ANSI)
-std::string wstring_to_system_string(const std::wstring& wstr);
 
-// 获取文件夹名(路径中的最后一部分)
-std::wstring GetFolderNameFromPath(const std::wstring& folderPath);
+/**
+ * @brief 从配置文件加载固体方块列表
+ * 
+ * @param filepath 配置文件路径
+ */
+void LoadSolidBlocks(const std::string& filepath);
+
+/**
+ * @brief 从配置文件加载流体方块定义
+ * 
+ * @param filepath 配置文件路径
+ */
+void LoadFluidBlocks(const std::string& filepath);
+
+/**
+ * @brief 注册流体相关的材质
+ */
+void RegisterFluidTextures();
 
 
+/**
+ * @brief 删除材质文件夹
+ * 删除程序目录下的textures和biomeTex文件夹
+ */
+void DeleteTexturesFolder();
 
 #endif // FILEUTILS_H

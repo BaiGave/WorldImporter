@@ -60,7 +60,7 @@ struct Block {
             }
         }
 
-        /* 新版流体处理逻辑 */
+        /* 流体处理逻辑 */
         bool fluidProcessed = false;
 
         // 阶段1:检查强制含水方块

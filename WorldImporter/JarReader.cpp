@@ -440,6 +440,64 @@ bool JarReader::isNeoForge() {
     return !getFileContent("META-INF/neoforge.mods.toml").empty();
 }
 
+std::string JarReader::getID() {
+    if (!zipFile) {
+        std::cerr << "Error: Attempt to get ID from unopened jar file: " << convertWStrToStr(jarFilePath) << std::endl;
+        return "";
+    }
+
+    // 确保 modType 已经被正确初始化
+    // open() 方法中已经进行了类型判断和 modType 的设置
+
+    switch (modType) {
+    case ModType::Vanilla:
+        return getVanillaVersionId();
+    case ModType::Mod: {
+        // 优化 Mod 类型判断逻辑
+        // 优先检查 fabric.mod.json，因为它最独特
+        std::string fabricContent = getFileContent("fabric.mod.json");
+        if (!fabricContent.empty()) {
+            return getFabricModId(); // 实际上这里可以直接解析 fabricContent，避免再次调用 getFabricModId() 里的 getFileContent
+        }
+
+        // 然后检查 META-INF/neoforge.mods.toml，因为它比 mods.toml 更具体
+        std::string neoforgeContent = getFileContent("META-INF/neoforge.mods.toml");
+        if (!neoforgeContent.empty()) {
+            return getNeoForgeModId(); // 同上，可以优化
+        }
+
+        // 最后检查 META-INF/mods.toml
+        std::string forgeContent = getFileContent("META-INF/mods.toml");
+        if (!forgeContent.empty()) {
+            return getForgeModId(); // 同上，可以优化
+        }
+        return ""; // 未知 Mod 类型
+    }
+    case ModType::Unknown:
+    default:
+        // 如果 open() 未能识别类型，则尝试在这里最后判断一次
+        if (isVanilla()) {
+            modType = ModType::Vanilla;
+            return getVanillaVersionId();
+        }
+        // 顺序很重要，NeoForge 和 Forge 都可能有 mods.toml，但 NeoForge 的 neoforge.mods.toml 更特定
+        if (isNeoForge()) {
+            modType = ModType::Mod;
+            return getNeoForgeModId();
+        }
+        if (isForge()) {
+            modType = ModType::Mod;
+            return getForgeModId();
+        }
+        if (isFabric()) {
+            modType = ModType::Mod;
+            return getFabricModId();
+        }
+        return ""; // 确实无法识别
+    }
+}
+
+
 // 获取原版 Minecraft 版本 ID
 std::string JarReader::getVanillaVersionId() {
     if (modType != ModType::Vanilla) {

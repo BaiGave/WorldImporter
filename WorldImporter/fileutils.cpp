@@ -1,70 +1,24 @@
 ﻿#include <fstream>
 #include "block.h"  
 #include "fileutils.h"
+#include <filesystem> // 新增
+#include <windows.h>  // 为了 GetModuleFileName, MAX_PATH
+#include <locale>     // 为了 std::setlocale
+#include <codecvt>    // 为了 wstring_convert (如果决定用它替代API)
+#include <regex>      // 为了 DeleteFiles 中的模式匹配
 using namespace std;
-
-std::vector<char> ReadFileToMemory(const std::string& directoryPath, int regionX, int regionZ) {
-    // 构造区域文件的路径
-    std::ostringstream filePathStream;
-    filePathStream << directoryPath << "/region/r." << regionX << "." << regionZ << ".mca";
-    std::string filePath = filePathStream.str();
-
-    // 打开文件
-    std::ifstream file(filePath, std::ios::binary);
-    if (!file) {
-        std::cerr << "错误: 打开文件失败!" << std::endl;
-        return {};  // 返回空vector表示失败
-    }
-
-    // 将文件内容读取到文件数据中
-    std::vector<char> fileData;
-    fileData.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
-    if (fileData.empty()) {
-        std::cerr << "错误: 文件为空或读取失败!" << std::endl;
-        return {};  // 返回空vector表示失败
-    }
-
-    // 返回读取到的文件数据
-    return fileData;
-}
-
-unsigned CalculateOffset(const vector<char>& fileData, int x, int z) {
-    // 直接使用 x 和 z,不需要进行模运算
-    unsigned index = 4 * (x + z * 32);
-
-    // 检查是否越界
-    if (index + 3 >= fileData.size()) {
-        cerr << "错误: 无效的索引或文件大小." << endl;
-        return 0; // 返回 0 表示计算失败
-    }
-
-    // 读取字节
-    unsigned char byte1 = fileData[index];
-    unsigned char byte2 = fileData[index + 1];
-    unsigned char byte3 = fileData[index + 2];
-
-    // 根据字节计算偏移位置 (假设按大端字节序)
-    unsigned offset = (byte1 * 256 * 256 + byte2 * 256 + byte3) * 4096;
-
-    return offset;
-}
-
-
-unsigned ExtractChunkLength(const vector<char>& fileData, unsigned offset) {
-    // 确保以无符号字节的方式进行计算
-    unsigned byte1 = (unsigned char)fileData[offset];
-    unsigned byte2 = (unsigned char)fileData[offset + 1];
-    unsigned byte3 = (unsigned char)fileData[offset + 2];
-    unsigned byte4 = (unsigned char)fileData[offset + 3];
-
-    // 计算区块长度
-    return (byte1 << 24) | (byte2 << 16) | (byte3 << 8) | byte4;
-}
 
 
 // 设置全局 locale 为支持中文,支持 UTF-8 编码
 void SetGlobalLocale() {
-    std::setlocale(LC_ALL, "zh_CN.UTF-8");  // 使用 UTF-8 编码
+    // 尝试更标准的 UTF-8 locale 设置
+    try {
+        std::locale::global(std::locale("en_US.UTF-8"));
+    }
+    catch (const std::runtime_error&) {
+        // 回退到之前的设置或者记录一个警告
+        std::setlocale(LC_ALL, "zh_CN.UTF-8"); 
+    }
 }
 
 void LoadSolidBlocks(const std::string& filepath) {
@@ -215,97 +169,29 @@ std::wstring string_to_wstring(const std::string& str) {
     return result;
 }
 
-std::string wstring_to_system_string(const std::wstring& wstr) {
-    int size_needed = WideCharToMultiByte(CP_ACP, 0, wstr.c_str(), (int)wstr.size(), nullptr, 0, nullptr, nullptr);
-    std::string str(size_needed, 0);
-    WideCharToMultiByte(CP_ACP, 0, wstr.c_str(), (int)wstr.size(), &str[0], size_needed, nullptr, nullptr);
-    return str;
-}
-
-// 获取文件夹名(路径中的最后一部分)
-std::wstring GetFolderNameFromPath(const std::wstring& folderPath) {
-    size_t pos = folderPath.find_last_of(L"\\");
-    if (pos != std::wstring::npos) {
-        return folderPath.substr(pos + 1);
-    }
-    return folderPath;
-}
-
-void DeleteFiles(const std::wstring& path, const std::wstring& pattern) {
-    WIN32_FIND_DATA findFileData;
-    HANDLE hFind = FindFirstFile((path + L"\\" + pattern).c_str(), &findFileData);
-    if (hFind != INVALID_HANDLE_VALUE) {
-        std::vector<std::wstring> filesToDelete;
-
-        do {
-            if (wcscmp(findFileData.cFileName, L".") != 0 && wcscmp(findFileData.cFileName, L"..") != 0) {
-                filesToDelete.push_back(path + L"\\" + findFileData.cFileName);
-            }
-        } while (FindNextFile(hFind, &findFileData) != 0);
-
-        FindClose(hFind);
-
-        // 使用C++20 ranges和视图
-        auto deleteView = filesToDelete
-            | std::views::filter([](const std::wstring& file) {
-            return GetFileAttributes(file.c_str()) != INVALID_FILE_ATTRIBUTES &&
-                !(GetFileAttributes(file.c_str()) & FILE_ATTRIBUTE_DIRECTORY);
-                });
-
-        for (const auto& file : deleteView) {
-            DeleteFile(file.c_str());
-        }
-    }
-}
-
-void DeleteDirectory(const std::wstring& path) {
-    WIN32_FIND_DATA findFileData;
-    HANDLE hFind = FindFirstFile((path + L"\\*").c_str(), &findFileData);
-    if (hFind != INVALID_HANDLE_VALUE) {
-        do {
-            if (wcscmp(findFileData.cFileName, L".") != 0 && wcscmp(findFileData.cFileName, L"..") != 0) {
-                std::wstring filePath = path + L"\\" + findFileData.cFileName;
-                if (findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-                    DeleteDirectory(filePath); // 递归删除子目录
-                }
-                else {
-                    // 解除文件占用并删除文件
-                    if (!DeleteFile(filePath.c_str())) {
-                        // 如果删除失败,尝试解除占用
-                        MoveFileEx(filePath.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
-                    }
-                }
-            }
-        } while (FindNextFile(hFind, &findFileData) != 0);
-        FindClose(hFind);
-    }
-    // 删除空目录
-    RemoveDirectory(path.c_str());
-}
-
 void DeleteTexturesFolder() {
-    // 获取当前可执行文件所在的目录
+    namespace fs = std::filesystem;
+
     wchar_t cwd[MAX_PATH];
-    if (GetModuleFileName(NULL, cwd, MAX_PATH) == 0) {
+    if (GetModuleFileNameW(NULL, cwd, MAX_PATH) == 0) { // 使用 GetModuleFileNameW
+        // 错误处理
         return;
     }
 
-    // 提取目录路径
-    std::wstring exePath(cwd);
-    size_t lastSlash = exePath.find_last_of(L"\\/");
-    std::wstring exeDir = exePath.substr(0, lastSlash);
+    fs::path exePath(cwd);
+    fs::path exeDir = exePath.parent_path();
 
-    // 构建textures文件夹的路径
-    std::wstring texturesPath = exeDir + L"\\textures";
-    std::wstring biomeTexPath = exeDir + L"\\biomeTex";
+    fs::path texturesPath = exeDir / L"textures";
+    fs::path biomeTexPath = exeDir / L"biomeTex";
 
-    // 删除textures文件夹
-    if (GetFileAttributes(texturesPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
-        DeleteDirectory(texturesPath);
+    std::error_code ec;
+    if (fs::exists(texturesPath)) {
+        fs::remove_all(texturesPath, ec);
+        // 可选: if (ec) { /* 错误处理 */ }
     }
 
-    // 删除biomeTex文件夹
-    if (GetFileAttributes(biomeTexPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
-        DeleteDirectory(biomeTexPath);
+    if (fs::exists(biomeTexPath)) {
+        fs::remove_all(biomeTexPath, ec);
+        // 可选: if (ec) { /* 错误处理 */ }
     }
 }

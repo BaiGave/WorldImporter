@@ -12,15 +12,6 @@
 #include <string>
 #include "hashutils.h"
 
-namespace {
-    std::pair<std::string, std::string> splitBiomeName(const std::string& fullName) {
-        const size_t colonPos = fullName.find(':');
-        if (colonPos == std::string::npos)
-            throw std::invalid_argument("Invalid biome format: " + fullName);
-        return { fullName.substr(0, colonPos), fullName.substr(colonPos + 1) };
-    }
-}
-
 // 初始化静态成员
 std::unordered_map<std::string, BiomeInfo> Biome::biomeRegistry;
 std::shared_mutex Biome::registryMutex;

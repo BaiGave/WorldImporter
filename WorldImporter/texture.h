@@ -22,12 +22,7 @@ static std::mutex texturePathCacheMutex;
 // 材质注册方法
 void RegisterTexture(const std::string& namespaceName, const std::string& pathPart, const std::string& savePath);
 
-//已弃用
-std::vector<unsigned char> GetTextureData(const std::string& namespaceName, const std::string& blockId);
-
 bool SaveTextureToFile(const std::string& namespaceName, const std::string& blockId, std::string& savePath);
-
-void PrintTextureCache(const std::unordered_map<std::string, std::vector<unsigned char>>& textureCache);
 
 // 新增:检测材质类型
 MaterialType DetectMaterialType(const std::string& namespaceName, const std::string& texturePath);

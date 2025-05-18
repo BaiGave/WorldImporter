@@ -1927,19 +1927,6 @@ FaceType StringToFaceType(const std::string& dirString) {
     return FaceType::UNKNOWN;
 }
 
-// 辅助函数:将FaceType枚举转换为字符串
-std::string FaceTypeToString(FaceType faceType) {
-    switch (faceType) {
-        case FaceType::DOWN: return "down";
-        case FaceType::UP: return "up";
-        case FaceType::NORTH: return "north";
-        case FaceType::SOUTH: return "south";
-        case FaceType::WEST: return "west";
-        case FaceType::EAST: return "east";
-        case FaceType::DO_NOT_CULL: return "DO_NOT_CULL";
-        default: return "unknown";
-    }
-}
 
 // 辅助函数:根据面索引获取面方向 (每4个顶点构成一个面)
 FaceType GetFaceTypeByIndex(size_t faceIndex) {

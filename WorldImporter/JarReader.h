@@ -66,7 +66,8 @@ public:
     // 获取 NeoForge 模组的 modId
     std::string getNeoForgeModId();
 
-
+    // 获取当前模组或原版的 ID
+    std::string getID();
 private:
     // 判断 .jar 是否为原版
     bool isVanilla();

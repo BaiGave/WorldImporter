@@ -23,7 +23,5 @@ void blockYToSectionY(int blockY, int& chunkY);
 
 int AdjustSectionY(int SectionY);
 
-inline void worldToBiomeUnit(int worldX, int worldY, int worldZ,
-    int& biomeX, int& biomeY, int& biomeZ);
 
 #endif // COORD_CONVERSION_H

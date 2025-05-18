@@ -49,10 +49,3 @@ void blockYToSectionY(int blockY, int& chunkY) {
 int AdjustSectionY(int SectionY) {
     return SectionY - 4;
 }
-
-inline void worldToBiomeUnit(int worldX, int worldY, int worldZ,
-    int& biomeX, int& biomeY, int& biomeZ) {
-    biomeX = (worldX % 16) / 4;
-    biomeZ = (worldZ % 16) / 4;
-    biomeY = (worldY % 16) / 4;
-}

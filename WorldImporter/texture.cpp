@@ -7,24 +7,6 @@
 
 std::unordered_map<std::string, std::string> texturePathCache; // 定义材质路径缓存
 
-//已弃用
-std::vector<unsigned char> GetTextureData(const std::string& namespaceName, const std::string& blockId) {
-    std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
-
-    // 按照 JAR 文件的加载顺序逐个查找
-    for (size_t i = 0; i < GlobalCache::jarOrder.size(); ++i) {
-        const std::string& modId = GlobalCache::jarOrder[i];
-        std::string cacheKey = modId + ":" + namespaceName + ":" + blockId;
-        auto it = GlobalCache::textures.find(cacheKey);
-        if (it != GlobalCache::textures.end()) {
-            return it->second;
-        }
-    }
-
-    std::cerr << "Texture not found: " << namespaceName << ":" << blockId << std::endl;
-    return {};
-}
-
 bool SaveTextureToFile(const std::string& namespaceName, const std::string& blockId, std::string& savePath) {
     std::vector<unsigned char> textureData;
     nlohmann::json mcmetaData;
@@ -178,8 +160,6 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
     }
 }
 
-
-
 void RegisterTexture(const std::string& namespaceName, const std::string& pathPart, const std::string& savePath) {
     std::string cacheKey = namespaceName + ":" + pathPart;
 
@@ -193,28 +173,6 @@ void RegisterTexture(const std::string& namespaceName, const std::string& pathPa
 
     // 保存材质路径到缓存
     texturePathCache[cacheKey] = savePath;
-}
-
-// 打印 textureCache 的内容
-void PrintTextureCache(const std::unordered_map<std::string, std::vector<unsigned char>>& textureCache) {
-    std::cout << "Texture Cache Contents:" << std::endl;
-    std::cout << "----------------------------------------" << std::endl;
-
-    if (textureCache.empty()) {
-        std::cout << "Cache is empty." << std::endl;
-        return;
-    }
-
-    for (const auto& entry : textureCache) {
-        const std::string& cacheKey = entry.first;  // 缓存键(命名空间:资源路径)
-        const std::vector<unsigned char>& textureData = entry.second;  // 纹理数据
-
-        std::cout << "Key: " << cacheKey << std::endl;
-        std::cout << "Data Size: " << textureData.size() << " bytes" << std::endl;
-        std::cout << "----------------------------------------" << std::endl;
-    }
-
-    std::cout << "Total Cached Textures: " << textureCache.size() << std::endl;
 }
 
 // 解析.mcmeta文件并确定材质类型
