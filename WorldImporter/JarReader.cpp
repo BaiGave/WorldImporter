@@ -5,6 +5,7 @@
 #include <sstream>
 #include <cstring>
 #include "include/json.hpp"
+#include "fileutils.h"
 namespace {
     std::vector<std::string> splitPath(const std::string& path) {
         std::vector<std::string> parts;
@@ -19,6 +20,7 @@ namespace {
     }
 }
 
+//将换行符替换为 JSON 能够识别的转义字符
 std::string preprocessJson(const std::string& jsonStr) {
     std::string result;
     bool inString = false;
@@ -42,29 +44,6 @@ std::string preprocessJson(const std::string& jsonStr) {
         }
     }
     return result;
-}
-
-std::string JarReader::convertWStrToStr(const std::wstring& wstr) {
-    if (wstr.empty()) return "";
-    
-    int buffer_size = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    if (buffer_size <= 0) {
-        std::cerr << "Error converting wstring to string: " << GetLastError() << std::endl;
-        return "";
-    }
-    
-    std::string str(buffer_size, 0);
-    if (WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &str[0], buffer_size, nullptr, nullptr) == 0) {
-        std::cerr << "Error executing WideCharToMultiByte: " << GetLastError() << std::endl;
-        return "";
-    }
-    
-    // 移除字符串末尾的空字符
-    if (!str.empty() && str.back() == 0) {
-        str.pop_back();
-    }
-    
-    return str;
 }
 
 JarReader::JarReader(const std::wstring& jarFilePath)
@@ -98,7 +77,7 @@ std::string JarReader::getNamespaceForModType(ModType type) {
 
 std::string JarReader::getFileContent(const std::string& filePathInJar) {
     if (!zipFile) {
-        std::cerr << "Error: Attempt to read from unopened jar file: " << convertWStrToStr(jarFilePath) << std::endl;
+        std::cerr << "Error: Attempt to read from unopened jar file: " << wstring_to_string(jarFilePath) << std::endl;
         return "";
     }
 
@@ -138,7 +117,7 @@ std::vector<unsigned char> JarReader::getBinaryFileContent(const std::string& fi
     std::vector<unsigned char> fileContent;
 
     if (!zipFile) {
-        std::cerr << "Error: Attempt to read binary from unopened jar file: " << convertWStrToStr(jarFilePath) << std::endl;
+        std::cerr << "Error: Attempt to read binary from unopened jar file: " << wstring_to_string(jarFilePath) << std::endl;
         return fileContent;
     }
 
@@ -179,7 +158,9 @@ void JarReader::cacheAllResources(
     std::unordered_map<std::string, std::vector<unsigned char>>& textureCache,
     std::unordered_map<std::string, nlohmann::json>& blockstateCache,
     std::unordered_map<std::string, nlohmann::json>& modelCache,
-    std::unordered_map<std::string, nlohmann::json>& mcmetaCache)  // 新增参数
+    std::unordered_map<std::string, nlohmann::json>& mcmetaCache,
+    std::unordered_map<std::string, nlohmann::json>& biomeCache,
+    std::unordered_map<std::string, std::vector<unsigned char>>& colormapCache)
 {
     if (!zipFile) {
         std::cerr << "Zip file is not open." << std::endl;
@@ -194,119 +175,176 @@ void JarReader::cacheAllResources(
 
         std::string filePath(name);
 
-        // 公共路径解析
-        size_t nsStart = 7; // "assets/" 长度
-        if (filePath.find("assets/") != 0) continue;
+        // 处理 assets/ 目录下的资源
+        if (filePath.find("assets/") == 0) {
+            size_t nsStart = 7; // "assets/" 长度
+            size_t nsEnd = filePath.find('/', nsStart);
+            if (nsEnd == std::string::npos) continue;
+            std::string namespaceName = filePath.substr(nsStart, nsEnd - nsStart);
 
-        size_t nsEnd = filePath.find('/', nsStart);
-        if (nsEnd == std::string::npos) continue;
-        std::string namespaceName = filePath.substr(nsStart, nsEnd - nsStart);
+            // 处理纹理
+            if (filePath.find("/textures/") != std::string::npos &&
+                filePath.size() > 4 &&
+                filePath.substr(filePath.size() - 4) == ".png")
+            {
+                // 检查是否为 colormap
+                if (filePath.find("/textures/colormap/") != std::string::npos) {
+                     auto parts = splitPath(filePath);
+                     //验证路径结构: assets/<namespace>/textures/colormap/<name>.png
+                     if (parts.size() == 5 && parts[0] == "assets" && parts[2] == "textures" && parts[3] == "colormap") {
+                         std::string mapName = parts[4].substr(0, parts[4].size() - 4); // 移除 .png 后缀
+                         std::string cacheKey = namespaceName + ":" + mapName;
 
-        // 处理纹理
-        if (filePath.find("/textures/") != std::string::npos &&
-            filePath.size() > 4 &&
-            filePath.substr(filePath.size() - 4) == ".png")
-        {
-            size_t resStart = filePath.find("/textures/", nsEnd) + 10;
-            std::string resourcePath = filePath.substr(resStart, filePath.size() - resStart - 4);
-            std::string cacheKey = namespaceName + ":" + resourcePath;
+                         // 防止重复处理
+                         if (colormapCache.find(cacheKey) == colormapCache.end()) {
+                             // 读取二进制数据
+                             auto data = getBinaryFileContent(filePath);
+                             if (!data.empty()) {
+                                 colormapCache.emplace(cacheKey, std::move(data));
+                             }
+                         }
+                     }
+                } else {
+                    size_t resStart = filePath.find("/textures/", nsEnd) + 10;
+                    std::string resourcePath = filePath.substr(resStart, filePath.size() - resStart - 4);
+                    std::string cacheKey = namespaceName + ":" + resourcePath;
 
-            if (textureCache.find(cacheKey) == textureCache.end()) {
-                zip_file_t* file = zip_fopen_index(zipFile, i, 0);
-                if (file) {
-                    zip_stat_t fileStat;
-                    if (zip_stat_index(zipFile, i, 0, &fileStat) == 0) {
-                        std::vector<unsigned char> data(fileStat.size);
-                        if (zip_fread(file, data.data(), fileStat.size) == fileStat.size) {
-                            textureCache.emplace(cacheKey, std::move(data));
+                    if (textureCache.find(cacheKey) == textureCache.end()) {
+                        zip_file_t* file = zip_fopen_index(zipFile, i, 0);
+                        if (file) {
+                            zip_stat_t fileStat;
+                            if (zip_stat_index(zipFile, i, 0, &fileStat) == 0) {
+                                std::vector<unsigned char> data(fileStat.size);
+                                if (zip_fread(file, data.data(), fileStat.size) == fileStat.size) {
+                                    textureCache.emplace(cacheKey, std::move(data));
+                                }
+                            }
+                            zip_fclose(file);
                         }
                     }
-                    zip_fclose(file);
                 }
             }
+            // 处理 blockstate
+            else if (filePath.find("/blockstates/") != std::string::npos &&
+                filePath.size() > 5 &&
+                filePath.substr(filePath.size() - 5) == ".json")
+            {
+                size_t resStart = filePath.find("/blockstates/", nsEnd) + 13;
+                std::string resourcePath = filePath.substr(resStart, filePath.size() - resStart - 5);
+                std::string cacheKey = namespaceName + ":" + resourcePath;
 
-        }
-        // 处理 blockstate
-        else if (filePath.find("/blockstates/") != std::string::npos &&
-            filePath.size() > 5 &&
-            filePath.substr(filePath.size() - 5) == ".json")
-        {
-            size_t resStart = filePath.find("/blockstates/", nsEnd) + 13;
-            std::string resourcePath = filePath.substr(resStart, filePath.size() - resStart - 5);
-            std::string cacheKey = namespaceName + ":" + resourcePath;
-
-            if (blockstateCache.find(cacheKey) == blockstateCache.end()) {
-                std::string content = this->getFileContent(filePath);
-                if (!content.empty()) {
-                    try {
-                        blockstateCache.emplace(cacheKey, nlohmann::json::parse(content));
-                    }
-                    catch (const std::exception& e) {
-                        std::cerr << "Blockstate JSON Error: " << filePath << " - " << e.what() << std::endl;
-                    }
-                }
-            }
-        }
-        // 处理模型
-        else if (filePath.find("/models/") != std::string::npos &&
-            filePath.size() > 5 &&
-            filePath.substr(filePath.size() - 5) == ".json")
-        {
-            size_t resStart = filePath.find("/models/", nsEnd) + 8;
-
-            std::string modelPath = filePath.substr(resStart, filePath.size() - resStart - 5);
-            std::string cacheKey = namespaceName + ":" + modelPath;
-
-            if (modelCache.find(cacheKey) == modelCache.end()) {
-                std::string content = this->getFileContent(filePath);
-                if (!content.empty()) {
-                    try {
-                        modelCache.emplace(cacheKey, nlohmann::json::parse(content));
-                    }
-                    catch (const std::exception& e) {
-                        std::cerr << "Model JSON Error: " << filePath << " - " << e.what() << std::endl;
-                    }
-                }
-            }
-        }
-        // 处理 .mcmeta 文件(新增)
-        else if (filePath.find("/textures/") != std::string::npos &&
-            filePath.size() > 7 &&
-            filePath.substr(filePath.size() - 7) == ".mcmeta")
-        {
-            size_t metaStart = filePath.find("/textures/", nsEnd) + 10;
-            std::string metaPathWithExtension = filePath.substr(metaStart, filePath.size() - metaStart - 7);
-
-            // 去掉 .png 后缀
-            size_t pngPos = metaPathWithExtension.find(".png");
-            if (pngPos != std::string::npos) {
-                std::string metaPath = metaPathWithExtension.substr(0, pngPos);
-                std::string cacheKey = namespaceName + ":" + metaPath;
-
-                if (mcmetaCache.find(cacheKey) == mcmetaCache.end()) {
+                if (blockstateCache.find(cacheKey) == blockstateCache.end()) {
                     std::string content = this->getFileContent(filePath);
                     if (!content.empty()) {
                         try {
-                            mcmetaCache.emplace(cacheKey, nlohmann::json::parse(content));
-                        }
-                        catch (const std::exception& e) {
-                            std::cerr << ".mcmeta JSON Error: " << filePath << " - " << e.what() << std::endl;
+                            blockstateCache.emplace(cacheKey, nlohmann::json::parse(content));
+                        } catch (const std::exception& e) {
+                            std::cerr << "Blockstate JSON Error: " << filePath << " - " << e.what() << std::endl;
                         }
                     }
                 }
             }
-            else {
-                std::string metaPath = metaPathWithExtension;
-                std::string cacheKey = namespaceName + ":" + metaPath;
+            // 处理模型
+            else if (filePath.find("/models/") != std::string::npos &&
+                filePath.size() > 5 &&
+                filePath.substr(filePath.size() - 5) == ".json")
+            {
+                size_t resStart = filePath.find("/models/", nsEnd) + 8;
 
-                if (mcmetaCache.find(cacheKey) == mcmetaCache.end()) {
+                std::string modelPath = filePath.substr(resStart, filePath.size() - resStart - 5);
+                std::string cacheKey = namespaceName + ":" + modelPath;
+
+                if (modelCache.find(cacheKey) == modelCache.end()) {
                     std::string content = this->getFileContent(filePath);
                     if (!content.empty()) {
                         try {
-                            mcmetaCache.emplace(cacheKey, nlohmann::json::parse(content));
+                            modelCache.emplace(cacheKey, nlohmann::json::parse(content));
+                        } catch (const std::exception& e) {
+                            std::cerr << "Model JSON Error: " << filePath << " - " << e.what() << std::endl;
                         }
-                        catch (const std::exception& e) {
-                            std::cerr << ".mcmeta JSON Error: " << filePath << " - " << e.what() << std::endl;
+                    }
+                }
+            }
+            // 处理 .mcmeta 文件(新增)
+            else if (filePath.find("/textures/") != std::string::npos &&
+                filePath.size() > 7 &&
+                filePath.substr(filePath.size() - 7) == ".mcmeta")
+            {
+                size_t metaStart = filePath.find("/textures/", nsEnd) + 10;
+                std::string metaPathWithExtension = filePath.substr(metaStart, filePath.size() - metaStart - 7);
+
+                // 去掉 .png 后缀
+                size_t pngPos = metaPathWithExtension.find(".png");
+                if (pngPos != std::string::npos) {
+                    std::string metaPath = metaPathWithExtension.substr(0, pngPos);
+                    std::string cacheKey = namespaceName + ":" + metaPath;
+
+                    if (mcmetaCache.find(cacheKey) == mcmetaCache.end()) {
+                        std::string content = this->getFileContent(filePath);
+                        if (!content.empty()) {
+                            try {
+                                mcmetaCache.emplace(cacheKey, nlohmann::json::parse(content));
+                            } catch (const std::exception& e) {
+                                std::cerr << ".mcmeta JSON Error: " << filePath << " - " << e.what() << std::endl;
+                            }
+                        }
+                    }
+                }
+                else {
+                    std::string metaPath = metaPathWithExtension;
+                    std::string cacheKey = namespaceName + ":" + metaPath;
+
+                    if (mcmetaCache.find(cacheKey) == mcmetaCache.end()) {
+                        std::string content = this->getFileContent(filePath);
+                        if (!content.empty()) {
+                            try {
+                                mcmetaCache.emplace(cacheKey, nlohmann::json::parse(content));
+                            } catch (const std::exception& e) {
+                                std::cerr << ".mcmeta JSON Error: " << filePath << " - " << e.what() << std::endl;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // 处理 data/ 目录下的资源 (例如 biomes)
+        else if (filePath.find("data/") == 0) {
+            auto parts = splitPath(filePath);
+            // 验证路径结构:data/<namespace>/worldgen/biome/[...]/<name>.json
+            if (parts.size() >= 5 && parts[0] == "data" && parts[2] == "worldgen" && parts[3] == "biome") {
+                // 提取命名空间
+                std::string namespaceName = parts[1];
+
+                // 提取子路径并构建 biomeId (例如:cave/andesite_caves)
+                std::vector<std::string> biomeParts;
+                for (auto it = parts.begin() + 4; it != parts.end(); ++it) {
+                    if (it == parts.end() - 1) { // 处理文件名
+                        if ((*it).size() < 5 || (*it).substr((*it).size() - 5) != ".json")
+                            break;
+                        biomeParts.push_back((*it).substr(0, (*it).size() - 5));
+                    }
+                    else {
+                        biomeParts.push_back(*it);
+                    }
+                }
+                if (biomeParts.empty()) continue;
+
+                std::string biomeId;
+                for (size_t idx = 0; idx < biomeParts.size(); ++idx) {
+                    if (idx != 0) biomeId += "/";
+                    biomeId += biomeParts[idx];
+                }
+
+                std::string cacheKey = namespaceName + ":" + biomeId;
+
+                if (biomeCache.find(cacheKey) == biomeCache.end()) {
+                    // 读取并解析 JSON
+                    std::string content = getFileContent(filePath);
+                    if (!content.empty()) {
+                        try {
+                            biomeCache.emplace(cacheKey, nlohmann::json::parse(content));
+                        } catch (...) {
+                            std::cerr << "Invalid biome JSON: " << filePath << std::endl;
                         }
                     }
                 }
@@ -315,95 +353,6 @@ void JarReader::cacheAllResources(
     }
 }
 
-
-
-void JarReader::cacheAllBiomes(std::unordered_map<std::string, nlohmann::json>& cache) {
-    if (!zipFile) return;
-
-    zip_int64_t numEntries = zip_get_num_entries(zipFile, 0);
-    for (zip_int64_t i = 0; i < numEntries; ++i) {
-        const char* name = zip_get_name(zipFile, i, 0);
-        if (!name) continue;
-
-        std::string path(name);
-        auto parts = splitPath(path);
-
-        // 验证路径结构:data/<namespace>/worldgen/biome/[...]/<name>.json
-        if (parts.size() < 5) continue; // 至少包含 data/ns/worldgen/biome + 文件名
-        if (parts[0] != "data" || parts[2] != "worldgen" || parts[3] != "biome")
-            continue;
-
-        // 提取命名空间
-        std::string namespaceName = parts[1];
-
-        // 提取子路径并构建biomeId (例如:cave/andesite_caves)
-        std::vector<std::string> biomeParts;
-        for (auto it = parts.begin() + 4; it != parts.end(); ++it) {
-            if (it == parts.end() - 1) { // 处理文件名
-                if ((*it).size() < 5 || (*it).substr((*it).size() - 5) != ".json")
-                    break;
-                biomeParts.push_back((*it).substr(0, (*it).size() - 5));
-            }
-            else {
-                biomeParts.push_back(*it);
-            }
-        }
-        if (biomeParts.empty()) continue;
-
-        std::string biomeId;
-        for (size_t idx = 0; idx < biomeParts.size(); ++idx) {
-            if (idx != 0) biomeId += "/";
-            biomeId += biomeParts[idx];
-        }
-
-        std::string cacheKey = namespaceName + ":" + biomeId;
-
-        if (cache.find(cacheKey) != cache.end()) continue;
-
-        // 读取并解析JSON
-        std::string content = getFileContent(path);
-        if (!content.empty()) {
-            try {
-                cache.emplace(cacheKey, nlohmann::json::parse(content));
-            }
-            catch (...) {
-                std::cerr << "Invalid biome JSON: " << path << std::endl;
-            }
-        }
-    }
-}
-void JarReader::cacheAllColormaps(std::unordered_map<std::string, std::vector<unsigned char>>& cache) {
-    if (!zipFile) return;
-
-    zip_int64_t numEntries = zip_get_num_entries(zipFile, 0);
-    for (zip_int64_t i = 0; i < numEntries; ++i) {
-        const char* name = zip_get_name(zipFile, i, 0);
-        if (!name) continue;
-
-        std::string path(name);
-        auto parts = splitPath(path);
-
-        // 验证路径结构:assets/<namespace>/textures/colormap/<name>.png
-        if (parts.size() != 5) continue;
-        if (parts[0] != "assets") continue;
-        if (parts[2] != "textures" || parts[3] != "colormap") continue;
-        if (parts[4].size() < 4 || parts[4].substr(parts[4].size() - 4) != ".png") continue;
-
-        std::string namespaceName = parts[1];
-        std::string mapName = parts[4].substr(0, parts[4].size() - 4); // 移除.png后缀
-
-        std::string cacheKey = namespaceName + ":" + mapName;
-
-        // 防止重复处理
-        if (cache.find(cacheKey) != cache.end()) continue;
-
-        // 读取二进制数据
-        auto data = getBinaryFileContent(path);
-        if (!data.empty()) {
-            cache.emplace(cacheKey, std::move(data));
-        }
-    }
-}
 std::vector<std::string> JarReader::getFilesInSubDirectory(const std::string& subDir) {
     std::vector<std::string> filesInSubDir;
 
@@ -442,7 +391,7 @@ bool JarReader::isNeoForge() {
 
 std::string JarReader::getID() {
     if (!zipFile) {
-        std::cerr << "Error: Attempt to get ID from unopened jar file: " << convertWStrToStr(jarFilePath) << std::endl;
+        std::cerr << "Error: Attempt to get ID from unopened jar file: " << wstring_to_string(jarFilePath) << std::endl;
         return "";
     }
 
@@ -589,9 +538,9 @@ std::string JarReader::cleanUpContent(const std::string& content) {
 bool JarReader::open() {
     if (zipFile) return true;
     int error;
-    zipFile = zip_open(convertWStrToStr(jarFilePath).c_str(), 0, &error);
+    zipFile = zip_open(wstring_to_string(jarFilePath).c_str(), 0, &error);
     if (!zipFile) {
-        std::cerr << "Failed to open .jar file: " << convertWStrToStr(jarFilePath) << ", error code: " << error << std::endl;
+        std::cerr << "Failed to open .jar file: " << wstring_to_string(jarFilePath) << ", error code: " << error << std::endl;
         return false;
     }
 

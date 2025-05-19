@@ -212,7 +212,6 @@ void ModelDeduplicator::DeduplicateFaces(ModelData& data) {
     data.faces.swap(newFaces);
 }
 
-
 // Greedy mesh 算法:合并相邻同材质、相同方向的面以减少面数
 void ModelDeduplicator::GreedyMesh(ModelData& data) {
     if (data.faces.empty()) return;
@@ -1013,4 +1012,14 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     data.uvCoordinates = std::move(newData.uvCoordinates);
     data.faces = std::move(newData.faces);
     data.materials = std::move(newData.materials);
+}
+
+// 综合去重和优化方法
+void ModelDeduplicator::DeduplicateModel(ModelData& data) {
+    DeduplicateVertices(data);
+    DeduplicateUV(data);
+    DeduplicateFaces(data);
+    if (config.useGreedyMesh) {
+        GreedyMesh(data);
+    }
 }

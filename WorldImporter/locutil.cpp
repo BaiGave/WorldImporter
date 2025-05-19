@@ -49,3 +49,9 @@ void blockYToSectionY(int blockY, int& chunkY) {
 int AdjustSectionY(int SectionY) {
     return SectionY - 4;
 }
+
+// 函数实现: 将值对齐到16的倍数
+int alignTo16(int value) {
+    if (value % 16 == 0) return value;
+    return (value > 0) ? ((value + 15) / 16 * 16) : ((value - 15) / 16 * 16);
+}

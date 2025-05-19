@@ -21,6 +21,9 @@ public:
     //贪心网格算法
     static void GreedyMesh(ModelData& data);
 
+    // 综合去重和优化方法
+    static void DeduplicateModel(ModelData& data);
+
 };
 
 #endif // MODEL_DEDUPLICATOR_H

@@ -220,12 +220,14 @@ void InitializeAllCaches() {
                 
                 try {
                     // 读取所有资源类型并存入结果
-                    reader.cacheAllResources(taskResults[idx].localTextures,
+                    reader.cacheAllResources(
+                        taskResults[idx].localTextures,
                         taskResults[idx].localBlockstates,
                         taskResults[idx].localModels,
-                        taskResults[idx].localMcmetas);
-                    reader.cacheAllBiomes(taskResults[idx].localBiomes);
-                    reader.cacheAllColormaps(taskResults[idx].localColormaps);
+                        taskResults[idx].localMcmetas,
+                        taskResults[idx].localBiomes,
+                        taskResults[idx].localColormaps
+                    );
                 } catch (const std::exception& e) {
                     std::cerr << "Error processing jar file for " << currentModId 
                               << ": " << e.what() << std::endl;

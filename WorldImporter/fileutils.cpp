@@ -141,16 +141,25 @@ std::string wstring_to_string(const std::wstring& wstr) {
     if (wstr.empty()) return "";
     
     // 计算所需的缓冲区大小
-    int size_needed = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.size(), nullptr, 0, nullptr, nullptr);
-    if (size_needed <= 0) return "";
+    int buffer_size = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (buffer_size <= 0) {
+        std::cerr << "Error converting wstring to string: " << GetLastError() << std::endl;
+        return "";
+    }
     
     // 创建输出字符串
-    std::string result(size_needed, 0);
+    std::string str(buffer_size, 0);
+    if (WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &str[0], buffer_size, nullptr, nullptr) == 0) {
+        std::cerr << "Error executing WideCharToMultiByte: " << GetLastError() << std::endl;
+        return "";
+    }
     
-    // 执行转换
-    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.size(), &result[0], size_needed, nullptr, nullptr);
+    // 移除字符串末尾的空字符
+    if (!str.empty() && str.back() == 0) {
+        str.pop_back();
+    }
     
-    return result;
+    return str;
 }
 
 std::wstring string_to_wstring(const std::string& str) {

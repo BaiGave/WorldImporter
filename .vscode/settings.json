@@ -4,6 +4,7 @@
         "xstring": "cpp",
         "mutex": "cpp",
         "chrono": "cpp",
-        "vector": "cpp"
+        "vector": "cpp",
+        "unordered_map": "cpp"
     }
 }

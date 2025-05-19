@@ -389,6 +389,9 @@ extern std::vector<Block> globalBlockPalette;
 extern std::unordered_map<std::tuple<int, int, int>, SectionCacheEntry, triple_hash> sectionCache;
 extern std::unordered_map<std::pair<int, int>, std::unordered_map<std::string, std::vector<int>>, pair_hash> heightMapCache;
 
+// 高度图类型
+static const std::vector<std::string> mapTypes = {"MOTION_BLOCKING", "MOTION_BLOCKING_NO_LEAVES",   "OCEAN_FLOOR", "WORLD_SURFACE"};
+
 void LoadAndCacheBlockData(int chunkX, int chunkZ);
 
 void UpdateSkyLightNeighborFlags();

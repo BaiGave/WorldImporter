@@ -24,34 +24,6 @@ void RegionModelExporter::ExportModels(const string& outputName) {
     const int yStart = config.minY, yEnd = config.maxY;
     const int zStart = config.minZ, zEnd = config.maxZ;
 
-    // 计算LOD范围
-    const int L0 = config.LOD0renderDistance;
-    const int L1 = L0 + config.LOD1renderDistance;
-    const int L2 = L1 + config.LOD2renderDistance;
-    const int L3 = L2 + config.LOD3renderDistance;
-
-    // 区块对齐处理
-    auto alignTo16 = [](int value) {
-        if (value % 16 == 0) return value;
-        return (value > 0) ? ((value + 15) / 16 * 16) : ((value - 15) / 16 * 16);
-        };
-
-    // 处理分组模型导出
-    auto DeduplicateModel = [](ModelData& model) {
-        ModelDeduplicator::DeduplicateVertices(model);
-        ModelDeduplicator::DeduplicateUV(model);
-        ModelDeduplicator::DeduplicateFaces(model);
-        if(config.useGreedyMesh) {
-            ModelDeduplicator::GreedyMesh(model);
-        }
-    };
-
-    if (config.useChunkPrecision) {
-        config.minX = alignTo16(xStart); config.maxX = alignTo16(xEnd);
-        config.minY = alignTo16(yStart); config.maxY = alignTo16(yEnd);
-        config.minZ = alignTo16(zStart); config.maxZ = alignTo16(zEnd);
-    }
-
     // 计算区块坐标范围
     int chunkXStart, chunkXEnd, chunkZStart, chunkZEnd;
     blockToChunk(xStart, zStart, chunkXStart, chunkZStart);
@@ -61,21 +33,41 @@ void RegionModelExporter::ExportModels(const string& outputName) {
     blockYToSectionY(yStart, sectionYStart);
     blockYToSectionY(yEnd, sectionYEnd);
 
+    // 区块对齐处理
+    if (config.useChunkPrecision) {
+        config.minX = alignTo16(xStart); config.maxX = alignTo16(xEnd);
+        config.minY = alignTo16(yStart); config.maxY = alignTo16(yEnd);
+        config.minZ = alignTo16(zStart); config.maxZ = alignTo16(zEnd);
+    }
     // 自动计算LOD中心
     if (config.isLODAutoCenter) {
         config.LODCenterX = (chunkXStart + chunkXEnd) / 2;
         config.LODCenterZ = (chunkZStart + chunkZEnd) / 2;
     }
+
+    // 预先计算所有区块的LOD等级
+    // 扩大区块范围,使其比将要导入的区块大一圈 (与ChunkLoader一致)
+    int expandedChunkXStart = chunkXStart - 1;
+    int expandedChunkXEnd = chunkXEnd + 1;
+    int expandedChunkZStart = chunkZStart - 1;
+    int expandedChunkZEnd = chunkZEnd + 1;
+
     {
-        size_t effectiveXCount = (chunkXEnd - chunkXStart + 1) + 2;
-        size_t effectiveZCount = (chunkZEnd - chunkZStart + 1) + 2;
+        size_t effectiveXCount = (expandedChunkXEnd - expandedChunkXStart + 1);
+        size_t effectiveZCount = (expandedChunkZEnd - expandedChunkZStart + 1);
         size_t secCount = sectionYEnd - sectionYStart + 1;
-        g_chunkLODs.reserve(effectiveXCount * effectiveZCount * secCount);
+        g_chunkSectionInfoMap.reserve(effectiveXCount * effectiveZCount * secCount);
     }
 
-    // 加载区块数据
-    ChunkLoader::LoadChunks(chunkXStart, chunkXEnd, chunkZStart, chunkZEnd,
-        sectionYStart, sectionYEnd, L0, L1, L2, L3);
+
+    // 预先计算所有区块的LOD等级
+    ChunkLoader::CalculateChunkLODs(expandedChunkXStart, expandedChunkXEnd, expandedChunkZStart, expandedChunkZEnd,
+        sectionYStart, sectionYEnd);
+
+    // 加载区块数据 (使用扩展后的范围)
+    ChunkLoader::LoadChunks(expandedChunkXStart, expandedChunkXEnd, expandedChunkZStart, expandedChunkZEnd,
+        sectionYStart, sectionYEnd);
+
 
     UpdateSkyLightNeighborFlags();
     ProcessBlockstateForBlocks(GetGlobalBlockPalette());
@@ -86,9 +78,9 @@ void RegionModelExporter::ExportModels(const string& outputName) {
     ModelData finalMergedModel;
     std::unordered_map<string, string> uniqueMaterials;
 
-    // 生成区块组
+    // 生成区块组 (使用原始范围，因为GenerateChunkGroups内部会从g_chunkLODs读取)
     const auto chunkGroups = ChunkGroupAllocator::GenerateChunkGroups(chunkXStart, chunkXEnd, chunkZStart, chunkZEnd,
-        sectionYStart, sectionYEnd, L0, L1, L2, L3);
+        sectionYStart, sectionYEnd);
 
     auto processModel = [](const ChunkTask& task) -> ModelData {
         // 如果 LOD0renderDistance 为 0 且是普通区块,跳过生成
@@ -159,7 +151,7 @@ void RegionModelExporter::ExportModels(const string& outputName) {
                     if (config.exportFullModel) {
                         mergeToFinalModel(std::move(groupModel));
                     } else {
-                        DeduplicateModel(groupModel);
+                        ModelDeduplicator::DeduplicateModel(groupModel);
                         const string groupFileName = outputName +
                             "_x" + to_string(group.startX) +
                             "_z" + to_string(group.startZ);
@@ -176,7 +168,7 @@ void RegionModelExporter::ExportModels(const string& outputName) {
 
     // 最终导出处理
     if (config.exportFullModel && !finalMergedModel.vertices.empty()) {
-        DeduplicateModel(finalMergedModel);
+        ModelDeduplicator::DeduplicateModel(finalMergedModel);
         CreateModelFiles(finalMergedModel, outputName);
     }
     else if (!uniqueMaterials.empty()) {

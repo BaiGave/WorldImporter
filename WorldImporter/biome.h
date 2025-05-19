@@ -59,15 +59,10 @@ public:
 
     static int GetBiomeColor(int blockX, int blockY, int blockZ, BiomeColorType colorType);
 
-    // 打印所有已注册群系
-    static void PrintAllRegisteredBiomes();
-
     static std::vector<std::vector<int>> GenerateBiomeMap(int minX, int minZ, int maxX, int maxZ);
 
     static void ExportAllToPNG(int minX, int minZ, int maxX, int maxZ);
-    static bool ExportToPNG(const std::vector<std::vector<int>>& biomeColorMap,
-        const std::string& filename,
-        BiomeColorType colorType);
+    static bool ExportToPNG(const std::vector<std::vector<int>>& biomeColorMap,const std::string& filename,BiomeColorType colorType);
 
     static nlohmann::json GetBiomeJson(const std::string& namespaceName, const std::string& biomeId);
 
@@ -78,14 +73,7 @@ public:
 private:
     static std::unordered_map<std::string, BiomeInfo> biomeRegistry;
     static std::shared_mutex registryMutex; // 改用读写锁
-    static int ParseColorWithFallback(nlohmann::json& effects,
-        const std::string& colorKey,
-        const std::string& colormapType, float Temperature, float Downfall,
-        float tempModifier = 1.0f,
-        float downfallModifier = 1.0f);
-    static int CalculateColorFromColormap(const std::string& filePath,
-        float temperature,
-        float downfall);
+    static int CalculateColorFromColormap(const std::string& filePath,float temperature,float downfall);
     static BiomeColors ParseBiomeColors(const nlohmann::json& biomeJson);
 
 

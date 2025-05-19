@@ -17,7 +17,7 @@
 using namespace std;
 using namespace std::chrono;
 
-std::unordered_map<std::tuple<int, int, int>, float, TupleHash> g_chunkLODs;
+std::unordered_map<std::tuple<int, int, int>, ChunkSectionInfo, TupleHash> g_chunkSectionInfoMap;
 // 缓存方块ID到颜色的映射
 std::unordered_map<std::string, std::string> blockColorCache;
 
@@ -162,8 +162,7 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
     if (hasTintIndex) {
         float textureR, textureG, textureB;
         sscanf(textureAverage.c_str(), "%f %f %f", &textureR, &textureG, &textureB);
-        uint32_t hexColor = Biome::GetBiomeColor(x, y, z,
-            tintIndexValue == 2 ? BiomeColorType::Water : BiomeColorType::Foliage);
+        uint32_t hexColor = Biome::GetBiomeColor(x, y, z,tintIndexValue == 2 ? BiomeColorType::Water : BiomeColorType::Foliage);
         float biomeR = ((hexColor >> 16) & 0xFF) / 255.0f;
         float biomeG = ((hexColor >> 8) & 0xFF) / 255.0f;
         float biomeB = (hexColor & 0xFF) / 255.0f;
@@ -197,10 +196,11 @@ float LODManager::GetChunkLODAtBlock(int x, int y, int z) {
     blockToChunk(x, z, chunkX, chunkZ);
     blockYToSectionY(y, sectionY);
     auto key = std::make_tuple(chunkX, sectionY, chunkZ);
-    if (g_chunkLODs.find(key) != g_chunkLODs.end()) {
-        return g_chunkLODs[key];
+    auto it = g_chunkSectionInfoMap.find(key);
+    if (it != g_chunkSectionInfoMap.end()) {
+        return it->second.lodLevel;
     }
-    return 1.0f; // 默认使用高精度
+    return 1.0f; // 默认使用高精度, 或者可以考虑返回一个表示未找到的特殊值
 }
 
 BlockType GetBlockType(int x, int y, int z) {

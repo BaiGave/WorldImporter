@@ -23,5 +23,7 @@ void blockYToSectionY(int blockY, int& chunkY);
 
 int AdjustSectionY(int SectionY);
 
+// 函数声明: 将值对齐到16的倍数
+int alignTo16(int value);
 
 #endif // COORD_CONVERSION_H

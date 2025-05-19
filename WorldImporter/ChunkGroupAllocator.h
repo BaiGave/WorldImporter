@@ -22,9 +22,7 @@ namespace ChunkGroupAllocator {
     std::vector<ChunkGroup> GenerateChunkGroups(
         int chunkXStart, int chunkXEnd,
         int chunkZStart, int chunkZEnd,
-        int sectionYStart, int sectionYEnd,
-        int LOD0distance, int LOD1distance,
-        int LOD2distance, int LOD3distance
+        int sectionYStart, int sectionYEnd
     );
 
-} 
+}

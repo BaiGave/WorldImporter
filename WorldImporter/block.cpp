@@ -46,6 +46,7 @@ std::unordered_map<std::pair<int, int>, std::unordered_map<std::string, std::vec
 
 std::vector<Block> globalBlockPalette;
 
+
 // 添加静态邻居偏移数组,避免重复构造
 static const std::array<std::tuple<int, int, int>, 6> kSectionNeighborOffsets = { {
     {1, 0, 0}, {-1, 0, 0},
@@ -475,11 +476,6 @@ void LoadAndCacheBlockData(int chunkX, int chunkZ) {
     // 处理高度图
     auto heightMapsTag = getChildByName(tag, "Heightmaps");
     if (heightMapsTag && heightMapsTag->type == TagType::COMPOUND) {
-        std::vector<std::string> mapTypes = {
-            "MOTION_BLOCKING", "MOTION_BLOCKING_NO_LEAVES",
-            "OCEAN_FLOOR", "WORLD_SURFACE"
-        };
-
         for (const auto& mapType : mapTypes) {
             auto mapDataTag = getChildByName(heightMapsTag, mapType);
             if (mapDataTag && mapDataTag->type == TagType::LONG_ARRAY) {

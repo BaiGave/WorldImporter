@@ -16,10 +16,7 @@
 std::unordered_map<std::string, BiomeInfo> Biome::biomeRegistry;
 std::shared_mutex Biome::registryMutex;
 
-bool SaveColormapToFile(const std::vector<unsigned char>& pixelData,
-    const std::string& namespaceName,
-    const std::string& colormapName,
-    std::string& savePath) {
+bool SaveColormapToFile(const std::vector<unsigned char>& pixelData,const std::string& namespaceName,const std::string& colormapName,std::string& savePath) {
     // 检查是否找到了纹理数据
     if (!pixelData.empty()) {
 
@@ -105,7 +102,6 @@ int GetBiomeId(int blockX, int blockY, int blockZ) {
     return (index < biomeData.size()) ? biomeData[index] : 0;
 }
 
-
 nlohmann::json Biome::GetBiomeJson(const std::string& namespaceName, const std::string& biomeId) {
     std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
 
@@ -147,35 +143,6 @@ std::string Biome::GetColormapData(const std::string& namespaceName, const std::
     return "";
 }
 
-std::vector<std::vector<int>> Biome::GenerateBiomeMap(int minX, int minZ, int maxX, int maxZ) {
-    std::vector<std::vector<int>> biomeMap;
-    int width = maxX - minX + 1;
-    int height = maxZ - minZ + 1;
-
-    biomeMap.resize(height, std::vector<int>(width));
-
-    for (int x = minX; x <= maxX; ++x) {
-        for (int z = minZ; z <= maxZ; ++z) {
-            int currentY = GetHeightMapY(x, z, "MOTION_BLOCKING");
-            int biomeId = GetBiomeId(x, currentY, z);
-            biomeMap[z - minZ][x - minX] = biomeId; // 修正坐标映射
-        }
-    }
-    return biomeMap;
-}
-
-void Biome::ExportAllToPNG(int minX, int minZ, int maxX, int maxZ) {
-    auto biomeMap = GenerateBiomeMap(minX, minZ, maxX, maxZ);
-    // 导出图片
-    Biome::ExportToPNG(biomeMap, "foliage.png", BiomeColorType::Foliage);
-    Biome::ExportToPNG(biomeMap, "dry_foliage.png", BiomeColorType::DryFoliage);
-    Biome::ExportToPNG(biomeMap, "water.png", BiomeColorType::Water);
-    Biome::ExportToPNG(biomeMap, "grass.png", BiomeColorType::Grass);
-    Biome::ExportToPNG(biomeMap, "waterFog.png", BiomeColorType::WaterFog);
-    Biome::ExportToPNG(biomeMap, "fog.png", BiomeColorType::Fog);
-    Biome::ExportToPNG(biomeMap, "sky.png", BiomeColorType::Sky);
-}
-
 BiomeColors Biome::ParseBiomeColors(const nlohmann::json& biomeJson) {
     BiomeColors colors;
 
@@ -187,9 +154,7 @@ BiomeColors Biome::ParseBiomeColors(const nlohmann::json& biomeJson) {
             if (directColor != -1) return directColor;
 
             auto colormap = GetColormapData("minecraft", colormapType);
-            return CalculateColorFromColormap(colormap,
-                colors.adjTemperature * tempMod,
-                colors.adjDownfall * downfallMod);
+            return CalculateColorFromColormap(colormap,colors.adjTemperature * tempMod,colors.adjDownfall * downfallMod);
         };
 
 
@@ -245,7 +210,6 @@ BiomeColors Biome::ParseBiomeColors(const nlohmann::json& biomeJson) {
 
     return colors;
 }
-
 
 int Biome::GetId(const std::string& fullName) {
     std::unique_lock<std::shared_mutex> lock(registryMutex);
@@ -406,28 +370,7 @@ int Biome::GetBiomeColor(int blockX, int blockY, int blockZ, BiomeColorType colo
 }
 
 
-// 新增辅助函数处理颜色逻辑
-int Biome::ParseColorWithFallback(nlohmann::json& effects,
-    const std::string& colorKey,
-    const std::string& colormapType, float Temperature, float Downfall,
-    float tempModifier,
-    float downfallModifier)
-{
-    if (effects.contains(colorKey)) {
-        return effects[colorKey].get<int>();
-    }
-
-    // 若JSON中无颜色,立即计算并缓存
-    auto colormap = Biome::GetColormapData("minecraft", colormapType);
-    return CalculateColorFromColormap(colormap,
-        Temperature * tempModifier,
-        Downfall * downfallModifier);
-}
-
-
-int Biome::CalculateColorFromColormap(const std::string& filePath,
-    float adjTemperature,
-    float adjDownfall) {
+int Biome::CalculateColorFromColormap(const std::string& filePath,float adjTemperature,float adjDownfall) {
     if (filePath.empty()) {
         return 0x00FF00; // 错误颜色
     }
@@ -506,11 +449,37 @@ int Biome::CalculateColorFromColormap(const std::string& filePath,
 }
 
 
+std::vector<std::vector<int>> Biome::GenerateBiomeMap(int minX, int minZ, int maxX, int maxZ) {
+    std::vector<std::vector<int>> biomeMap;
+    int width = maxX - minX + 1;
+    int height = maxZ - minZ + 1;
+
+    biomeMap.resize(height, std::vector<int>(width));
+
+    for (int x = minX; x <= maxX; ++x) {
+        for (int z = minZ; z <= maxZ; ++z) {
+            int currentY = GetHeightMapY(x, z, "MOTION_BLOCKING");
+            int biomeId = GetBiomeId(x, currentY, z);
+            biomeMap[z - minZ][x - minX] = biomeId; // 修正坐标映射
+        }
+    }
+    return biomeMap;
+}
 
 
-bool Biome::ExportToPNG(const std::vector<std::vector<int>>& biomeMap,
-    const std::string& filename,
-    BiomeColorType colorType)
+void Biome::ExportAllToPNG(int minX, int minZ, int maxX, int maxZ) {
+    auto biomeMap = GenerateBiomeMap(minX, minZ, maxX, maxZ);
+    // 导出图片
+    Biome::ExportToPNG(biomeMap, "foliage.png", BiomeColorType::Foliage);
+    Biome::ExportToPNG(biomeMap, "dry_foliage.png", BiomeColorType::DryFoliage);
+    Biome::ExportToPNG(biomeMap, "water.png", BiomeColorType::Water);
+    Biome::ExportToPNG(biomeMap, "grass.png", BiomeColorType::Grass);
+    Biome::ExportToPNG(biomeMap, "waterFog.png", BiomeColorType::WaterFog);
+    Biome::ExportToPNG(biomeMap, "fog.png", BiomeColorType::Fog);
+    Biome::ExportToPNG(biomeMap, "sky.png", BiomeColorType::Sky);
+}
+
+bool Biome::ExportToPNG(const std::vector<std::vector<int>>& biomeMap,const std::string& filename,BiomeColorType colorType)
 {
     // 生成颜色映射
     std::map<int, std::tuple<uint8_t, uint8_t, uint8_t>> colorMap;

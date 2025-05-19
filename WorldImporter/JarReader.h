@@ -21,11 +21,14 @@ public:
         Mod
     };
 
-    void cacheAllResources(
-        std::unordered_map<std::string, std::vector<unsigned char>>& textureCache,
-        std::unordered_map<std::string, nlohmann::json>& blockstateCache,
-        std::unordered_map<std::string, nlohmann::json>& modelCache,
-        std::unordered_map<std::string, nlohmann::json>& mcmetaCache);
+	void cacheAllResources(
+		std::unordered_map<std::string, std::vector<unsigned char>>& textureCache,
+		std::unordered_map<std::string, nlohmann::json>& blockstateCache,
+		std::unordered_map<std::string, nlohmann::json>& modelCache,
+		std::unordered_map<std::string, nlohmann::json>& mcmetaCache,
+		std::unordered_map<std::string, nlohmann::json>& biomeCache,
+		std::unordered_map<std::string, std::vector<unsigned char>>& colormapCache);
+
     // 构造函数,接受 .jar 文件路径
     JarReader(const std::wstring& jarFilePath);
 
@@ -40,10 +43,6 @@ public:
 
     // 获取 .jar 文件中指定路径的文件内容(二进制)
     std::vector<unsigned char> getBinaryFileContent(const std::string& filePathInJar);
-
-    void cacheAllBiomes(std::unordered_map<std::string, nlohmann::json>& cache);
-
-    void cacheAllColormaps(std::unordered_map<std::string, std::vector<unsigned char>>& cache);
 
     // 获取 .jar 文件中指定子目录下的所有文件
     std::vector<std::string> getFilesInSubDirectory(const std::string& subDir);
