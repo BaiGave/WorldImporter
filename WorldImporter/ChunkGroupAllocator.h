@@ -19,7 +19,9 @@ struct ChunkGroup {
 
 namespace ChunkGroupAllocator {
 
-    std::vector<ChunkGroup> GenerateChunkGroups(
+    extern std::vector<ChunkGroup> g_chunkGroups;
+
+    void GenerateChunkGroups(
         int chunkXStart, int chunkXEnd,
         int chunkZStart, int chunkZEnd,
         int sectionYStart, int sectionYEnd

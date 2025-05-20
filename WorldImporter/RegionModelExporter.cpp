@@ -24,26 +24,15 @@ void RegionModelExporter::ExportModels(const string& outputName) {
     const int yStart = config.minY, yEnd = config.maxY;
     const int zStart = config.minZ, zEnd = config.maxZ;
 
-    // 计算区块坐标范围
-    int chunkXStart, chunkXEnd, chunkZStart, chunkZEnd;
-    blockToChunk(xStart, zStart, chunkXStart, chunkZStart);
-    blockToChunk(xEnd, zEnd, chunkXEnd, chunkZEnd);
+    // 使用 Config 中存储的区块和 Section 坐标范围
+    const int chunkXStart = config.chunkXStart;
+    const int chunkXEnd = config.chunkXEnd;
+    const int chunkZStart = config.chunkZStart;
+    const int chunkZEnd = config.chunkZEnd;
 
-    int sectionYStart, sectionYEnd;
-    blockYToSectionY(yStart, sectionYStart);
-    blockYToSectionY(yEnd, sectionYEnd);
+    const int sectionYStart = config.sectionYStart;
+    const int sectionYEnd = config.sectionYEnd;
 
-    // 区块对齐处理
-    if (config.useChunkPrecision) {
-        config.minX = alignTo16(xStart); config.maxX = alignTo16(xEnd);
-        config.minY = alignTo16(yStart); config.maxY = alignTo16(yEnd);
-        config.minZ = alignTo16(zStart); config.maxZ = alignTo16(zEnd);
-    }
-    // 自动计算LOD中心
-    if (config.isLODAutoCenter) {
-        config.LODCenterX = (chunkXStart + chunkXEnd) / 2;
-        config.LODCenterZ = (chunkZStart + chunkZEnd) / 2;
-    }
 
     // 预先计算所有区块的LOD等级
     // 扩大区块范围,使其比将要导入的区块大一圈 (与ChunkLoader一致)
@@ -52,36 +41,35 @@ void RegionModelExporter::ExportModels(const string& outputName) {
     int expandedChunkZStart = chunkZStart - 1;
     int expandedChunkZEnd = chunkZEnd + 1;
 
-    {
-        size_t effectiveXCount = (expandedChunkXEnd - expandedChunkXStart + 1);
-        size_t effectiveZCount = (expandedChunkZEnd - expandedChunkZStart + 1);
-        size_t secCount = sectionYEnd - sectionYStart + 1;
-        g_chunkSectionInfoMap.reserve(effectiveXCount * effectiveZCount * secCount);
-    }
-
 
     // 预先计算所有区块的LOD等级
     ChunkLoader::CalculateChunkLODs(expandedChunkXStart, expandedChunkXEnd, expandedChunkZStart, expandedChunkZEnd,
         sectionYStart, sectionYEnd);
+    // 生成区块组 (使用原始范围，因为GenerateChunkGroups内部会从g_chunkLODs读取)
+    ChunkGroupAllocator::GenerateChunkGroups(chunkXStart, chunkXEnd, chunkZStart, chunkZEnd, sectionYStart, sectionYEnd);
 
     // 加载区块数据 (使用扩展后的范围)
     ChunkLoader::LoadChunks(expandedChunkXStart, expandedChunkXEnd, expandedChunkZStart, expandedChunkZEnd,
         sectionYStart, sectionYEnd);
 
+    
 
-    UpdateSkyLightNeighborFlags();
     ProcessBlockstateForBlocks(GetGlobalBlockPalette());
 
-    Biome::ExportAllToPNG(xStart, zStart, xEnd, zEnd);
+    // 初始化生物群系地图尺寸
+    Biome::InitializeBiomeMap(xStart, zStart, xEnd, zEnd);
+
+    // 用于跟踪已处理的区块，避免重复生成生物群系数据
+    std::unordered_set<std::pair<int, int>, pair_hash> processedBiomeChunks;
+    std::mutex biomeMutex;
+
+    
 
     // 模型处理阶段
     ModelData finalMergedModel;
     std::unordered_map<string, string> uniqueMaterials;
 
-    // 生成区块组 (使用原始范围，因为GenerateChunkGroups内部会从g_chunkLODs读取)
-    const auto chunkGroups = ChunkGroupAllocator::GenerateChunkGroups(chunkXStart, chunkXEnd, chunkZStart, chunkZEnd,
-        sectionYStart, sectionYEnd);
-
+    
     auto processModel = [](const ChunkTask& task) -> ModelData {
         // 如果 LOD0renderDistance 为 0 且是普通区块,跳过生成
         if (config.LOD0renderDistance == 0 && task.lodLevel == 0.0f) {
@@ -126,8 +114,8 @@ void RegionModelExporter::ExportModels(const string& outputName) {
             threads.emplace_back([&]() {
                 while (true) {
                     size_t idx = groupIndex.fetch_add(1);
-                    if (idx >= chunkGroups.size()) break;
-                    const auto& group = chunkGroups[idx];
+                    if (idx >= ChunkGroupAllocator::g_chunkGroups.size()) break;
+                    const auto& group = ChunkGroupAllocator::g_chunkGroups[idx];
                     ModelData groupModel;
                     groupModel.vertices.reserve(4096 * group.tasks.size());
                     groupModel.faces.reserve(8192 * group.tasks.size());
@@ -136,6 +124,22 @@ void RegionModelExporter::ExportModels(const string& outputName) {
 
                     // 合并组内所有区块模型
                     for (const auto& task : group.tasks) {
+                        // 为当前区块生成生物群系地图数据 (如果尚未生成)
+                        std::pair<int, int> chunkKey = {task.chunkX, task.chunkZ};
+                        {
+                            std::lock_guard<std::mutex> lock(biomeMutex);
+                            if (processedBiomeChunks.find(chunkKey) == processedBiomeChunks.end()) {
+                                // 计算当前区块的方块坐标范围
+                                int blockXStart = task.chunkX * 16;
+                                int blockXEnd = blockXStart + 15;
+                                int blockZStart = task.chunkZ * 16;
+                                int blockZEnd = blockZStart + 15;
+                                // 生成该区块的生物群系地图数据
+                                Biome::GenerateBiomeMap(blockXStart, blockZStart, blockXEnd, blockZEnd);
+                                processedBiomeChunks.insert(chunkKey);
+                            }
+                        }
+
                         ModelData chunkModel;
                             chunkModel.vertices.reserve(4096);
                             chunkModel.faces.reserve(8192);
@@ -165,14 +169,21 @@ void RegionModelExporter::ExportModels(const string& outputName) {
             if (t.joinable()) t.join();
         }
     }
-
+    // 导出不同类型的生物群系颜色图片
+    Biome::ExportToPNG("foliage.png", BiomeColorType::Foliage);
+    Biome::ExportToPNG("dry_foliage.png", BiomeColorType::DryFoliage);
+    Biome::ExportToPNG("water.png", BiomeColorType::Water);
+    Biome::ExportToPNG("grass.png", BiomeColorType::Grass);
+    Biome::ExportToPNG("waterFog.png", BiomeColorType::WaterFog);
+    Biome::ExportToPNG("fog.png", BiomeColorType::Fog);
+    Biome::ExportToPNG("sky.png", BiomeColorType::Sky);
     // 最终导出处理
     if (config.exportFullModel && !finalMergedModel.vertices.empty()) {
         ModelDeduplicator::DeduplicateModel(finalMergedModel);
         CreateModelFiles(finalMergedModel, outputName);
     }
     else if (!uniqueMaterials.empty()) {
-        createSharedMtlFile(uniqueMaterials, outputName);
+        CreateSharedMtlFile(uniqueMaterials, outputName);
     }
 }
 

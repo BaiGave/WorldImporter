@@ -113,9 +113,6 @@
     <ClCompile Include="ModelDeduplicator.cpp">
       <Filter>源文件\Exporter</Filter>
     </ClCompile>
-    <ClCompile Include="PointCloudExporter.cpp">
-      <Filter>源文件\Exporter</Filter>
-    </ClCompile>
     <ClCompile Include="RegionModelExporter.cpp">
       <Filter>源文件\Exporter</Filter>
     </ClCompile>
@@ -201,9 +198,6 @@
       <Filter>头文件\Exporter</Filter>
     </ClInclude>
     <ClInclude Include="ObjExporter.h">
-      <Filter>头文件\Exporter</Filter>
-    </ClInclude>
-    <ClInclude Include="PointCloudExporter.h">
       <Filter>头文件\Exporter</Filter>
     </ClInclude>
     <ClInclude Include="RegionModelExporter.h">

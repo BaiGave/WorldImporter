@@ -165,7 +165,6 @@
     <ClCompile Include="ModelDeduplicator.cpp" />
     <ClCompile Include="nbtutils.cpp" />
     <ClCompile Include="ObjExporter.cpp" />
-    <ClCompile Include="PointCloudExporter.cpp" />
     <ClCompile Include="RegionModelExporter.cpp" />
     <ClCompile Include="texture.cpp" />
   </ItemGroup>
@@ -194,7 +193,6 @@
     <ClInclude Include="ModelDeduplicator.h" />
     <ClInclude Include="nbtutils.h" />
     <ClInclude Include="ObjExporter.h" />
-    <ClInclude Include="PointCloudExporter.h" />
     <ClInclude Include="RegionModelExporter.h" />
     <ClInclude Include="texture.h" />
   </ItemGroup>

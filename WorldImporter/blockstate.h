@@ -34,37 +34,20 @@ extern std::unordered_map<std::string,
 
 bool matchConditions(const std::unordered_map<std::string, std::string>& blockConditions, const nlohmann::json& when);
 
-std::vector<std::string> SplitString(const std::string& input, char delimiter);
-
 std::string SortedVariantKey(const std::string& key);
 
 // --------------------------------------------------------------------------------
 // 核心函数声明
 // --------------------------------------------------------------------------------
-std::unordered_map<std::string, ModelData> ProcessBlockstateJson(
-    const std::string& namespaceName,
-    const std::vector<std::string>& blockIds
-);
-void LoadBlockstateJson(
-    const std::string& namespaceName,
-    const std::vector<std::string>& blockIds
-);
+void ProcessBlockstate(const std::string& namespaceName,const std::vector<std::string>& blockIds);
 
 void ProcessBlockstateForBlocks(const std::vector<Block>& blocks);
+
 // 获取方块状态 JSON 文件内容
-nlohmann::json GetBlockstateJson(
-    const std::string& namespaceName,
-    const std::string& blockId
-);
+nlohmann::json GetBlockstateJson(const std::string& namespaceName,const std::string& blockId);
+
 ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::string& blockId);
 
-// 根据指定索引获取模型，而非随机
-ModelData GetModelFromCacheByIndex(const std::string& namespaceName, const std::string& blockId, int modelIndex);
 
-// 获取指定方块可用的模型数量
-int GetAvailableModelCount(const std::string& namespaceName, const std::string& blockId);
-
-// 处理所有方块状态变种并合并模型
-void ProcessAllBlockstateVariants();
 
 #endif // BLOCKSTATE_H

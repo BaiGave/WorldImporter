@@ -31,6 +31,8 @@ struct Config {
     std::string solidBlocksFile;  // 固体方块列表文件路径
     std::string fluidsFile; //流体列表文件路径
     int minX, minY, minZ, maxX, maxY, maxZ; // 坐标范围
+    int chunkXStart, chunkXEnd, chunkZStart, chunkZEnd; // 区块坐标范围
+    int sectionYStart, sectionYEnd; // Section 坐标范围
     int status; // 运行状态
     
     bool useChunkPrecision; //使用区块精度导出

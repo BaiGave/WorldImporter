@@ -387,7 +387,7 @@ void createObjFile(const ModelData& data, const std::string& objName, const std:
     }
 }
 
-void createSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMaterials, const std::string& mtlFileName) {
+void CreateSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMaterials, const std::string& mtlFileName) {
     std::string exeDir = getExecutableDir();
     std::string fullMtlPath = exeDir + mtlFileName + ".mtl";
 

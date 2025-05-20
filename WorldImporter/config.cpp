@@ -1,4 +1,5 @@
 #include "config.h" 
+#include "locutil.h"
 #include <locale>
 #include <fstream>
 #include <sstream>
@@ -53,5 +54,22 @@ Config LoadConfig(const std::string& configFile) {
 
     config.exportFullModel = j["exportFullModel"];
     config.partitionSize = j["partitionSize"];
+
+    // 区块对齐处理
+    if (config.useChunkPrecision) {
+        config.minX = alignTo16(config.minX); config.maxX = alignTo16(config.maxX);
+        config.minY = alignTo16(config.minY); config.maxY = alignTo16(config.maxY);
+        config.minZ = alignTo16(config.minZ); config.maxZ = alignTo16(config.maxZ);
+    }
+
+    blockToChunk(config.minX, config.minZ, config.chunkXStart, config.chunkZStart);
+    blockToChunk(config.maxX, config.maxZ, config.chunkXEnd, config.chunkZEnd);
+    blockYToSectionY(config.minY, config.sectionYStart);
+    blockYToSectionY(config.maxY, config.sectionYEnd);
+    // 自动计算LOD中心
+    if (config.isLODAutoCenter) {
+        config.LODCenterX = (config.chunkXStart + config.chunkXEnd) / 2;
+        config.LODCenterZ = (config.chunkZStart + config.chunkZEnd) / 2;
+    }
     return config;
 }

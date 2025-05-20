@@ -50,7 +50,15 @@ struct BiomeInfo {
     mutable std::mutex colorMutex;
 };
 
+    // 全局生物群系地图数据
+    static std::vector<std::vector<int>> g_biomeMap;
+    extern int g_biomeMapMinX;
+    extern int g_biomeMapMinZ;
+
 class Biome {
+public:
+    // 初始化生物群系地图尺寸
+    static void InitializeBiomeMap(int minX, int minZ, int maxX, int maxZ);
 public:
     // 获取或注册群系ID(线程安全)
     static int GetId(const std::string& fullName);
@@ -59,10 +67,9 @@ public:
 
     static int GetBiomeColor(int blockX, int blockY, int blockZ, BiomeColorType colorType);
 
-    static std::vector<std::vector<int>> GenerateBiomeMap(int minX, int minZ, int maxX, int maxZ);
+    static void GenerateBiomeMap(int minX, int minZ, int maxX, int maxZ);
 
-    static void ExportAllToPNG(int minX, int minZ, int maxX, int maxZ);
-    static bool ExportToPNG(const std::vector<std::vector<int>>& biomeColorMap,const std::string& filename,BiomeColorType colorType);
+    static bool ExportToPNG(const std::string& filename, BiomeColorType colorType);
 
     static nlohmann::json GetBiomeJson(const std::string& namespaceName, const std::string& biomeId);
 

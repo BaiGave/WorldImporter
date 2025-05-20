@@ -6,16 +6,18 @@
 
 namespace ChunkGroupAllocator {
 
-    std::vector<ChunkGroup> GenerateChunkGroups(
+    std::vector<ChunkGroup> g_chunkGroups; // 定义全局变量
+
+    void GenerateChunkGroups(
         int chunkXStart, int chunkXEnd,
         int chunkZStart, int chunkZEnd,
         int sectionYStart, int sectionYEnd)
     {
-        std::vector<ChunkGroup> chunkGroups;
+        g_chunkGroups.clear(); // 清空之前的分组
         int partitionSize = config.partitionSize;
         int groupsX = ((chunkXEnd - chunkXStart) / partitionSize) + 1;
         int groupsZ = ((chunkZEnd - chunkZStart) / partitionSize) + 1;
-        chunkGroups.reserve(groupsX * groupsZ);
+        g_chunkGroups.reserve(groupsX * groupsZ);
         for (int groupX = chunkXStart; groupX <= chunkXEnd; groupX += partitionSize) {
             int currentGroupXEnd = groupX + partitionSize - 1;
             if (currentGroupXEnd > chunkXEnd) currentGroupXEnd = chunkXEnd;
@@ -57,11 +59,9 @@ namespace ChunkGroupAllocator {
                     }
                 }
 
-                chunkGroups.push_back(newGroup);
+                g_chunkGroups.push_back(newGroup);
             }
         }
-
-        return chunkGroups;
     }
 
 } // namespace ChunkGroupAllocator

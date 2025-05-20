@@ -71,7 +71,6 @@ bool SaveColormapToFile(const std::vector<unsigned char>& pixelData,const std::s
     }
 }
 
-
 int GetBiomeId(int blockX, int blockY, int blockZ) {
     // 将世界坐标转换为区块坐标
     int chunkX, chunkZ;
@@ -448,38 +447,48 @@ int Biome::CalculateColorFromColormap(const std::string& filePath,float adjTempe
     return (r << 16) | (g << 8) | b;
 }
 
+// 添加全局地图的最小X和最小Z坐标，用于计算偏移量
+int g_biomeMapMinX = 0;
+int g_biomeMapMinZ = 0;
 
-std::vector<std::vector<int>> Biome::GenerateBiomeMap(int minX, int minZ, int maxX, int maxZ) {
-    std::vector<std::vector<int>> biomeMap;
+// 初始化生物群系地图尺寸和偏移量
+void Biome::InitializeBiomeMap(int minX, int minZ, int maxX, int maxZ) {
     int width = maxX - minX + 1;
     int height = maxZ - minZ + 1;
+    g_biomeMap.resize(height, std::vector<int>(width));
+    g_biomeMapMinX = minX;
+    g_biomeMapMinZ = minZ;
+}
 
-    biomeMap.resize(height, std::vector<int>(width));
+void Biome::GenerateBiomeMap(int minX, int minZ, int maxX, int maxZ) {
+    // 确保全局地图已初始化
+    if (g_biomeMap.empty() || g_biomeMap[0].empty()) {
+        std::cerr << "Error: g_biomeMap not initialized in GenerateBiomeMap!\n";
+        return;
+    }
+
+    int globalMinX = g_biomeMapMinX;
+    int globalMinZ = g_biomeMapMinZ;
+    size_t mapWidth = g_biomeMap[0].size();
+    size_t mapHeight = g_biomeMap.size();
 
     for (int x = minX; x <= maxX; ++x) {
         for (int z = minZ; z <= maxZ; ++z) {
-            int currentY = GetHeightMapY(x, z, "MOTION_BLOCKING");
-            int biomeId = GetBiomeId(x, currentY, z);
-            biomeMap[z - minZ][x - minX] = biomeId; // 修正坐标映射
+            // 检查当前方块坐标是否在全局生物群系地图范围内
+            int mapX = x - globalMinX;
+            int mapZ = z - globalMinZ;
+
+            if (mapX >= 0 && mapX < mapWidth && mapZ >= 0 && mapZ < mapHeight) {
+                int currentY = GetHeightMapY(x, z, "MOTION_BLOCKING");
+                int biomeId = GetBiomeId(x, currentY, z);
+                // 将生物群系ID写入全局地图的对应位置
+                g_biomeMap[mapZ][mapX] = biomeId;
+            } 
         }
     }
-    return biomeMap;
 }
 
-
-void Biome::ExportAllToPNG(int minX, int minZ, int maxX, int maxZ) {
-    auto biomeMap = GenerateBiomeMap(minX, minZ, maxX, maxZ);
-    // 导出图片
-    Biome::ExportToPNG(biomeMap, "foliage.png", BiomeColorType::Foliage);
-    Biome::ExportToPNG(biomeMap, "dry_foliage.png", BiomeColorType::DryFoliage);
-    Biome::ExportToPNG(biomeMap, "water.png", BiomeColorType::Water);
-    Biome::ExportToPNG(biomeMap, "grass.png", BiomeColorType::Grass);
-    Biome::ExportToPNG(biomeMap, "waterFog.png", BiomeColorType::WaterFog);
-    Biome::ExportToPNG(biomeMap, "fog.png", BiomeColorType::Fog);
-    Biome::ExportToPNG(biomeMap, "sky.png", BiomeColorType::Sky);
-}
-
-bool Biome::ExportToPNG(const std::vector<std::vector<int>>& biomeMap,const std::string& filename,BiomeColorType colorType)
+bool Biome::ExportToPNG(const std::string& filename, BiomeColorType colorType)
 {
     // 生成颜色映射
     std::map<int, std::tuple<uint8_t, uint8_t, uint8_t>> colorMap;
@@ -492,13 +501,13 @@ bool Biome::ExportToPNG(const std::vector<std::vector<int>>& biomeMap,const std:
         colorMap[entry.second.id] = std::make_tuple(r, g, b);
     }
 
-    if (biomeMap.empty()) return false;
+    if (g_biomeMap.empty()) return false;
 
-    const int height = biomeMap.size();
-    const int width = biomeMap[0].size();
+    const int height = g_biomeMap.size();
+    const int width = g_biomeMap[0].size();
 
     // 尺寸校验
-    for (const auto& row : biomeMap) {
+    for (const auto& row : g_biomeMap) {
         if (row.size() != static_cast<size_t>(width)) {
             std::cerr << "Error: Invalid biome map dimensions" << std::endl;
             return false;
@@ -511,7 +520,7 @@ bool Biome::ExportToPNG(const std::vector<std::vector<int>>& biomeMap,const std:
     std::map<int, std::tuple<uint8_t, uint8_t, uint8_t>> finalColorMap = colorMap;
 
     // 解决方案:添加维度校验
-    for (const auto& row : biomeMap) {
+    for (const auto& row : g_biomeMap) {
         if (row.size() != static_cast<size_t>(width)) {
             std::cerr << "Error: Biome map is not rectangular\n";
             return false;
@@ -519,7 +528,7 @@ bool Biome::ExportToPNG(const std::vector<std::vector<int>>& biomeMap,const std:
     }
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
-            int biomeId = biomeMap[y][x];
+            int biomeId = g_biomeMap[y][x];
 
             auto& color = finalColorMap[biomeId];
             int index = (y * width + x) * 3;

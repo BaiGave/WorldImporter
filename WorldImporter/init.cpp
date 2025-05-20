@@ -1,5 +1,4 @@
 #include "init.h"
-#include "PointCloudExporter.h"
 #include "RegionModelExporter.h"
 void init() {
     // 配置必须先加载
