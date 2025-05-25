@@ -13,11 +13,16 @@
 #include <tuple>
 #include <chrono>
 #include <iostream>
+#include <shared_mutex>
 
 using namespace std;
 using namespace std::chrono;
 
 std::unordered_map<std::tuple<int, int, int>, ChunkSectionInfo, TupleHash> g_chunkSectionInfoMap;
+
+// 线程安全:共享互斥量定义
+std::shared_mutex g_chunkSectionInfoMapMutex;
+
 // 缓存方块ID到颜色的映射
 std::unordered_map<std::string, std::string> blockColorCache;
 

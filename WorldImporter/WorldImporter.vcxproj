@@ -153,6 +153,7 @@
     <ClCompile Include="locutil.cpp" />
     <ClCompile Include="decompressor.cpp" />
     <ClCompile Include="EntityBlock.cpp" />
+    <ClCompile Include="MemoryMonitor.cpp" />
     <ClCompile Include="RegionCache.cpp" />
     <ClCompile Include="SpecialBlock.cpp" />
     <ClCompile Include="fileutils.cpp" />
@@ -166,6 +167,7 @@
     <ClCompile Include="nbtutils.cpp" />
     <ClCompile Include="ObjExporter.cpp" />
     <ClCompile Include="RegionModelExporter.cpp" />
+    <ClCompile Include="TaskMonitor.cpp" />
     <ClCompile Include="texture.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -182,6 +184,7 @@
     <ClInclude Include="decompressor.h" />
     <ClInclude Include="EntityBlock.h" />
     <ClInclude Include="hashutils.h" />
+    <ClInclude Include="MemoryMonitor.h" />
     <ClInclude Include="RegionCache.h" />
     <ClInclude Include="SpecialBlock.h" />
     <ClInclude Include="fileutils.h" />
@@ -194,6 +197,7 @@
     <ClInclude Include="nbtutils.h" />
     <ClInclude Include="ObjExporter.h" />
     <ClInclude Include="RegionModelExporter.h" />
+    <ClInclude Include="TaskMonitor.h" />
     <ClInclude Include="texture.h" />
   </ItemGroup>
   <ItemGroup>

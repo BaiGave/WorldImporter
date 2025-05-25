@@ -74,6 +74,12 @@
     <Filter Include="源文件\Core\Loader">
       <UniqueIdentifier>{3b5c5888-00f3-4009-870c-9bbbb5d8f2da}</UniqueIdentifier>
     </Filter>
+    <Filter Include="源文件\Tools">
+      <UniqueIdentifier>{92af3e79-700c-4da8-a8d8-631842594663}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Tools">
+      <UniqueIdentifier>{549d52de-a542-4719-ac39-ebe3ab0ce2a9}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <!-- 核心文件 -->
@@ -161,6 +167,12 @@
     <ClCompile Include="init.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="MemoryMonitor.cpp">
+      <Filter>源文件\Tools</Filter>
+    </ClCompile>
+    <ClCompile Include="TaskMonitor.cpp">
+      <Filter>源文件\Tools</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <!-- 核心文件 -->
@@ -247,6 +259,12 @@
     </ClInclude>
     <ClInclude Include="init.h">
       <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="MemoryMonitor.h">
+      <Filter>头文件\Tools</Filter>
+    </ClInclude>
+    <ClInclude Include="TaskMonitor.h">
+      <Filter>头文件\Tools</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

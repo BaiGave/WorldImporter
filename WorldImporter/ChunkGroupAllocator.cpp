@@ -2,11 +2,16 @@
 #include "ChunkGroupAllocator.h"
 #include "LODManager.h" // 包含LODManager.h以访问g_chunkLODs
 #include <iostream> // 用于潜在的调试输出
-
+#include <limits> // 新增:用于 numeric_limits
+#include <algorithm>
+#include <shared_mutex>
+#undef max
+#undef min
 
 namespace ChunkGroupAllocator {
 
     std::vector<ChunkGroup> g_chunkGroups; // 定义全局变量
+    std::vector<ChunkBatch> g_chunkBatches; // 定义批处理全局变量
 
     void GenerateChunkGroups(
         int chunkXStart, int chunkXEnd,
@@ -44,14 +49,14 @@ namespace ChunkGroupAllocator {
 
                             // 从全局g_chunkSectionInfoMap获取LOD等级
                             auto key = std::make_tuple(chunkX, sectionY, chunkZ);
-                            auto it = g_chunkSectionInfoMap.find(key);
-                            if (it != g_chunkSectionInfoMap.end()) {
-                                task.lodLevel = it->second.lodLevel;
-                            } else {
-                                // 如果在g_chunkSectionInfoMap中找不到 (理论上不应该发生，因为RegionModelExporter会预先计算LOD)
-                                // 作为回退，可以设置一个默认值或根据距离计算
-                                task.lodLevel = 0.0f; // 默认LOD
-                                // std::cerr << "Warning: ChunkSectionInfo not found for chunk (" << chunkX << ", " << sectionY << ", " << chunkZ << ") in g_chunkSectionInfoMap. Defaulting LOD to 0.0f." << std::endl;
+                            {
+                                std::shared_lock<std::shared_mutex> readLock(g_chunkSectionInfoMapMutex);
+                                auto it = g_chunkSectionInfoMap.find(key);
+                                if (it != g_chunkSectionInfoMap.end()) {
+                                    task.lodLevel = it->second.lodLevel;
+                                } else {
+                                    task.lodLevel = 0.0f;
+                                }
                             }
 
                             newGroup.tasks.push_back(task);
@@ -62,6 +67,63 @@ namespace ChunkGroupAllocator {
                 g_chunkGroups.push_back(newGroup);
             }
         }
+    }
+
+    // 新增:将区块组划分为批次
+    void GenerateChunkBatches(
+        int chunkXStart, int chunkXEnd,
+        int chunkZStart, int chunkZEnd,
+        int sectionYStart, int sectionYEnd,
+        size_t maxTasksPerBatch)
+    {
+        // 首先生成区块组
+        GenerateChunkGroups(chunkXStart, chunkXEnd,
+                            chunkZStart, chunkZEnd,
+                            sectionYStart, sectionYEnd);
+
+        g_chunkBatches.clear();
+
+        ChunkBatch currentBatch;
+        currentBatch.chunkXStart = std::numeric_limits<int>::max();
+        currentBatch.chunkZStart = std::numeric_limits<int>::max();
+        currentBatch.chunkXEnd   = std::numeric_limits<int>::min();
+        currentBatch.chunkZEnd   = std::numeric_limits<int>::min();
+
+        size_t currentTaskCount = 0;
+
+        auto flushCurrentBatch = [&]() {
+            if (!currentBatch.groups.empty()) {
+                g_chunkBatches.push_back(currentBatch);
+                // 重新初始化
+                currentBatch = ChunkBatch{};
+                currentBatch.chunkXStart = std::numeric_limits<int>::max();
+                currentBatch.chunkZStart = std::numeric_limits<int>::max();
+                currentBatch.chunkXEnd   = std::numeric_limits<int>::min();
+                currentBatch.chunkZEnd   = std::numeric_limits<int>::min();
+                currentTaskCount = 0;
+            }
+        };
+
+        for (const auto& group : g_chunkGroups) {
+            size_t groupTaskCount = group.tasks.size();
+
+            // 如果当前批次任务数超出限制,则先刷入当前批次
+            if (currentTaskCount + groupTaskCount > maxTasksPerBatch && !currentBatch.groups.empty()) {
+                flushCurrentBatch();
+            }
+
+            // 更新批次信息
+            currentBatch.groups.push_back(group);
+            currentTaskCount += groupTaskCount;
+
+            currentBatch.chunkXStart = std::min(currentBatch.chunkXStart, group.startX);
+            currentBatch.chunkZStart = std::min(currentBatch.chunkZStart, group.startZ);
+            currentBatch.chunkXEnd   = std::max(currentBatch.chunkXEnd, group.startX + config.partitionSize - 1);
+            currentBatch.chunkZEnd   = std::max(currentBatch.chunkZEnd, group.startZ + config.partitionSize - 1);
+        }
+
+        // 刷入最后一个批次
+        flushCurrentBatch();
     }
 
 } // namespace ChunkGroupAllocator

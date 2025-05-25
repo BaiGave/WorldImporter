@@ -6,6 +6,7 @@
 #include "block.h"
 #include "model.h"
 #include "hashutils.h"
+#include <shared_mutex>
 
 // 结构体：包含LOD等级和加载状态
 struct ChunkSectionInfo {
@@ -47,6 +48,9 @@ struct ChunkSectionInfo {
 
 // 全局区块信息缓存 (LOD 和加载状态)
 extern std::unordered_map<std::tuple<int, int, int>, ChunkSectionInfo, TupleHash> g_chunkSectionInfoMap;
+
+// 线程安全:保护 g_chunkSectionInfoMap 的读写
+extern std::shared_mutex g_chunkSectionInfoMapMutex;
 
 enum BlockType {
     AIR,

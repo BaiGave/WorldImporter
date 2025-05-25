@@ -56,11 +56,11 @@ struct Config {
 
     bool exportFullModel;  // 是否完整导入
     int partitionSize; //分割大小
+    size_t maxTasksPerBatch; //每批次区块任务数量上限
 
     int decimalPlaces; //lod群系颜色值小数精度 #待做
     bool importByBlockType;  // 是否按方块种类导入 #待做
     int pointCloudType;  // 实心或空心,0为实心,1为空心 #待做
-
     Config()
         :
         worldPath(""),
@@ -95,6 +95,7 @@ struct Config {
 
         exportFullModel(false),
         partitionSize(4),
+        maxTasksPerBatch(32768),
 
         decimalPlaces(2),
         importByBlockType(false),

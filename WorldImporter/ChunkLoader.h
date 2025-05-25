@@ -18,7 +18,10 @@ public:
         int sectionYStart, int sectionYEnd);
     static void CalculateChunkLODs(int expandedChunkXStart, int expandedChunkXEnd, int expandedChunkZStart, int expandedChunkZEnd,
         int sectionYStart, int sectionYEnd);
-        
+    static void UnloadChunks(int chunkXStart, int chunkXEnd, int chunkZStart, int chunkZEnd,
+        int sectionYStart, int sectionYEnd,
+        const std::unordered_set<std::pair<int, int>, pair_hash>& retain_expanded_chunks);
 };
+
 
 #endif // CHUNK_LOADER_H

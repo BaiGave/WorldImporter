@@ -84,9 +84,9 @@ int GetBiomeId(int blockX, int blockY, int blockZ) {
     auto blockKey = std::make_tuple(chunkX, chunkZ, sectionY);
 
     // 检查 SectionCache 中是否存在对应的区块数据
-    if (sectionCache.find(blockKey) == sectionCache.end()) {
-        LoadAndCacheBlockData(chunkX, chunkZ);
-    }
+    //if (sectionCache.find(blockKey) == sectionCache.end()) {
+    //    LoadAndCacheBlockData(chunkX, chunkZ);
+    //}
 
     const auto& biomeData = sectionCache[blockKey].biomeData;
 
@@ -295,9 +295,9 @@ int Biome::GetBiomeColor(int blockX, int blockY, int blockZ, BiomeColorType colo
             auto blockKey = std::make_tuple(chunkX, chunkZ, sectionY);
 
             // 检查 SectionCache 中是否存在对应的区块数据,否则加载缓存
-            if (sectionCache.find(blockKey) == sectionCache.end()) {
-                LoadAndCacheBlockData(chunkX, chunkZ);
-            }
+            //if (sectionCache.find(blockKey) == sectionCache.end()) {
+            //    LoadAndCacheBlockData(chunkX, chunkZ);
+            //}
 
             const auto& biomeData = sectionCache[blockKey].biomeData;
 

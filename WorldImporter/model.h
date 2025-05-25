@@ -150,8 +150,6 @@ FaceType StringToFaceType(const std::string& dirString);
 // 辅助函数:根据面索引获取面方向 (每4个顶点构成一个面)
 FaceType GetFaceTypeByIndex(size_t faceIndex);
 
-// 辅助函数:将FaceType枚举转换为字符串
-std::string FaceTypeToString(FaceType faceType);
 
 //---------------- 缓存管理 ----------------
 static std::mutex cacheMutex;

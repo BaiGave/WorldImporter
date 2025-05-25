@@ -2,6 +2,8 @@
 #include <mutex>
 #include <thread>
 #include <vector>
+#include <shared_mutex>
+#include "locutil.h"
 #include "ChunkLoader.h"
 #include "block.h"
 #include "LODManager.h"
@@ -21,7 +23,10 @@ void ChunkLoader::LoadChunks(int chunkXStart, int chunkXEnd, int chunkZStart, in
                     // 确保条目存在（可能由RegionModelExporter预先创建以存储LOD）
                     // 如果不存在，则创建一个新的条目并设置加载状态
                     // LOD值在此处不设置，它由RegionModelExporter负责
-                    g_chunkSectionInfoMap[key].isLoaded.store(true, std::memory_order_release);
+                    {
+                        std::unique_lock<std::shared_mutex> lock(g_chunkSectionInfoMapMutex);
+                        g_chunkSectionInfoMap[key].isLoaded.store(true, std::memory_order_release);
+                    }
                 }
                 }));
         }
@@ -30,6 +35,49 @@ void ChunkLoader::LoadChunks(int chunkXStart, int chunkXEnd, int chunkZStart, in
     // 等待所有线程完成
     for (auto& future : futures) {
         future.get();
+    }
+}
+
+void ChunkLoader::UnloadChunks(int chunkXStart, int chunkXEnd, int chunkZStart, int chunkZEnd,
+    int sectionYStart, int sectionYEnd,
+    const std::unordered_set<std::pair<int, int>, pair_hash>& retain_expanded_chunks) {
+    // 卸载指定范围的区块和分段
+    std::vector<std::future<void>> futures;
+    for (int chunkX = chunkXStart; chunkX <= chunkXEnd; ++chunkX) {
+        for (int chunkZ = chunkZStart; chunkZ <= chunkZEnd; ++chunkZ) {
+            futures.push_back(std::async(std::launch::async, [=, &retain_expanded_chunks]() {
+                // 如果区块在保留集合中，则跳过卸载
+                if (retain_expanded_chunks.count({chunkX, chunkZ})) {
+                    return;
+                }
+
+                // 清理 g_chunkSectionInfoMap (使用原始 sectionY)
+                for (int sectionY = sectionYStart; sectionY <= sectionYEnd; ++sectionY) {
+                    auto g_map_key = std::make_tuple(chunkX, sectionY, chunkZ);
+                    {
+                        std::unique_lock<std::shared_mutex> lock(g_chunkSectionInfoMapMutex);
+                        g_chunkSectionInfoMap.erase(g_map_key);
+                    }
+                }
+
+                // 清理 sectionCache 中与该 (chunkX, chunkZ) 相关的所有条目
+                ClearSectionCacheForChunk(chunkX, chunkZ);
+
+                // 卸载与区块相关的实体方块及高度图缓存
+                // 确保这些操作在 sectionY 循环之外，并使用正确的互斥锁
+                {
+                    std::unique_lock<std::shared_mutex> lock(entityBlockCacheMutex); // 使用 entityBlockCacheMutex
+                    EntityBlockCache.erase(std::make_pair(chunkX, chunkZ));
+                }
+                {
+                    std::unique_lock<std::shared_mutex> lock(heightMapCacheMutex); // 使用 heightMapCacheMutex
+                    heightMapCache.erase(std::make_pair(chunkX, chunkZ));
+                }
+            }));
+        }
+    }
+    for (auto& f : futures) {
+        f.get();
     }
 }
 
@@ -75,7 +123,10 @@ void ChunkLoader::CalculateChunkLODs(int expandedChunkXStart, int expandedChunkX
             }
             for (int sy = sectionYStart; sy <= sectionYEnd; ++sy) {
                 // isLoaded 状态将由 ChunkLoader::LoadChunks 设置
-                g_chunkSectionInfoMap[std::make_tuple(cx, sy, cz)].lodLevel = chunkLOD;
+                {
+                    std::unique_lock<std::shared_mutex> lock(g_chunkSectionInfoMapMutex);
+                    g_chunkSectionInfoMap[std::make_tuple(cx, sy, cz)].lodLevel = chunkLOD;
+                }
             }
         }
     }

@@ -24,6 +24,29 @@
 #include "GlobalCache.h"
 extern Config config;
 
+// 内存监控相关的 extern 声明
+extern std::shared_mutex entityBlockCacheMutex; // 新增 EntityBlockCache 的互斥锁
+extern std::shared_mutex heightMapCacheMutex;   // 新增 heightMapCache 的互斥锁
+
+// 缓存的 extern 声明，以便 MemoryMonitor 可以访问
+// 类型定义直接使用 MemoryMonitor.h 中的别名以确保一致性，
+// 或者确保这里的类型与 block.cpp 中的定义以及 MemoryMonitor.h 中的别名完全匹配。
+// 为了简单起见，这里我们假设 MemoryMonitor.h 中的别名是准确的。
+// 注意：实际项目中，更推荐的方式是在一个统一的头文件中定义这些缓存的类型和 extern 声明，
+// 或者 MemoryMonitor.h 直接包含 block.cpp 中定义的缓存（但这会导致更紧密的耦合）。
+// 这里我们选择在 block.h 中添加 extern 声明，并期望类型定义正确。
+
+// #include "MemoryMonitor.h" // 可以考虑包含这个，但可能导致循环依赖，取决于 MemoryMonitor.h 是否也需要 block.h
+// 如果不包含 MemoryMonitor.h，需要确保以下类型与 MemoryMonitor.h 中的别名以及 block.cpp 中的实际类型一致
+
+// 假设 EntityBlock 和 SectionCacheEntry 等已在此文件或其包含的头文件中定义
+class EntityBlock; // 前向声明或确保 EntityBlock.h 已被包含
+struct SectionCacheEntry; // 确保 SectionCacheEntry 已定义
+
+extern std::unordered_map<std::pair<int, int>, std::vector<std::shared_ptr<EntityBlock>>, pair_hash> EntityBlockCache;
+extern std::unordered_map<std::pair<int, int>, std::unordered_map<std::string, std::vector<int>>, pair_hash> heightMapCache;
+extern std::unordered_map<std::tuple<int, int, int>, SectionCacheEntry, triple_hash> sectionCache;
+
 struct Block {
     std::string name;
     int8_t level;
@@ -389,6 +412,12 @@ extern std::vector<Block> globalBlockPalette;
 extern std::unordered_map<std::tuple<int, int, int>, SectionCacheEntry, triple_hash> sectionCache;
 extern std::unordered_map<std::pair<int, int>, std::unordered_map<std::string, std::vector<int>>, pair_hash> heightMapCache;
 
+// 全局读写锁:保护 sectionCache 线程安全
+extern std::shared_mutex sectionCacheMutex;
+
+// 保护 EntityBlockCache 与 heightMapCache 的读写
+extern std::shared_mutex chunkAuxCacheMutex;
+
 // 高度图类型
 static const std::vector<std::string> mapTypes = {"MOTION_BLOCKING", "MOTION_BLOCKING_NO_LEAVES",   "OCEAN_FLOOR", "WORLD_SURFACE"};
 
@@ -408,6 +437,8 @@ int GetBlockLight(int blockX, int blockY, int blockZ);
 int GetLevel(int blockX, int blockY, int blockZ);
 
 int GetHeightMapY(int blockX, int blockZ, const std::string& heightMapType);
+
+void ClearSectionCacheForChunk(int chunkX, int chunkZ);
 
 // 获取方块名称转换为Block对象
 Block GetBlockById(int blockId);

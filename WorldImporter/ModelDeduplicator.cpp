@@ -9,6 +9,7 @@
 #include <stack>
 #include <string>
 #include <set>
+#include "TaskMonitor.h"
 
 // 2x2矩阵结构体,用于UV坐标变换
 struct Matrix2x2 {
@@ -1016,10 +1017,19 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
 
 // 综合去重和优化方法
 void ModelDeduplicator::DeduplicateModel(ModelData& data) {
+    auto& monitor = GetTaskMonitor();
+    
+    monitor.SetStatus(TaskStatus::DEDUPLICATING_VERTICES, "DeduplicateVertices");
     DeduplicateVertices(data);
+    
+    monitor.SetStatus(TaskStatus::DEDUPLICATING_UV, "DeduplicateUV");
     DeduplicateUV(data);
+    
+    monitor.SetStatus(TaskStatus::DEDUPLICATING_FACES, "DeduplicateFaces");
     DeduplicateFaces(data);
+    
     if (config.useGreedyMesh) {
+        monitor.SetStatus(TaskStatus::GREEDY_MESHING, "GreedyMesh");
         GreedyMesh(data);
     }
 }

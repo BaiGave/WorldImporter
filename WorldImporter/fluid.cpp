@@ -466,23 +466,23 @@ void AssignFluidMaterials(ModelData& model, const std::string& fluidId) {
     // 清空旧数据
     model.materials.clear();
 
-    // 解析命名空间
-    size_t colonPos = baseId.find(':');
-    std::string ns = (colonPos != std::string::npos) ? baseId.substr(0, colonPos) : "";
-    std::string pureName = (colonPos != std::string::npos) ? fluidName.substr(colonPos + 1) : fluidName;
+    // 使用fluidName解析命名空间和纯名称
+    size_t colonPosDef = fluidName.find(':');
+    std::string ns = (colonPosDef != std::string::npos) ? fluidName.substr(0, colonPosDef) : "";
+    std::string pureName = (colonPosDef != std::string::npos) ? fluidName.substr(colonPosDef + 1) : fluidName;
     
     // 创建静止流体材质
     Material stillFluid;
-    stillFluid.name = fluidInfo.folder + "/" + fluidName + fluidInfo.still_texture;
+    stillFluid.name = fluidInfo.folder + "/" + pureName + fluidInfo.still_texture;
     stillFluid.texturePath = "textures/" + ns + "/" + fluidInfo.folder + "/" + pureName + fluidInfo.still_texture + ".png";
-    stillFluid.tintIndex = (fluidName.find("water") != std::string::npos) ? 2 : -1;
+    stillFluid.tintIndex = (pureName.find("water") != std::string::npos) ? 2 : -1;
     stillFluid.type = DetectMaterialType(ns, fluidInfo.folder + "/" + pureName + fluidInfo.still_texture);
     
     // 创建流动流体材质
     Material flowFluid;
-    flowFluid.name = fluidInfo.folder + "/" + fluidName + fluidInfo.flow_texture;
+    flowFluid.name = fluidInfo.folder + "/" + pureName + fluidInfo.flow_texture;
     flowFluid.texturePath = "textures/" + ns + "/" + fluidInfo.folder + "/" + pureName + fluidInfo.flow_texture + ".png";
-    flowFluid.tintIndex = (fluidName.find("water") != std::string::npos) ? 2 : -1;
+    flowFluid.tintIndex = (pureName.find("water") != std::string::npos) ? 2 : -1;
     flowFluid.type = DetectMaterialType(ns, fluidInfo.folder + "/" + pureName + fluidInfo.flow_texture);
     
     model.materials = { stillFluid, flowFluid };

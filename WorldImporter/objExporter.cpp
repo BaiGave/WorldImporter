@@ -417,7 +417,7 @@ void CreateSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMate
                 size_t pos_deng = texturePath.find("=");
                 if (pos != std::string::npos) {
                     // 流体材质格式,提取"-"前面的颜色部分
-                    colorStr = texturePath.substr(std::string("color#").size() , pos - std::string("color#").size());
+                    colorStr = texturePath.substr(std::string("color#").size(), pos - std::string("color#").size());
                 }
                 else if (pos_deng != std::string::npos) {
                     colorStr = texturePath.substr(std::string("color#").size(), pos_deng - std::string("color#").size());
@@ -503,7 +503,7 @@ void createMtlFile(const ModelData& data, const std::string& mtlFileName) {
                 size_t pos_deng = texturePath.find("=");
                 if (pos != std::string::npos) {
                     // 流体材质格式,提取"-"前面的颜色部分
-                    colorStr = texturePath.substr(pos + std::string("color#").size() , pos - std::string("color#").size());
+                    colorStr = texturePath.substr(std::string("color#").size(), pos - std::string("color#").size());
                 }
                 else if (pos_deng != std::string::npos) {
                     colorStr = texturePath.substr(std::string("color#").size(), pos_deng - std::string("color#").size());

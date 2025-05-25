@@ -79,30 +79,19 @@ std::vector<char> GetChunkNBTData(const std::vector<char>& fileData, int x, int 
     // 第2步: 提取区块数据长度
     unsigned length = ExtractChunkLength(fileData, offset);
     
-    // 第3步: 提取并解压区块数据
-    if (offset + 5 <= fileData.size()) {  // 确保有足够的数据可读(头部5字节后是压缩数据)
-        int startOffset = offset + 5;      // 跳过5字节头部(4字节长度+1字节压缩类型)
-        int endIndex = startOffset + length - 1;
-
-        // 检查数据边界
-        if (endIndex < fileData.size()) {
-            // 提取压缩的区块数据
-            vector<char> chunkData(fileData.begin() + startOffset, fileData.begin() + endIndex + 1);
-            vector<char> decompressedData;
-
-            // 解压数据
-            if (DecompressData(chunkData, decompressedData)) {
-                return decompressedData;
-            } else {
-                cerr << "错误: 解压失败." << endl;
-                return {};
-            }
-        } else {
-            cerr << "错误: 区块数据超出了文件边界." << endl;
-            return {};
-        }
+    // 根据 length 和 offset 检查整个区块数据是否在文件范围内
+    uint64_t endOffset = static_cast<uint64_t>(offset) + 4 + length;
+    if (endOffset > fileData.size()) {
+        cerr << "错误: 区块数据超出了文件边界." << endl;
+        return {};
+    }
+    unsigned startOffset = offset + 5; // 跳过4字节长度+1字节压缩类型
+    vector<char> chunkData(fileData.begin() + startOffset, fileData.begin() + endOffset);
+    vector<char> decompressedData;
+    if (DecompressData(chunkData, decompressedData)) {
+        return decompressedData;
     } else {
-        cerr << "错误: 从偏移位置读取5个字节的数据不够." << endl;
+        cerr << "错误: 解压失败." << endl;
         return {};
     }
 }

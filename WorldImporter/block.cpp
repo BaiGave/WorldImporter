@@ -38,7 +38,12 @@ using namespace std;
 
 // 带读写锁的区块缓存
 std::shared_mutex sectionCacheMutex;
+std::shared_mutex chunkAuxCacheMutex;
 std::unordered_map<std::tuple<int, int, int>, SectionCacheEntry, triple_hash> sectionCache(4096);
+
+// 为 EntityBlockCache 和 heightMapCache 定义新的互斥锁
+std::shared_mutex entityBlockCacheMutex;
+std::shared_mutex heightMapCacheMutex;
 
 // 实体方块缓存
 std::unordered_map<std::pair<int, int>, std::vector<std::shared_ptr<EntityBlock>>, pair_hash> EntityBlockCache(1024);
@@ -60,31 +65,38 @@ static const std::array<std::tuple<int, int, int>, 6> kSectionNeighborOffsets = 
 void UpdateSkyLightNeighborFlags() {
     std::unordered_map<std::tuple<int, int, int>, bool, triple_hash> needsUpdate;
 
-    // 收集需要更新的区块
-    for (const auto& entry : sectionCache) {
-        const auto& key = entry.first;
-        const auto& skyLightData = entry.second.skyLight;
+    {
+        std::shared_lock<std::shared_mutex> readLock(sectionCacheMutex);
+        // 收集需要更新的区块
+        for (const auto& entry : sectionCache) {
+            const auto& key = entry.first;
+            const auto& skyLightData = entry.second.skyLight;
 
-        if (skyLightData.size() == 1 && skyLightData[0] == -1) {
-            needsUpdate[key] = true;
+            if (skyLightData.size() == 1 && skyLightData[0] == -1) {
+                needsUpdate[key] = true;
+            }
         }
     }
 
-    // 检查邻居,并更新skyLightData为单元素-2,使用assign避免重新分配
+    // 检查邻居,并更新skyLightData为单元素-2
     for (auto& entry : needsUpdate) {
         int chunkX = std::get<0>(entry.first);
         int chunkZ = std::get<1>(entry.first);
         int sectionY = std::get<2>(entry.first);
         bool hasLightNeighbor = false;
-        for (const auto& offset : kSectionNeighborOffsets) {
-            auto dir = std::make_tuple(chunkX + std::get<0>(offset), chunkZ + std::get<1>(offset), sectionY + std::get<2>(offset));
-            auto it = sectionCache.find(dir);
-            if (it != sectionCache.end() && it->second.skyLight.size() == 4096) {
-                hasLightNeighbor = true;
-                break;
+        {
+            std::shared_lock<std::shared_mutex> readLock(sectionCacheMutex);
+            for (const auto& offset : kSectionNeighborOffsets) {
+                auto dir = std::make_tuple(chunkX + std::get<0>(offset), chunkZ + std::get<1>(offset), sectionY + std::get<2>(offset));
+                auto it = sectionCache.find(dir);
+                if (it != sectionCache.end() && it->second.skyLight.size() == 4096) {
+                    hasLightNeighbor = true;
+                    break;
+                }
             }
         }
         if (hasLightNeighbor) {
+            std::unique_lock<std::shared_mutex> writeLock(sectionCacheMutex);
             auto& skyLightData = sectionCache[entry.first].skyLight;
             skyLightData.assign(1, -2);
         }
@@ -130,9 +142,14 @@ void ProcessSection(int chunkX, int chunkZ, int sectionY, const NbtTagPtr& secti
         }
         else {
             int idx = static_cast<int>(globalBlockPalette.size());
-            globalBlockPalette.emplace_back(blockName);
+            globalBlockPalette.emplace_back(blockName); // 新方块添加到全局调色板
             globalBlockMap[blockName] = idx;
             globalBlockData.push_back(idx);
+
+            // 为新添加的方块生成模型缓存
+            std::vector<Block> newBlockVector;
+            newBlockVector.push_back(globalBlockPalette.back()); // 获取刚添加的方块
+            ProcessBlockstateForBlocks(newBlockVector); // 调用处理函数
         }
     }
 
@@ -210,6 +227,29 @@ void ProcessSection(int chunkX, int chunkZ, int sectionY, const NbtTagPtr& secti
         std::move(biomeData),         // biomeData
         std::move(blockPalette)       // blockPalette
     };
+}
+
+// 新函数：清理指定 (chunkX, chunkZ) 的所有 sectionCache 条目
+void ClearSectionCacheForChunk(int chunkX, int chunkZ) {
+    std::unique_lock<std::shared_mutex> write_lock(sectionCacheMutex);
+    int removed_count = 0;
+    for (auto it = sectionCache.begin(); it != sectionCache.end(); ) {
+        if (std::get<0>(it->first) == chunkX && std::get<1>(it->first) == chunkZ) {
+            // 调试输出：打印将要删除的条目的键
+            // std::cout << "Debug: Attempting to remove sectionCache entry for (" 
+            //           << std::get<0>(it->first) << ", " 
+            //           << std::get<1>(it->first) << ", " 
+            //           << std::get<2>(it->first) << ")" << std::endl;
+            it = sectionCache.erase(it); // erase 返回下一个有效的迭代器
+            removed_count++;
+        }
+        else {
+            ++it;
+        }
+    }
+    if (removed_count > 0) {
+        //std::cout << "Debug: Cleared " << removed_count << " sectionCache entries for chunk (" << chunkX << ", " << chunkZ << ")" << std::endl;
+    }
 }
 
 void ProcessEntityBlocks(int chunkX, int chunkZ, const NbtTagPtr& blockEntitiesTag) {
@@ -435,15 +475,13 @@ void ProcessEntityBlocks(int chunkX, int chunkZ, const NbtTagPtr& blockEntitiesT
             basicEntity->x = x;
             basicEntity->y = y;
             basicEntity->z = z;
-            // 存入缓存
             entityBlocks.push_back(basicEntity);
         }
-
-
     }
 
-    // 存入缓存
+    // 存入缓存，使用互斥锁保护
     auto chunkKey = std::make_pair(chunkX, chunkZ);
+    std::unique_lock<std::shared_mutex> lock(entityBlockCacheMutex);
     EntityBlockCache[chunkKey] = entityBlocks;
 }
 
@@ -476,6 +514,7 @@ void LoadAndCacheBlockData(int chunkX, int chunkZ) {
     // 处理高度图
     auto heightMapsTag = getChildByName(tag, "Heightmaps");
     if (heightMapsTag && heightMapsTag->type == TagType::COMPOUND) {
+        std::unique_lock<std::shared_mutex> hm_lock(heightMapCacheMutex); // 加锁
         for (const auto& mapType : mapTypes) {
             auto mapDataTag = getChildByName(heightMapsTag, mapType);
             if (mapDataTag && mapDataTag->type == TagType::LONG_ARRAY) {
@@ -487,11 +526,12 @@ void LoadAndCacheBlockData(int chunkX, int chunkZ) {
                 heightMapCache[std::make_pair(chunkX, chunkZ)][mapType] = heights;
             }
         }
+        // hm_lock 在此处自动解锁
     }
     //提取实体方块
     auto blockEntitiesTag = getChildByName(tag, "block_entities");
     if (blockEntitiesTag && blockEntitiesTag->type == TagType::LIST) {
-        ProcessEntityBlocks(chunkX, chunkZ, blockEntitiesTag); // 处理实体方块
+        ProcessEntityBlocks(chunkX, chunkZ, blockEntitiesTag); 
     }
 
     // 提取所有子区块
@@ -625,9 +665,10 @@ int GetHeightMapY(int blockX, int blockZ, const std::string& heightMapType) {
 
     // 查找缓存
     auto chunkKey = std::make_pair(chunkX, chunkZ);
+    std::shared_lock<std::shared_mutex> lock(heightMapCacheMutex); // 使用读锁
     auto chunkIter = heightMapCache.find(chunkKey);
     if (chunkIter == heightMapCache.end()) {
-        return -1; // 区块未加载
+        return -1; // 区块未加载或高度图未缓存
     }
 
     // 获取指定类型的高度图
@@ -641,9 +682,11 @@ int GetHeightMapY(int blockX, int blockZ, const std::string& heightMapType) {
     int localX = mod16(blockX);
     int localZ = mod16(blockZ);
     int index = localX + localZ * 16;
-
+    
     // 返回高度值
-    return (index < 256) ? typeIter->second[index] : -1;
+    int result = (index < 256 && index < typeIter->second.size()) ? typeIter->second[index] : -1;
+    // lock 在此处自动解锁
+    return result;
 }
 
 int GetLevel(int blockX, int blockY, int blockZ) {
