@@ -6,11 +6,21 @@
 #include <tuple>
 #include <climits>
 #include <sstream>
+#include <queue>
 #include <stack>
 #include <string>
 #include <set>
 #include "TaskMonitor.h"
-
+#include <future> // 新增: 用于 std::async, std::future
+#include <mutex>  // 新增: 用于 std::mutex, std::lock_guard
+#include <vector> 
+#include <utility> // 新增: 用于 std::pair
+#include <iostream> // 新增: 用于错误输出
+#include <iterator> // 新增: 用于 std::make_move_iterator
+#include <atomic> // 新增: 用于 std::atomic_bool
+#include <thread> // 新增: 用于 std::thread::hardware_concurrency()
+#undef max
+#undef min
 // 2x2矩阵结构体,用于UV坐标变换
 struct Matrix2x2 {
     float m[2][2];
@@ -68,19 +78,6 @@ struct Matrix2x2 {
     }
 };
 
-// 变换一个UV坐标点
-std::pair<float, float> transformPoint(const Matrix2x2& matrix, float u, float v, float centerU, float centerV) {
-    // 移到原点
-    float relU = u - centerU;
-    float relV = v - centerV;
-    
-    // 应用矩阵变换
-    float newU = matrix.m[0][0] * relU + matrix.m[0][1] * relV;
-    float newV = matrix.m[1][0] * relU + matrix.m[1][1] * relV;
-    
-    // 移回中心点
-    return {centerU + newU, centerV + newV};
-}
 
 void ModelDeduplicator::DeduplicateVertices(ModelData& data) {
     std::unordered_map<VertexKey, int> vertexMap;
@@ -166,7 +163,12 @@ void ModelDeduplicator::DeduplicateUV(ModelData& model) {
         for (auto& face : model.faces) {
             for (auto& idx : face.uvIndices) {
                 // 注意:这里假设 uvIndices 中的索引都在有效范围内
+                if (idx >=0 && idx < indexMapping.size()){ // 添加边界检查
                 idx = indexMapping[idx];
+                } else {
+                    // 处理无效索引，例如设置为一个特定的错误值或保持不变并记录错误
+                    // std::cerr << "Warning: Invalid UV index " << idx << " encountered." << std::endl;
+                }
             }
         }
     }
@@ -213,806 +215,437 @@ void ModelDeduplicator::DeduplicateFaces(ModelData& data) {
     data.faces.swap(newFaces);
 }
 
+
 // Greedy mesh 算法:合并相邻同材质、相同方向的面以减少面数
 void ModelDeduplicator::GreedyMesh(ModelData& data) {
-    if (data.faces.empty()) return;
-
-    //==========================================================================
-    // 第1步:初始化和标准UV坐标查找
-    //==========================================================================
-    // 查找标准UV坐标的索引 (0,0), (1,0), (1,1), (0,1),这些是合并的基础
-    int uvIndex00 = -1, uvIndex10 = -1, uvIndex11 = -1, uvIndex01 = -1;
-    for (size_t i = 0; i < data.uvCoordinates.size() / 2; ++i) {
-        float u = data.uvCoordinates[i * 2];
-        float v = data.uvCoordinates[i * 2 + 1];
-
-        if (u == 0.0f && v == 0.0f) uvIndex00 = i;
-        else if (u == 1.0f && v == 0.0f) uvIndex10 = i;
-        else if (u == 1.0f && v == 1.0f) uvIndex11 = i;
-        else if (u == 0.0f && v == 1.0f) uvIndex01 = i;
-    }
-
-    // 如果找不到标准UV坐标,就提前返回,不进行贪心合并
-    if (uvIndex00 == -1 || uvIndex10 == -1 || uvIndex11 == -1 || uvIndex01 == -1) {
-        return; // 直接结束,不进行合并
-    }
-
-    //==========================================================================
-    // 第2步:定义数据结构
-    //==========================================================================
-    // 区域临时结构:用于表示可合并的矩形区域
-    struct Region {
-        FaceType dir;          // 面的方向
-        int material;          // 面的材质索引
-        float plane;           // 面所在平面的位置
-        int aaxis, baxis;      // 面在平面上的两个轴
-        float a0, a1, b0, b1;  // 面在这两个轴上的范围
-        float u0, v0, u1, v1;  // UV坐标范围
-        std::array<int, 4> vertexOrder;  // 顶点索引顺序
-        int originalFaceIndex; // 添加原始面的索引以便追踪
+    // 基础类型与工具函数定义
+    struct Vector3 { float x, y, z; };
+    struct Vector2 { float x, y; };
+    const float eps = 1e-6f;
+    auto getVertex = [&](int idx){ return Vector3{ data.vertices[3*idx], data.vertices[3*idx+1], data.vertices[3*idx+2] }; };
+    auto normalize = [&](Vector3 v){
+        float len = std::sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
+        if (len < eps) return v;
+        return Vector3{ v.x/len, v.y/len, v.z/len };
     };
-    
-    // 用于统计顶点顺序的映射
-    std::map<std::array<int, 4>, int> vertexOrderCount;
-    
-    // 用于存储提取的区域和特殊面
-    std::vector<Region> regions;
-    regions.reserve(data.faces.size());
-    std::vector<Face> specialFaces;
-    
-    // 跟踪哪些面被合并了(使用索引,而不是指针)
-    std::vector<bool> faceMerged(data.faces.size(), false);
+    auto cross = [&](const Vector3& a, const Vector3& b){
+        return Vector3{ a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x };
+    };
+    auto dot3 = [&](const Vector3& a, const Vector3& b){ return a.x*b.x + a.y*b.y + a.z*b.z; };
 
-    //==========================================================================
-    // 第3步:面分类与区域提取
-    //==========================================================================
-    // 遍历所有面,提取可合并的区域,将特殊面单独保存
-    for (size_t faceIdx = 0; faceIdx < data.faces.size(); ++faceIdx) {
-        const auto& face = data.faces[faceIdx];
-        // 特殊面保存起来,不参与贪心合并
-        if (face.faceDirection == DO_NOT_CULL || face.faceDirection == UNKNOWN) {
-            specialFaces.push_back(face);
-            continue;
+    size_t faceCount = data.faces.size();
+    if (faceCount == 0) return;
+
+    unsigned int num_threads = std::max(1u, std::thread::hardware_concurrency()); // 获取硬件线程数，至少为1
+
+    // 1. 计算所有面的法向量 (并行化)
+    std::vector<Vector3> faceNormals(faceCount);
+    auto calculate_normals_task = 
+        [&](size_t start_idx, size_t end_idx) {
+        for (size_t i = start_idx; i < end_idx; ++i) {
+            const auto& vs = data.faces[i].vertexIndices;
+            Vector3 p0 = getVertex(vs[0]);
+            Vector3 p1 = getVertex(vs[1]);
+            Vector3 p2 = getVertex(vs[2]);
+            Vector3 e1{ p1.x-p0.x, p1.y-p0.y, p1.z-p0.z };
+            Vector3 e2{ p2.x-p0.x, p2.y-p0.y, p2.z-p0.z };
+            faceNormals[i] = normalize(cross(e1, e2)); // 中文注释: 计算并存储法向量
         }
-        
-        // 检查是否为动态材质或特殊材质,如果是则跳过合并
-        if (face.materialIndex >= 0 && face.materialIndex < data.materials.size()) {
-            const Material& material = data.materials[face.materialIndex];
-            if (material.type == ANIMATED) {
-                specialFaces.push_back(face);
-                continue;
+    };
+    {
+        std::vector<std::future<void>> futures;
+        size_t chunk_size_normals = (faceCount + num_threads - 1) / num_threads;
+        for (unsigned int t = 0; t < num_threads; ++t) {
+            size_t start = t * chunk_size_normals;
+            size_t end = std::min((t + 1) * chunk_size_normals, faceCount);
+            if (start < end) {
+                futures.push_back(std::async(std::launch::async, calculate_normals_task, start, end));
             }
         }
-
-        // 判断是否使用标准UV映射(必须包含所有四个标准点)
-        bool isStandardMapping = false;
-        if (uvIndex00 != -1 && uvIndex10 != -1 && uvIndex11 != -1 && uvIndex01 != -1) {
-            bool has00 = false, has10 = false, has11 = false, has01 = false;
-            for (int i = 0; i < 4; ++i) {
-                int idx = face.uvIndices[i];
-                if (idx == uvIndex00) has00 = true;
-                else if (idx == uvIndex10) has10 = true;
-                else if (idx == uvIndex11) has11 = true;
-                else if (idx == uvIndex01) has01 = true;
-            }
-            isStandardMapping = has00 && has10 && has11 && has01;
-        }
-
-        // 非标准UV映射的面放入特殊面列表
-        if (!isStandardMapping) {
-            specialFaces.push_back(face);
-            continue;
-        }
-
-        //----------------------------------------------------------------------
-        // 提取顶点和UV坐标
-        //----------------------------------------------------------------------
-        // 获取面的四个顶点坐标
-        std::array<std::array<float, 3>, 4> vs;
-        for (int i = 0; i < 4; ++i) {
-            int vidx = face.vertexIndices[i];
-            vs[i][0] = data.vertices[vidx * 3];
-            vs[i][1] = data.vertices[vidx * 3 + 1];
-            vs[i][2] = data.vertices[vidx * 3 + 2];
-        }
-        
-        // 获取面的四个UV坐标
-        std::array<std::array<float, 2>, 4> uvs;
-        for (int i = 0; i < 4; ++i) {
-            int uvidx = face.uvIndices[i];
-            uvs[i][0] = data.uvCoordinates[uvidx * 2];
-            uvs[i][1] = data.uvCoordinates[uvidx * 2 + 1];
-        }
-
-        //----------------------------------------------------------------------
-        // 确定面的坐标轴和边界
-        //----------------------------------------------------------------------
-        // 根据面的方向确定对应的坐标轴
-        int daxis, aaxis, baxis;
-        switch (face.faceDirection) {
-        case UP:    daxis = 1; aaxis = 0; baxis = 2; break; // Y是深度,X和Z是面的轴
-        case DOWN:  daxis = 1; aaxis = 0; baxis = 2; break;
-        case NORTH: daxis = 2; aaxis = 0; baxis = 1; break; // Z是深度,X和Y是面的轴
-        case SOUTH: daxis = 2; aaxis = 0; baxis = 1; break;
-        case WEST:  daxis = 0; aaxis = 2; baxis = 1; break; // X是深度,Z和Y是面的轴
-        case EAST:  daxis = 0; aaxis = 2; baxis = 1; break;
-        default: continue; // 其他方向的面跳过
-        }
-
-        // 确定面在3D空间中的平面位置
-        float plane = vs[0][daxis];
-        
-        //----------------------------------------------------------------------
-        // 计算顶点顺序
-        //----------------------------------------------------------------------
-        // 找到最小坐标点作为参考点(0, 0)
-        int minIdx = 0;
-        float minA = vs[0][aaxis];
-        float minB = vs[0][baxis];
-
-        for (int i = 1; i < 4; ++i) {
-            if (vs[i][aaxis] < minA || (vs[i][aaxis] == minA && vs[i][baxis] < minB)) {
-                minA = vs[i][aaxis];
-                minB = vs[i][baxis];
-                minIdx = i;
-            }
-        }
-
-        // 计算顶点相对于最小点的位置,这样每个1x1的面都有标准化的顶点位置
-        std::array<std::pair<float, float>, 4> relativePos;
-        for (int i = 0; i < 4; ++i) {
-            relativePos[i] = std::make_pair(
-                vs[i][aaxis] - minA,
-                vs[i][baxis] - minB
-            );
-        }
-
-        // 确定顶点的顺序索引,用于统计分析
-        std::array<int, 4> vertexOrder;
-        for (int i = 0; i < 4; ++i) {
-            if (std::abs(relativePos[i].first) < 0.01f && std::abs(relativePos[i].second) < 0.01f) {
-                vertexOrder[0] = i; // 左下角 (0, 0)
-            } else if (std::abs(relativePos[i].first - 1.0f) < 0.01f && std::abs(relativePos[i].second) < 0.01f) {
-                vertexOrder[1] = i; // 右下角 (1, 0)
-            } else if (std::abs(relativePos[i].first - 1.0f) < 0.01f && std::abs(relativePos[i].second - 1.0f) < 0.01f) {
-                vertexOrder[2] = i; // 右上角 (1, 1)
-            } else if (std::abs(relativePos[i].first) < 0.01f && std::abs(relativePos[i].second - 1.0f) < 0.01f) {
-                vertexOrder[3] = i; // 左上角 (0, 1)
-            }
-        }
-
-        // 记录并统计顶点顺序
-        vertexOrderCount[vertexOrder]++;
-        
-        // 计算面在两个轴上的边界范围
-        float a0 = vs[0][aaxis], a1 = a0;
-        float b0 = vs[0][baxis], b1 = b0;
-        for (int i = 1; i < 4; ++i) {
-            a0 = std::fmin(a0, vs[i][aaxis]);
-            a1 = std::fmax(a1, vs[i][aaxis]);
-            b0 = std::fmin(b0, vs[i][baxis]);
-            b1 = std::fmax(b1, vs[i][baxis]);
-        }
-        
-        // 计算UV坐标的边界范围
-        float u0 = uvs[0][0], u1 = u0;
-        float v0 = uvs[0][1], v1 = v0;
-        for (int i = 1; i < 4; ++i) {
-            u0 = std::fmin(u0, uvs[i][0]);
-            u1 = std::fmax(u1, uvs[i][0]);
-            v0 = std::fmin(v0, uvs[i][1]);
-            v1 = std::fmax(v1, uvs[i][1]);
-        }
-
-        // 创建区域对象并添加到列表
-        Region reg = {
-            face.faceDirection, face.materialIndex, plane,
-            aaxis, baxis, a0, a1, b0, b1, u0, v0, u1, v1,
-            vertexOrder,
-            static_cast<int>(faceIdx)  // 保存原始面的索引
-        };
-        regions.push_back(reg);
+        for (auto& fut : futures) fut.get();
     }
 
-    //==========================================================================
-    // 第4步:区域分组
-    //==========================================================================
-    // 按照面的方向、材质、平面位置和顶点顺序进行分组
-    std::map<std::tuple<FaceType, int, float, std::array<int, 4>>, std::vector<Region>> groups;
-    
-    // 使用哈希集合跟踪已处理的原始面索引,提高查找效率
-    std::unordered_set<int> processedFaces;
-    processedFaces.reserve(data.faces.size());
-    
-    for (auto& r : regions) {
-        // 使用方向、材质、平面和顶点顺序作为键
-        groups[{r.dir, r.material, r.plane, r.vertexOrder}].push_back(r);
-    }
-
-    // 处理所有孤立的单个面:即一个分组中只有一个面的情况
-    for (auto it = groups.begin(); it != groups.end();) {
-        if (it->second.size() == 1) {
-            // 将这个孤立面添加到特殊面列表
-            int originalFaceIdx = it->second[0].originalFaceIndex;
-            specialFaces.push_back(data.faces[originalFaceIdx]);
-            
-            // 标记为已处理
-            processedFaces.insert(originalFaceIdx);
-            
-            // 从groups中移除并更新迭代器
-            it = groups.erase(it);
-        } else {
-            ++it;
+    // 2. 构建边->面映射 (并行化 Map-Reduce)
+    struct EdgeKey { int v1, v2; bool operator==(const EdgeKey& o) const { return v1==o.v1 && v2==o.v2; } };
+    struct EdgeKeyHasher { size_t operator()(const EdgeKey& e) const {
+            return std::hash<long long>()(((long long)std::min(e.v1,e.v2)<<32) ^ (unsigned long long)std::max(e.v1,e.v2)); // 确保哈希一致性
         }
-    }
-
-    //==========================================================================
-    // 第5步:贪心合并
-    //==========================================================================
-    std::vector<Region> merged;
-    merged.reserve(groups.size()); // 预分配内存减少重新分配
-    
-    // 对每个分组执行贪心合并算法
-    for (auto& kv : groups) {
-        auto& regs = kv.second;
-        if (regs.empty()) continue;
-        
-        //----------------------------------------------------------------------
-        // 计算分组的边界框
-        //----------------------------------------------------------------------
-        int minA = INT_MAX, minB = INT_MAX;
-        int maxA = INT_MIN, maxB = INT_MIN;
-        float du = 1.0f;  // UV坐标映射比例
-        float dv = 1.0f;
-        
-        // 计算所有区域的最大边界
-        for (auto& r : regs) {
-            int a0i = int(r.a0), a1i = int(r.a1);
-            int b0i = int(r.b0), b1i = int(r.b1);
-            minA = std::fmin(minA, a0i);
-            minB = std::fmin(minB, b0i);
-            maxA = std::fmax(maxA, a1i);
-            maxB = std::fmax(maxB, b1i);
-        }
-        
-        int width = maxA - minA;   // 分组在A轴上的总宽度
-        int height = maxB - minB;  // 分组在B轴上的总高度
-        
-        // 如果区域太大,可能导致内存问题,跳过处理
-        if (width > 1000 || height > 1000) {
-            for (auto& r : regs) {
-                specialFaces.push_back(data.faces[r.originalFaceIndex]);
-                processedFaces.insert(r.originalFaceIndex);
-            }
-            continue;
-        }
-        
-        //----------------------------------------------------------------------
-        // 构建占位图和使用标记图
-        //----------------------------------------------------------------------
-        // 创建占位图,标记每个格子是否被区域占用
-        std::vector<std::vector<bool>> mask(height, std::vector<bool>(width, false));
-        // 创建占位图对应的面索引
-        std::vector<std::vector<int>> cellToRegionIdx(height, std::vector<int>(width, -1));
-        
-        for (size_t regIdx = 0; regIdx < regs.size(); ++regIdx) {
-            auto& r = regs[regIdx];
-            int a0i = int(r.a0) - minA;
-            int b0i = int(r.b0) - minB;
-            int w = int(r.a1 - r.a0);
-            int h = int(r.b1 - r.b0);
-            // 标记此区域占用的所有格子,并记录对应的原始区域索引
-            for (int y = 0; y < h; ++y) {
-                for (int x = 0; x < w; ++x) {
-                    mask[b0i + y][a0i + x] = true;
-                    cellToRegionIdx[b0i + y][a0i + x] = regIdx;
+    };
+    std::unordered_map<EdgeKey, std::vector<int>, EdgeKeyHasher> edgeFaces;
+    {
+        std::vector<std::vector<std::pair<EdgeKey, int>>> thread_edge_pairs(num_threads);
+        auto build_edge_pairs_task = 
+            [&](size_t thread_id, size_t start_idx, size_t end_idx) {
+            for (size_t i = start_idx; i < end_idx; ++i) {
+                const auto& vs = data.faces[i].vertexIndices;
+                for (int k = 0; k < 4; ++k) {
+                    int a = vs[k], b = vs[(k+1)%4];
+                    EdgeKey e{ std::min(a,b), std::max(a,b) }; // 中文注释: 规范化边，确保v1<=v2
+                    thread_edge_pairs[thread_id].emplace_back(e, (int)i);
                 }
-            }
-        }
-        
-        // 创建标记图,记录哪些格子已被合并处理
-        std::vector<std::vector<bool>> used(height, std::vector<bool>(width, false));
-        
-        //----------------------------------------------------------------------
-        // 优化的贪心合并算法:寻找最大矩形
-        //----------------------------------------------------------------------
-        
-        // 结构体用于存储可能的合并矩形
-        struct PotentialRectangle {
-            int x, y;       // 左上角坐标
-            int width, height; // 宽度和高度
-            int area;          // 面积
-            
-            bool operator<(const PotentialRectangle& other) const {
-                return area > other.area; // 按面积降序排列
             }
         };
-        
-        // 计算每个位置可以向右扩展的宽度
-        std::vector<std::vector<int>> rightExtension(height, std::vector<int>(width, 0));
-        for (int y = 0; y < height; ++y) {
-            for (int x = width - 1; x >= 0; --x) {
-                if (mask[y][x] && !used[y][x]) {
-                    if (x == width - 1) {
-                        rightExtension[y][x] = 1;
-                    } else {
-                        rightExtension[y][x] = rightExtension[y][x + 1] + 1;
-                    }
-                }
+        std::vector<std::future<void>> futures;
+        size_t chunk_size_edges = (faceCount + num_threads - 1) / num_threads;
+        for (unsigned int t = 0; t < num_threads; ++t) {
+            size_t start = t * chunk_size_edges;
+            size_t end = std::min((t + 1) * chunk_size_edges, faceCount);
+            if (start < end) {
+                futures.push_back(std::async(std::launch::async, build_edge_pairs_task, t, start, end));
             }
         }
-        
-        // 当还有未使用的格子时,继续寻找最大矩形
-        while (true) {
-            std::vector<PotentialRectangle> potentialRects;
-            
-            // 尝试从每个可用格子开始,找出可能的最大矩形
-            for (int startY = 0; startY < height; ++startY) {
-                for (int startX = 0; startX < width; ++startX) {
-                    if (!mask[startY][startX] || used[startY][startX]) continue;
-                    
-                    // 该位置可以向右扩展的最大宽度
-                    int maxWidth = rightExtension[startY][startX];
-                    if (maxWidth == 0) continue;
-                    
-                    // 向下扩展寻找最大矩形
-                    int currentHeight = 1;
-                    int currentWidth = maxWidth;
-                    
-                    for (int h = 1; startY + h < height; ++h) {
-                        // 检查下一行的可用宽度
-                        if (!mask[startY + h][startX] || used[startY + h][startX]) break;
-                        
-                        // 更新当前行可以扩展的最大宽度
-                        currentWidth = std::fmin(currentWidth, rightExtension[startY + h][startX]);
-                        if (currentWidth == 0) break;
-                        
-                        // 计算当前矩形的面积
-                        int area = currentWidth * (h + 1);
-                        currentHeight = h + 1;
-                        
-                        // 添加到潜在矩形列表
-                        potentialRects.push_back({startX, startY, currentWidth, currentHeight, area});
-                    }
-                    
-                    // 如果只有一行,也计算面积
-                    if (currentHeight == 1) {
-                        potentialRects.push_back({startX, startY, maxWidth, 1, maxWidth});
-                    }
-                }
+        for (auto& fut : futures) fut.get();
+
+        // Reduce step (串行汇总)
+        for (const auto& pairs_vec : thread_edge_pairs) {
+            for (const auto& pair : pairs_vec) {
+                edgeFaces[pair.first].push_back(pair.second);
             }
-            
-            // 如果没有找到可合并的矩形,则结束循环
-            if (potentialRects.empty()) break;
-            
-            // 按面积降序排序,选择最大面积的矩形
-            std::sort(potentialRects.begin(), potentialRects.end());
-            const auto& bestRect = potentialRects[0];
-            
-            // 如果最大矩形只有1x1大小,检查是否是孤立单元格
-            if (bestRect.width == 1 && bestRect.height == 1) {
-                // 将这个孤立的单元格标记为已使用
-                used[bestRect.y][bestRect.x] = true;
-                
-                // 获取原始面索引并添加到特殊面列表
-                int regIdx = cellToRegionIdx[bestRect.y][bestRect.x];
-                if (regIdx >= 0) {
-                    int originalFaceIdx = regs[regIdx].originalFaceIndex;
-                    if (processedFaces.find(originalFaceIdx) == processedFaces.end()) {
-                        specialFaces.push_back(data.faces[originalFaceIdx]);
-                        processedFaces.insert(originalFaceIdx);
-                    }
-                }
+        }
+    }
+
+    // 3. 构建顶点键->索引映射（用于合并后查顶点，暂时保持串行）
+    std::unordered_map<VertexKey,int> vertMap;
+    int vertCount = data.vertices.size()/3;
+    for (int i = 0; i < vertCount; ++i) {
+        int rx = static_cast<int>(data.vertices[3*i]*10000 + 0.5f);
+        int ry = static_cast<int>(data.vertices[3*i+1]*10000 + 0.5f);
+        int rz = static_cast<int>(data.vertices[3*i+2]*10000 + 0.5f);
+        vertMap[{rx, ry, rz}] = i;
+    }
+
+    // 4. UV 连续性检查 (Lambda定义)
+    enum UVAxis { NONE=0, HORIZONTAL=1, VERTICAL=2 };
+    auto checkUV = [&](int fi){
+        const auto& uvs_indices = data.faces[fi].uvIndices;
+        int cntTop=0, cntBottom=0, cntLeft=0, cntRight=0;
+        for (int j=0;j<4;++j) {
+            // 检查uvIndices是否有效
+            if (uvs_indices[j] < 0 || (uvs_indices[j] * 2 + 1) >= data.uvCoordinates.size()) {
+                 // std::cerr << "Warning: Invalid UV index " << uvs_indices[j] << " for face " << fi << std::endl;
+                 return NONE; // 无效UV索引，无法判断连续性
+            }
+            float u = data.uvCoordinates[2*uvs_indices[j]];
+            float v = data.uvCoordinates[2*uvs_indices[j]+1];
+            if (std::fabs(v-1.0f)<eps) ++cntTop;
+            if (std::fabs(v)<eps) ++cntBottom;
+            if (std::fabs(u)<eps) ++cntLeft;
+            if (std::fabs(u-1.0f)<eps) ++cntRight;
+        }
+        if (cntTop==2 && cntBottom==2) return VERTICAL;   // 中文注释: 上下边贴合UV边界
+        if (cntLeft==2 && cntRight==2) return HORIZONTAL; // 中文注释: 左右边贴合UV边界
+        return NONE;
+    };
+
+    // 5. 分组（排除动态材质，按法线/材质/UV轴一致性） (并行化)
+    std::vector<std::atomic_bool> visited_atomic(faceCount);
+    for(size_t i = 0; i < faceCount; ++i) visited_atomic[i].store(false, std::memory_order_relaxed);
+    
+    std::vector<std::vector<int>> all_groups_collected; // 中文注释: 用于收集所有线程发现的组
+    std::mutex all_groups_mutex;       // 中文注释: 保护all_groups_collected的互斥锁
+
+    auto discover_groups_task = 
+        [&](size_t start_idx, size_t end_idx) {
+        std::vector<std::vector<int>> local_thread_groups; // 中文注释: 每个线程的局部组列表
+        for (size_t i = start_idx; i < end_idx; ++i) {
+            bool expected_visited = false;
+            // 中文注释: 尝试原子地标记当前面为已访问，如果成功，则以此面为种子开始BFS建组
+            if (!visited_atomic[i].compare_exchange_strong(expected_visited, true, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+                continue; // 如果已经被其他线程标记或自身已处理，则跳过
+            }
+
+            const Face& f0 = data.faces[i];
+            MaterialType mt = data.materials[f0.materialIndex].type;
+            if (mt == ANIMATED) { // 中文注释: 动态材质不参与合并，单独成组
+                local_thread_groups.push_back({(int)i});
                 continue;
             }
-            
-            // 标记矩形内的所有格子为已使用
-            for (int dy = 0; dy < bestRect.height; ++dy) {
-                for (int dx = 0; dx < bestRect.width; ++dx) {
-                    int y = bestRect.y + dy;
-                    int x = bestRect.x + dx;
-                    used[y][x] = true;
-                    
-                    // 记录参与合并的原始区域
-                    int regIdx = cellToRegionIdx[y][x];
-                    if (regIdx >= 0) {
-                        int originalFaceIdx = regs[regIdx].originalFaceIndex;
-                        processedFaces.insert(originalFaceIdx);
-                    }
-                }
+            UVAxis axis0 = checkUV(i);
+            if (axis0 == NONE) { // 中文注释: 不满足UV连续性条件的面，单独成组
+                local_thread_groups.push_back({(int)i});
+                continue;
             }
+            Vector3 n0 = faceNormals[i]; // 中文注释: 当前组的基准法向量
+
+            std::vector<int> current_bfs_group;
+            std::queue<int> q;
             
-            // 计算合并后矩形的世界坐标
-            int regionA0 = minA + bestRect.x;
-            int regionA1 = regionA0 + bestRect.width;
-            int regionB0 = minB + bestRect.y;
-            int regionB1 = regionB0 + bestRect.height;
-            
-            // 查找与合并区域重叠最多的原始区域,继承其UV属性
-            Region* bestMatchRegion = nullptr;
-            float bestOverlap = 0.0f;
-            
-            for (auto& r : regs) {
-                int a0i = int(r.a0);
-                int a1i = int(r.a1);
-                int b0i = int(r.b0);
-                int b1i = int(r.b1);
-                
-                // 计算重叠区域
-                int overlapA0 = std::fmax(regionA0, a0i);
-                int overlapA1 = std::fmin(regionA1, a1i);
-                int overlapB0 = std::fmax(regionB0, b0i);
-                int overlapB1 = std::fmin(regionB1, b1i);
-                
-                // 检查是否有重叠
-                if (overlapA0 < overlapA1 && overlapB0 < overlapB1) {
-                    // 计算重叠比例
-                    float overlapArea = (overlapA1 - overlapA0) * (overlapB1 - overlapB0);
-                    float regionArea = (a1i - a0i) * (b1i - b0i);
-                    float overlapRatio = overlapArea / regionArea;
-                    
-                    // 更新最佳匹配
-                    if (overlapRatio > bestOverlap) {
-                        bestOverlap = overlapRatio;
-                        bestMatchRegion = &r;
-                    }
-                }
-            }
-            
-            // 创建合并区域
-            Region nr = regs[0];  // 基础属性复制
-            nr.a0 = float(regionA0);
-            nr.a1 = float(regionA1);
-            nr.b0 = float(regionB0);
-            nr.b1 = float(regionB1);
-            nr.u0 = 0.0f;
-            nr.u1 = du * bestRect.width;
-            nr.v0 = 0.0f;
-            nr.v1 = dv * bestRect.height;
-            nr.originalFaceIndex = -1; // 合并区域不对应原始面
-            
-            // 如果有最佳匹配区域,继承其顶点顺序
-            if (bestMatchRegion) {
-                nr.vertexOrder = bestMatchRegion->vertexOrder;
-            }
-            
-            merged.push_back(nr);
-            
-            // 更新右扩展数组,因为有些格子已经被使用了
-            for (int y = 0; y < height; ++y) {
-                for (int x = width - 1; x >= 0; --x) {
-                    if (mask[y][x] && !used[y][x]) {
-                        if (x == width - 1) {
-                            rightExtension[y][x] = 1;
-                        } else if (used[y][x + 1]) {
-                            rightExtension[y][x] = 1;
-                        } else {
-                            rightExtension[y][x] = rightExtension[y][x + 1] + 1;
+            current_bfs_group.push_back((int)i);
+            q.push((int)i);
+
+            while (!q.empty()) {
+                int cur = q.front();
+                q.pop();
+                const auto& vs = data.faces[cur].vertexIndices;
+                for (int k_edge = 0; k_edge < 4; ++k_edge) {
+                    EdgeKey ek{std::min(vs[k_edge], vs[(k_edge + 1) % 4]), std::max(vs[k_edge], vs[(k_edge + 1) % 4])};
+                    auto it_edge = edgeFaces.find(ek);
+                    if (it_edge == edgeFaces.end()) continue;
+
+                    for (int nb_face_idx : it_edge->second) {
+                        // 中文注释: 检查邻接面是否满足合并条件
+                        const Face& fn_check = data.faces[nb_face_idx];
+                        if (fn_check.materialIndex != f0.materialIndex) continue; // 材质必须相同
+                        
+                        Vector3 dn_check{faceNormals[nb_face_idx].x - n0.x, faceNormals[nb_face_idx].y - n0.y, faceNormals[nb_face_idx].z - n0.z};
+                        if (std::sqrt(dn_check.x*dn_check.x + dn_check.y*dn_check.y + dn_check.z*dn_check.z) > eps) continue; // 法线必须相同
+                        if (checkUV(nb_face_idx) != axis0) continue; // UV连续性类型必须相同
+
+                        bool expected_nb_visited = false;
+                        // 中文注释: 原子地标记合格的邻接面为已访问，并加入当前组的BFS队列
+                        if (visited_atomic[nb_face_idx].compare_exchange_strong(expected_nb_visited, true, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+                            current_bfs_group.push_back(nb_face_idx);
+                            q.push(nb_face_idx);
                         }
-                    } else {
-                        rightExtension[y][x] = 0;
                     }
                 }
             }
-        }
-        
-        // 处理没有参与合并的区域
-        for (size_t i = 0; i < regs.size(); ++i) {
-            int originalFaceIdx = regs[i].originalFaceIndex;
-            if (processedFaces.find(originalFaceIdx) == processedFaces.end()) {
-                specialFaces.push_back(data.faces[originalFaceIdx]);
-                processedFaces.insert(originalFaceIdx);
+            if (!current_bfs_group.empty()) {
+                local_thread_groups.push_back(std::move(current_bfs_group));
             }
         }
-    }
-
-    // 检查是否有未处理的原始面,将它们添加到特殊面
-    for (size_t i = 0; i < regions.size(); ++i) {
-        int originalFaceIdx = regions[i].originalFaceIndex;
-        if (processedFaces.find(originalFaceIdx) == processedFaces.end()) {
-            specialFaces.push_back(data.faces[originalFaceIdx]);
+        // 中文注释: 将当前线程发现的组合并到全局组列表中（受互斥锁保护）
+        if (!local_thread_groups.empty()) {
+            std::lock_guard<std::mutex> lock(all_groups_mutex);
+            for (auto& lg : local_thread_groups) {
+                all_groups_collected.push_back(std::move(lg));
+            }
         }
-    }
-
-    //==========================================================================
-    // 第6步:重建网格
-    //==========================================================================
-    ModelData newData;
-    newData.materials = data.materials;
-    
-    // 用于顶点和UV坐标去重的哈希表
-    std::unordered_map<VertexKey, int> vertexMap;
-    std::unordered_map<UVKey, int> uvMap;
-
-    //----------------------------------------------------------------------
-    // 处理合并后的区域,生成新的面
-    //----------------------------------------------------------------------
-    for (auto& r : merged) {
-        // 根据面的方向确定坐标轴
-        int daxis, aaxis, baxis;
-        switch (r.dir) {
-        case UP:    daxis = 1; aaxis = 0; baxis = 2; break;
-        case DOWN:  daxis = 1; aaxis = 0; baxis = 2; break;
-        case NORTH: daxis = 2; aaxis = 0; baxis = 1; break;
-        case SOUTH: daxis = 2; aaxis = 0; baxis = 1; break;
-        case WEST:  daxis = 0; aaxis = 2; baxis = 1; break;
-        case EAST:  daxis = 0; aaxis = 2; baxis = 1; break;
-        default: continue;
+    };
+    {
+        std::vector<std::future<void>> futures_grouping;
+        size_t chunk_size_grouping = (faceCount + num_threads - 1) / num_threads;
+        for (unsigned int t = 0; t < num_threads; ++t) {
+            size_t start = t * chunk_size_grouping;
+            size_t end = std::min((t + 1) * chunk_size_grouping, faceCount);
+            if (start < end) {
+                futures_grouping.push_back(std::async(std::launch::async, discover_groups_task, start, end));
+            }
         }
+        for (auto& fut : futures_grouping) fut.get();
+    }
+    // 替换原有 groups 变量
+    std::vector<std::vector<int>>& groups = all_groups_collected;
+
+    // 6. 并行处理每个可合并组 (此部分逻辑来自您之前的版本，保持不变)
+    struct MergedResult { std::vector<Face> faces; std::vector<float> uvCoords; };
+    auto processGroup = [&](std::vector<int> grp_indices)->MergedResult {
+        MergedResult res;
+        if (grp_indices.empty()) return res;
+
+        int i0 = grp_indices[0];
+        const Face& f0_group_base = data.faces[i0];
+        Vector3 N0_group_base = faceNormals[i0];
+        Vector3 arbi_group_base = std::fabs(N0_group_base.x)>std::fabs(N0_group_base.z)? Vector3{0,0,1}:Vector3{1,0,0};
+        Vector3 T1_group_base = normalize(cross(arbi_group_base,N0_group_base));
+        Vector3 T2_group_base = normalize(cross(N0_group_base,T1_group_base));
+        Vector3 P0_group_base = getVertex(f0_group_base.vertexIndices[0]);
         
-        // 计算合并区域的四个顶点坐标(按顺序:左下、右下、右上、左上)
-        std::array<std::array<float, 3>, 4> pts;
-        auto setPt = [&](int idx, float a, float b) {
-            pts[idx][daxis] = r.plane;
-            pts[idx][aaxis] = a;
-            pts[idx][baxis] = b;
+        struct Entry { float minW, maxW, minH, maxH; float uMin, uMax, vMin, vMax; int rotation; std::array<int,4> vids; int originalFaceIndex; };
+        std::vector<Entry> entries;
+        entries.reserve(grp_indices.size());
+
+        for(int fi_original_idx : grp_indices){
+            Entry e;
+            const auto& f_entry = data.faces[fi_original_idx];
+            e.vids = f_entry.vertexIndices;
+            e.originalFaceIndex = fi_original_idx; // 保存原始索引用于后续UV旋转计算
+
+            std::array<Vector2,4> pts_proj;
+            for(int j=0;j<4;++j){
+                Vector3 P_vert = getVertex(e.vids[j]);
+                Vector3 d_vec{P_vert.x-P0_group_base.x,P_vert.y-P0_group_base.y,P_vert.z-P0_group_base.z};
+                float w_coord = dot3(d_vec,T1_group_base), h_coord = dot3(d_vec,T2_group_base);
+                pts_proj[j] = Vector2{w_coord,h_coord};
+                if(j==0){ e.minW=e.maxW=w_coord; e.minH=e.maxH=h_coord; }
+                else { e.minW=std::min(e.minW,w_coord); e.maxW=std::max(e.maxW,w_coord);
+                       e.minH=std::min(e.minH,h_coord); e.maxH=std::max(e.maxH,h_coord); }
+            }
+            for(int j=0;j<4;++j){
+                if (f_entry.uvIndices[j] < 0 || (f_entry.uvIndices[j] * 2 + 1) >= data.uvCoordinates.size()) {
+                     e.uMin=0; e.uMax=0; e.vMin=0; e.vMax=0; // 处理无效UV的情况
+                     break; // 如果一个UV无效，整个面的UV范围可能无意义
+                }
+                float u_coord = data.uvCoordinates[2*f_entry.uvIndices[j]];
+                float v_coord = data.uvCoordinates[2*f_entry.uvIndices[j]+1];
+                if(j==0){ e.uMin=e.uMax=u_coord; e.vMin=e.vMax=v_coord; }
+                else { e.uMin=std::min(e.uMin,u_coord); e.uMax=std::max(e.uMax,u_coord);
+                       e.vMin=std::min(e.vMin,v_coord); e.vMax=std::max(e.vMax,v_coord); }
+            }
+
+            std::array<Vector2,4> uvs_rot_calc;
+            bool uv_valid_for_rotation = true;
+            for(int j=0;j<4;++j){ 
+                if (f_entry.uvIndices[j] < 0 || (f_entry.uvIndices[j] * 2 + 1) >= data.uvCoordinates.size()) {
+                    uv_valid_for_rotation = false; break;
+                }
+                uvs_rot_calc[j]={data.uvCoordinates[2*f_entry.uvIndices[j]],data.uvCoordinates[2*f_entry.uvIndices[j]+1]}; 
+            }
+            if (!uv_valid_for_rotation) { e.rotation = 0; /* 默认旋转或错误处理 */ }
+            else {
+                Vector2 dWx_rot{pts_proj[1].x-pts_proj[0].x,pts_proj[1].y-pts_proj[0].y}, dWy_rot{pts_proj[3].x-pts_proj[0].x,pts_proj[3].y-pts_proj[0].y};
+                Vector2 dUx_rot{uvs_rot_calc[1].x-uvs_rot_calc[0].x,uvs_rot_calc[1].y-uvs_rot_calc[0].y}, dUy_rot{uvs_rot_calc[3].x-uvs_rot_calc[0].x,uvs_rot_calc[3].y-uvs_rot_calc[0].y};
+                auto dot2_rot=[&](Vector2 a,Vector2 b){return a.x*b.x+a.y*b.y;};
+                float t0_rot=dot2_rot(dWx_rot,dUx_rot)+dot2_rot(dWy_rot,dUy_rot), t90_rot=dot2_rot(dWx_rot,dUy_rot)-dot2_rot(dWy_rot,dUx_rot);
+                float t180_rot=-t0_rot, t270_rot=-t90_rot;
+                if(t0_rot>=t90_rot&&t0_rot>=t180_rot&&t0_rot>=t270_rot) e.rotation=0;
+                else if(t90_rot>=t0_rot&&t90_rot>=t180_rot&&t90_rot>=t270_rot) e.rotation=90;
+                else if(t180_rot>=t0_rot&&t180_rot>=t90_rot&&t180_rot>=t270_rot) e.rotation=180;
+                else e.rotation=270;
+            }
+            entries.push_back(e);
+        }
+
+        auto performLimitedMergePass = [&](std::vector<Entry>& current_entries_ref, bool mergeW_axis) -> bool {
+            bool any_merge_overall = false;
+            std::vector<char> processed_mask(current_entries_ref.size(), 0); 
+            std::vector<Entry> next_entries_list;
+            for (size_t i_pass = 0; i_pass < current_entries_ref.size(); ++i_pass) {
+                if (processed_mask[i_pass] != 0) continue; 
+                Entry cur_pass = current_entries_ref[i_pass];
+                processed_mask[i_pass] = 1; 
+                for (size_t j_pass = 0; j_pass < current_entries_ref.size(); ++j_pass) {
+                    if (i_pass == j_pass || processed_mask[j_pass] != 0) continue; 
+                    if (current_entries_ref[j_pass].rotation != cur_pass.rotation) continue;
+                    bool merged_now = false;
+                    Entry other_entry_copy_pass = current_entries_ref[j_pass]; 
+                    if (mergeW_axis) {
+                        if (std::fabs(cur_pass.maxW - other_entry_copy_pass.minW) < eps && std::fabs(cur_pass.minH - other_entry_copy_pass.minH) < eps && std::fabs(cur_pass.maxH - other_entry_copy_pass.maxH) < eps) {
+                            float deltaU = other_entry_copy_pass.uMax - other_entry_copy_pass.uMin;
+                            float deltaV = other_entry_copy_pass.vMax - other_entry_copy_pass.vMin;
+                            if (cur_pass.rotation == 90 || cur_pass.rotation == 270) cur_pass.vMax += deltaV; else cur_pass.uMax += deltaU;
+                            cur_pass.maxW = other_entry_copy_pass.maxW;
+                            merged_now = true;
+                        } else if (std::fabs(cur_pass.minW - other_entry_copy_pass.maxW) < eps && std::fabs(cur_pass.minH - other_entry_copy_pass.minH) < eps && std::fabs(cur_pass.maxH - other_entry_copy_pass.maxH) < eps) {
+                            float deltaU = other_entry_copy_pass.uMax - other_entry_copy_pass.uMin;
+                            float deltaV = other_entry_copy_pass.vMax - other_entry_copy_pass.vMin;
+                            if (cur_pass.rotation == 90 || cur_pass.rotation == 270) cur_pass.vMin -= deltaV; else cur_pass.uMin -= deltaU;
+                            cur_pass.minW = other_entry_copy_pass.minW;
+                            merged_now = true;
+                        }
+                    } else { 
+                        if (std::fabs(cur_pass.maxH - other_entry_copy_pass.minH) < eps && std::fabs(cur_pass.minW - other_entry_copy_pass.minW) < eps && std::fabs(cur_pass.maxW - other_entry_copy_pass.maxW) < eps) {
+                            float deltaU = other_entry_copy_pass.uMax - other_entry_copy_pass.uMin;
+                            float deltaV = other_entry_copy_pass.vMax - other_entry_copy_pass.vMin;
+                            if (cur_pass.rotation == 90 || cur_pass.rotation == 270) cur_pass.uMax += deltaU; else cur_pass.vMax += deltaV;
+                            cur_pass.maxH = other_entry_copy_pass.maxH;
+                            merged_now = true;
+                        } else if (std::fabs(cur_pass.minH - other_entry_copy_pass.maxH) < eps && std::fabs(cur_pass.minW - other_entry_copy_pass.minW) < eps && std::fabs(cur_pass.maxW - other_entry_copy_pass.maxW) < eps) {
+                            float deltaU = other_entry_copy_pass.uMax - other_entry_copy_pass.uMin;
+                            float deltaV = other_entry_copy_pass.vMax - other_entry_copy_pass.vMin;
+                            if (cur_pass.rotation == 90 || cur_pass.rotation == 270) cur_pass.uMin -= deltaU; else cur_pass.vMin -= deltaV;
+                            cur_pass.minH = other_entry_copy_pass.minH;
+                            merged_now = true;
+                        }
+                    }
+                    if (merged_now) {
+                        processed_mask[j_pass] = 2; 
+                        any_merge_overall = true;
+                        break; 
+                    }
+                }
+                next_entries_list.push_back(cur_pass); 
+            }
+            // 将未被消耗(processed_mask[k]==0)且未作为基础(processed_mask[k]!=1)的条目也加入next_entries_list
+            for(size_t k_pass=0; k_pass < current_entries_ref.size(); ++k_pass) {
+                if(processed_mask[k_pass] == 0) next_entries_list.push_back(current_entries_ref[k_pass]);
+            }
+            current_entries_ref.swap(next_entries_list);
+            return any_merge_overall;
         };
-        
-        // 根据面的方向设置不同的顶点顺序
-        switch (r.dir) {
-        case UP:
-            // 对于UP方向的面,反转顶点顺序以确保法向量方向正确
-            setPt(0, r.a0, r.b1);  // 左上
-            setPt(1, r.a1, r.b1);  // 右上
-            setPt(2, r.a1, r.b0);  // 右下
-            setPt(3, r.a0, r.b0);  // 左下
-            break;
-        case DOWN:
-            // DOWN方向保持原来的顺序
-            setPt(0, r.a0, r.b0);  // 左下
-            setPt(1, r.a1, r.b0);  // 右下
-            setPt(2, r.a1, r.b1);  // 右上
-            setPt(3, r.a0, r.b1);  // 左上
-            break;
-        case NORTH:
-            // NORTH方向法线反向,需要反转顶点顺序
-            setPt(0, r.a0, r.b1);  // 左上
-            setPt(1, r.a1, r.b1);  // 右上
-            setPt(2, r.a1, r.b0);  // 右下
-            setPt(3, r.a0, r.b0);  // 左下
-            break;
-        case SOUTH:
-            // SOUTH方向保持原来的顺序
-            setPt(0, r.a0, r.b0);  // 左下
-            setPt(1, r.a1, r.b0);  // 右下
-            setPt(2, r.a1, r.b1);  // 右上
-            setPt(3, r.a0, r.b1);  // 左上
-            break;
-        case EAST:
-            // EAST方向法线反向,需要反转顶点顺序
-            setPt(0, r.a0, r.b1);  // 左上
-            setPt(1, r.a1, r.b1);  // 右上
-            setPt(2, r.a1, r.b0);  // 右下
-            setPt(3, r.a0, r.b0);  // 左下
-            break;
-        case WEST:
-            // WEST方向保持原来的顺序
-            setPt(0, r.a0, r.b0);  // 左下
-            setPt(1, r.a1, r.b0);  // 右下
-            setPt(2, r.a1, r.b1);  // 右上
-            setPt(3, r.a0, r.b1);  // 左上
-            break;
-        default:
-            // 其他方向保持原来的顺序
-            setPt(0, r.a0, r.b0);  // 左下
-            setPt(1, r.a1, r.b0);  // 右下
-            setPt(2, r.a1, r.b1);  // 右上
-            setPt(3, r.a0, r.b1);  // 左上
-        }
-        
-        // 计算合并区域的UV映射尺寸
-        int aw = static_cast<int>(r.a1 - r.a0);
-        int bh = static_cast<int>(r.b1 - r.b0);
-
-        // 创建基础UV映射矩形
-        std::array<std::array<float, 2>, 4> baseUvRect;
-        
-        // 为不同方向使用不同的UV排列
-        if (r.dir == NORTH || r.dir == EAST) {
-            // 为反向法线的面使用反转的UV坐标,保持贴图方向正确
-            baseUvRect = { {
-                {0.0f,      bh * 1.0f},  // 左上 - 对应0
-                {aw * 1.0f, bh * 1.0f},  // 右上 - 对应1
-                {aw * 1.0f, 0.0f},       // 右下 - 对应2
-                {0.0f,      0.0f}        // 左下 - 对应3
-            } };
-        } else {
-            // 其他方向使用标准UV排列
-            baseUvRect = { {
-                {0.0f,      0.0f},       // 左下 - 对应0
-                {aw * 1.0f, 0.0f},       // 右下 - 对应1
-                {aw * 1.0f, bh * 1.0f},  // 右上 - 对应2
-                {0.0f,      bh * 1.0f}   // 左上 - 对应3
-            } };
-        }
-
-        // 应用UV变换(旋转和翻转)
-        std::array<std::array<float, 2>, 4> uvRect = baseUvRect;
-        
-        // 计算UV矩形的中心点
-        float centerU = (baseUvRect[0][0] + baseUvRect[2][0]) / 2.0f;
-        float centerV = (baseUvRect[0][1] + baseUvRect[2][1]) / 2.0f;
-
-        // 根据顶点索引顺序进行UV旋转
-        // 构造顶点顺序字符串,避免八进制数字问题
-        std::string vertexOrderStr = 
-            std::to_string(r.vertexOrder[0]) + 
-            std::to_string(r.vertexOrder[1]) + 
-            std::to_string(r.vertexOrder[2]) + 
-            std::to_string(r.vertexOrder[3]);
-        
-        // 创建变换矩阵
-        Matrix2x2 transformMatrix = Matrix2x2::identity();
-        
-        if (vertexOrderStr == "0123") { // [0,1,2,3] - 标准顺序,不需要旋转
-            //transformMatrix = Matrix2x2::rotation(90.0f);
-            // 保持单位矩阵
-        }
-        else if (vertexOrderStr == "0321") { // [0,3,2,1] - 垂直翻转(绕水平轴)
-            //transformMatrix = Matrix2x2::rotation(270.0f);
-        }
-        else if (vertexOrderStr == "1032") { // [1,0,3,2] - 水平翻转(绕垂直轴)
-            transformMatrix = Matrix2x2::rotation(270.0f);
-        }
-        else if (vertexOrderStr == "1230") { // [1,2,3,0] - 顺时针旋转270度
-            //transformMatrix = Matrix2x2::rotation(70.0f);
-        }
-        else if (vertexOrderStr == "2103") { // [2,1,0,3] - 顺时针旋转180度
-            //transformMatrix = Matrix2x2::rotation(270.0f);
-        }
-        else if (vertexOrderStr == "2301") { // [2,3,0,1] - 顺时针旋转90度
-           // transformMatrix = Matrix2x2::rotation(90.0f);
-        }
-        else if (vertexOrderStr == "3012") { // [3,0,1,2] - 对角线翻转(主对角线)
-            // 主对角线翻转相当于先旋转90度再水平翻转
-            //transformMatrix = Matrix2x2::rotation(180.0f);
-        }
-        else if (vertexOrderStr == "3210") { // [3,2,1,0] - 对角线翻转(副对角线)
-            // 副对角线翻转相当于先旋转90度再垂直翻转
-            transformMatrix = Matrix2x2::rotation(90.0f) ;
-        }
-        
-        // 应用变换矩阵到每个UV坐标
-        for (int i = 0; i < 4; ++i) {
-            auto [newU, newV] = transformPoint(transformMatrix, baseUvRect[i][0], baseUvRect[i][1], centerU, centerV);
-            uvRect[i][0] = newU;
-            uvRect[i][1] = newV;
-        }
-        
-        // 找出变换后的左下角点的坐标(四个点中u和v值最小的点)
-        float minU = uvRect[0][0];
-        float minV = uvRect[0][1];
-        for (int i = 1; i < 4; ++i) {
-            minU = std::fmin(minU, uvRect[i][0]);
-            minV = std::fmin(minV, uvRect[i][1]);
-        }
-        
-        // 将所有点偏移到原点(减去最小u,v值)
-        for (int i = 0; i < 4; ++i) {
-            uvRect[i][0] -= minU;
-            uvRect[i][1] -= minV;
-        }
-        
-        // 创建新面
-        Face nf;
-        nf.materialIndex = r.material;
-        nf.faceDirection = r.dir;
-        
-        // 添加面的顶点和UV坐标
-        for (int i = 0; i < 4; ++i) {
-            // 添加顶点,利用哈希表去重
-            float x = pts[i][0], y = pts[i][1], z = pts[i][2];
-            int rx = static_cast<int>(x * 10000 + 0.5f);  // 保留四位小数
-            int ry = static_cast<int>(y * 10000 + 0.5f);
-            int rz = static_cast<int>(z * 10000 + 0.5f);
-            VertexKey vkey{ rx, ry, rz };
-
-            int vertexIndex;
-            auto vit = vertexMap.find(vkey);
-            if (vit != vertexMap.end()) {
-                vertexIndex = vit->second;  // 使用已存在的顶点
+        bool changed_in_super_iteration = true;
+        while (changed_in_super_iteration) {
+            changed_in_super_iteration = false;
+            if (performLimitedMergePass(entries, true)) { 
+                changed_in_super_iteration = true;
             }
-            else {
-                vertexIndex = newData.vertices.size() / 3;  // 创建新顶点
-                vertexMap[vkey] = vertexIndex;
-                newData.vertices.push_back(x);
-                newData.vertices.push_back(y);
-                newData.vertices.push_back(z);
+            if (performLimitedMergePass(entries, false)) { 
+                changed_in_super_iteration = true;
             }
-            nf.vertexIndices[i] = vertexIndex;
-
-            // 添加UV坐标,利用哈希表去重
-            float u = uvRect[i][0], v = uvRect[i][1];
-            int ru = static_cast<int>(u * 1000000 + 0.5f);  // 保留六位小数
-            int rv = static_cast<int>(v * 1000000 + 0.5f);
-            UVKey uvkey{ ru, rv };
-
-            int uvIndex;
-            auto uvit = uvMap.find(uvkey);
-            if (uvit != uvMap.end()) {
-                uvIndex = uvit->second;  // 使用已存在的UV坐标
-            }
-            else {
-                uvIndex = newData.uvCoordinates.size() / 2;  // 创建新UV坐标
-                uvMap[uvkey] = uvIndex;
-                newData.uvCoordinates.push_back(u);
-                newData.uvCoordinates.push_back(v);
-            }
-            nf.uvIndices[i] = uvIndex;
         }
-        newData.faces.push_back(nf);
+
+        for(auto& e_final: entries){
+            Face nf; nf.materialIndex=f0_group_base.materialIndex; nf.faceDirection=UNKNOWN;
+            std::array<int,4> vidx_final;
+            for(int k_final=0;k_final<4;++k_final){
+                float w2d = (k_final==0||k_final==3? e_final.minW : e_final.maxW);
+                float h2d = (k_final==0||k_final==1? e_final.minH : e_final.maxH);
+                Vector3 pos_final{P0_group_base.x + w2d*T1_group_base.x + h2d*T2_group_base.x,
+                                  P0_group_base.y + w2d*T1_group_base.y + h2d*T2_group_base.y,
+                                  P0_group_base.z + w2d*T1_group_base.z + h2d*T2_group_base.z};
+                int rx_final=int(pos_final.x*10000+0.5f), ry_final=int(pos_final.y*10000+0.5f), rz_final=int(pos_final.z*10000+0.5f);
+                vidx_final[k_final]=vertMap[{rx_final,ry_final,rz_final}];
+                nf.vertexIndices[k_final]=vidx_final[k_final];
+            }
+            res.faces.push_back(nf);
+            {
+                float du_final = e_final.uMax - e_final.uMin;
+                float dv_final = e_final.vMax - e_final.vMin;
+                for(int k_uv=0; k_uv < 4; ++k_uv) {
+                    float fw_uv = (k_uv == 1 || k_uv == 2) ? 1.0f : 0.0f;
+                    float fh_uv = (k_uv >= 2) ? 1.0f : 0.0f;
+                    float lu_uv, lv_uv;
+                    switch (e_final.rotation) {
+                        case 0:   lu_uv = fw_uv;             lv_uv = fh_uv;             break;
+                        case 90:  lu_uv = fh_uv;             lv_uv = 1.0f - fw_uv;      break;
+                        case 180: lu_uv = 1.0f - fw_uv;      lv_uv = 1.0f - fh_uv;      break;
+                        case 270: lu_uv = 1.0f - fh_uv;      lv_uv = fw_uv;             break;
+                        default:  lu_uv = fw_uv;             lv_uv = fh_uv;             break;
+                    }
+                    float u_final = e_final.uMin + lu_uv * du_final;
+                    float v_final = e_final.vMin + lv_uv * dv_final;
+                    res.uvCoords.push_back(u_final);
+                    res.uvCoords.push_back(v_final);
+                }
+            }
+        }
+        return res;
+    };
+
+    // 7. 异步执行各组合并 (保持不变，但使用上面修改后的 groups 变量)
+    std::vector<std::future<MergedResult>> futures;
+    for(auto& grp_item: groups) { // 使用 all_groups_collected (现在是 groups 的引用)
+        if(grp_item.size()>1) { // 只为包含多个面的组创建任务
+            futures.push_back(std::async(std::launch::async, processGroup, grp_item));
+        } else if (grp_item.size() == 1) { // 单面组直接加入结果，无需processGroup
+            // This logic will be handled later when collecting results.
+        }
     }
 
-    //==========================================================================
-    // 第7步:处理特殊面
-    //==========================================================================
-    // 将之前保存的特殊面(不符合合并条件或无法合并的面)添加回模型
-    for (const auto& face : specialFaces) {
-        // 直接使用原始特殊面的数据,只将顶点和UV索引转换为新模型中的索引
-        Face nf = face;
-        
-        // 处理特殊面的顶点
-        for (int i = 0; i < 4; ++i) {
-            int vidx = face.vertexIndices[i];
-            float x = data.vertices[vidx * 3];
-            float y = data.vertices[vidx * 3 + 1];
-            float z = data.vertices[vidx * 3 + 2];
-            
-            // 尝试查找或添加顶点
-            int rx = static_cast<int>(x * 10000 + 0.5f);
-            int ry = static_cast<int>(y * 10000 + 0.5f);
-            int rz = static_cast<int>(z * 10000 + 0.5f);
-            VertexKey vkey{ rx, ry, rz };
+    // 8. 收集合并结果并更新 data
+    std::vector<Face> newFaces;
+    size_t current_uv_offset = data.uvCoordinates.size() / 2;
+    data.uvCoordinates.reserve(data.uvCoordinates.size() + faceCount * 8); // 预估UV增长
+    newFaces.reserve(faceCount); // 预估面数
 
-            int vertexIndex;
-            auto vit = vertexMap.find(vkey);
-            if (vit != vertexMap.end()) {
-                vertexIndex = vit->second;
-            }
-            else {
-                vertexIndex = newData.vertices.size() / 3;
-                vertexMap[vkey] = vertexIndex;
-                newData.vertices.push_back(x);
-                newData.vertices.push_back(y);
-                newData.vertices.push_back(z);
-            }
-            nf.vertexIndices[i] = vertexIndex;
-
-            // 处理特殊面的UV坐标
-            int uvidx = face.uvIndices[i];
-            float u = data.uvCoordinates[uvidx * 2];
-            float v = data.uvCoordinates[uvidx * 2 + 1];
-            
-            // 添加UV坐标,利用哈希表去重
-            int ru = static_cast<int>(u * 1000000 + 0.5f);
-            int rv = static_cast<int>(v * 1000000 + 0.5f);
-            UVKey uvkey{ ru, rv };
-
-            int uvIndex;
-            auto uvit = uvMap.find(uvkey);
-            if (uvit != uvMap.end()) {
-                uvIndex = uvit->second;
-            }
-            else {
-                uvIndex = newData.uvCoordinates.size() / 2;
-                uvMap[uvkey] = uvIndex;
-                newData.uvCoordinates.push_back(u);
-                newData.uvCoordinates.push_back(v);
-            }
-            nf.uvIndices[i] = uvIndex;
+    for(auto& f_future: futures){
+        MergedResult mr = f_future.get();
+        for(const auto& face_res : mr.faces) {
+            newFaces.push_back(face_res); // 添加合并后的面
         }
-        
-        newData.faces.push_back(nf);
+        // 为新面添加对应的UV坐标，并更新其uvIndices
+        size_t faces_in_mr = mr.faces.size();
+        for(size_t i_mr_face=0; i_mr_face < faces_in_mr; ++i_mr_face) {
+            Face& added_face = newFaces[newFaces.size() - faces_in_mr + i_mr_face];
+            for(int k_uv_idx=0; k_uv_idx<4; ++k_uv_idx) {
+                 added_face.uvIndices[k_uv_idx] = current_uv_offset + (i_mr_face * 4) + k_uv_idx;
+            }
+        }
+        // 添加UV数据到总的uvCoordinates
+        data.uvCoordinates.insert(data.uvCoordinates.end(), mr.uvCoords.begin(), mr.uvCoords.end());
+        current_uv_offset += mr.uvCoords.size() / 2;
     }
-
-    //==========================================================================
-    // 第8步:更新原始数据
-    //==========================================================================
-    // 用新生成的数据替换原始数据
-    data.vertices = std::move(newData.vertices);
-    data.uvCoordinates = std::move(newData.uvCoordinates);
-    data.faces = std::move(newData.faces);
-    data.materials = std::move(newData.materials);
+    // 9. 保留单面组 (之前未通过 processGroup 处理的组)
+    for(auto& grp_single: groups) { 
+        if(grp_single.size()==1) {
+            newFaces.push_back(data.faces[grp_single[0]]);
+            // 注意: 单面组的UV索引不需要改变，因为它们直接来自原始data.faces
+            // 并且其UV数据已经在data.uvCoordinates中。
+            // 但如果后续需要所有UV都来自新的 MergedResult 结构，则这里也需要调整。
+            // 当前假设：单面组的UV坐标和索引保持原样。
+        }
+    }
+    data.faces.swap(newFaces);
 }
 
 // 综合去重和优化方法
@@ -1031,5 +664,10 @@ void ModelDeduplicator::DeduplicateModel(ModelData& data) {
     if (config.useGreedyMesh) {
         monitor.SetStatus(TaskStatus::GREEDY_MESHING, "GreedyMesh");
         GreedyMesh(data);
+        monitor.SetStatus(TaskStatus::DEDUPLICATING_VERTICES, "DeduplicateVertices after GreedyMesh");
+        DeduplicateVertices(data);
+        monitor.SetStatus(TaskStatus::DEDUPLICATING_UV, "DeduplicateUV after GreedyMesh");
+        DeduplicateUV(data);
     }
 }
+

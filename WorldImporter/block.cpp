@@ -504,6 +504,12 @@ void LoadAndCacheBlockData(int chunkX, int chunkZ) {
 
     // 获取区块数据
     std::vector<char> chunkData = GetChunkNBTData(regionData, chunkX, chunkZ);
+    // 如果数据为空，表示区块文件不存在或读取失败，直接跳过并缓存空条目
+    if (chunkData.empty()) {
+        std::cerr << "警告: 无法加载区块 (" << chunkX << "," << chunkZ << ")，已跳过。" << std::endl;
+        sectionCache[key] = SectionCacheEntry();
+        return;
+    }
     size_t index = 0;
     auto tag = readTag(chunkData, index);
 

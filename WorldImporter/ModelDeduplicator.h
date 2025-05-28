@@ -5,8 +5,6 @@
 #include "model.h"
 #include <unordered_map>
 
-
-
 class ModelDeduplicator {
 public:
     // 顶点去重方法

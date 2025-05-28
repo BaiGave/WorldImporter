@@ -28,12 +28,12 @@
         "D:\\PCL\\.minecraft\\versions\\FarmingTales_1.5.0\\resourcepacks\\\u00a7b\u00a7lVanilla Experience+\u00a70.zip",
         "D:\\PCL\\.minecraft\\versions\\FarmingTales_1.5.0\\resourcepacks\\\u6811\u53f6\u5254\u9664.zip"
     ],
-    "minX": -6146,
-    "maxX": -5000,
+    "minX": -7146,
+    "maxX": -4000,
     "minY": -62,
     "maxY": 289,
-    "minZ": -5200,
-    "maxZ": -4029,
+    "minZ": -6200,
+    "maxZ": -3029,
     "status": 1,
     "useChunkPrecision": false,
     "keepBoundary": false,
@@ -52,8 +52,8 @@
     "LODCenterX": 0,
     "LODCenterZ": 0,
     "LOD0renderDistance": 8,
-    "LOD1renderDistance": 12,
-    "LOD2renderDistance": 12,
-    "LOD3renderDistance": 12,
+    "LOD1renderDistance": 8,
+    "LOD2renderDistance": 8,
+    "LOD3renderDistance": 8,
     "solid": 0
 }
