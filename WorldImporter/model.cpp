@@ -634,6 +634,32 @@ void processTextures(const nlohmann::json& modelJson, ModelData& data,
                 pathPart = textureValue.substr(colonPos + 1);
             }
 
+            // ---- START MODIFIED CODE ----
+            // 检查 pathPart 是否有问题 (例如, 空, 以'/'结尾), 或者原始 textureKey 是否为 "missing"
+            if (textureKey == "missing" || pathPart.empty() || pathPart.back() == '/') {
+                std::string placeholderMaterialName = namespaceName + ":" + pathPart + (textureKey == "missing" ? "missing_placeholder" : "empty_path_placeholder");
+                
+                // 使用原始 textureKey 进行映射,确保唯一性
+                std::string uniqueMaterialKeyForMap = textureKey; 
+
+                if (processedMaterials.find(placeholderMaterialName) == processedMaterials.end()) {
+                    Material newMaterial;
+                    newMaterial.name = placeholderMaterialName;
+                    newMaterial.texturePath = ""; // 空路径表示缺失纹理
+                    newMaterial.tintIndex = -1;
+                    newMaterial.type = NORMAL;
+                    
+                    int materialIndex = data.materials.size();
+                    data.materials.push_back(newMaterial);
+                    processedMaterials[placeholderMaterialName] = materialIndex;
+                    textureKeyToMaterialIndex[uniqueMaterialKeyForMap] = materialIndex;
+                } else {
+                    textureKeyToMaterialIndex[uniqueMaterialKeyForMap] = processedMaterials[placeholderMaterialName];
+                }
+                continue; // 跳过对此纹理条目的常规处理
+            }
+            // ---- END MODIFIED CODE ----
+
             // 生成唯一材质标识
             std::string fullMaterialName = namespaceName + ":" + pathPart;
 
@@ -714,75 +740,26 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
             // 生成基础顶点数据
             std::unordered_map<std::string, std::vector<std::vector<float>>> elementVertices;
             
-            // 对于极薄块,只生成一个面
-            if (isThinX || isThinY || isThinZ) {
-                // 根据薄的维度确定生成哪个面
-                if (isThinX) {
-                    // X方向极薄,只保留东面或西面
-                    if (x1 <= 0.01f) {
-                        // 靠近西边界,只保留西面
-                        elementVertices["west"] = { {x1, y1, z2}, {x1, y2, z2}, {x1, y2, z1}, {x1, y1, z1} };
-                    } else {
-                        // 否则保留东面
-                        elementVertices["east"] = { {x2, y1, z1}, {x2, y2, z1}, {x2, y2, z2}, {x2, y1, z2} };
-                    }
-                } else if (isThinY) {
-                    // Y方向极薄,只保留顶面或底面
-                    if (y1 <= 0.01f) {
-                        // 靠近底部,只保留底面
-                        elementVertices["down"] = { {x2, y1, z2}, {x1, y1, z2}, {x1, y1, z1}, {x2, y1, z1} };
-                        
-                    } else {
-                        // 否则保留顶面
-                        elementVertices["up"] = { {x2, y2, z2}, {x2, y2, z1} ,{x1, y2, z1}, {x1, y2, z2} };
-                       
-                    }
-                } else if (isThinZ) {
-                    // Z方向极薄,只保留南面或北面
-                    if (z1 <= 0.01f) {
-                        // 靠近北边界,只保留北面
-                        elementVertices["north"] = { {x1, y1, z1}, {x1, y2, z1}, {x2, y2, z1}, {x2, y1, z1} };
-                    } else {
-                        // 否则保留南面
-                        elementVertices["south"] = { {x2, y1, z2}, {x2, y2, z2}, {x1, y2, z2}, {x1, y1, z2} };
-                    }
+            // 遍历元素的面,动态生成顶点数据
+            for (auto& face : faces.items()) { // 'faces' is from element["faces"]
+                std::string faceName = face.key();
+                if (faceName == "north") {
+                    elementVertices[faceName] = { {x1, y1, z1}, {x1, y2, z1}, {x2, y2, z1}, {x2, y1, z1} };
                 }
-                
-                // 从faces中查找我们保留的面的数据
-                std::vector<std::string> facesToErase;
-                for (auto& faceEntry : elementVertices) {
-                    // 如果faces中没有对应的面定义,记录要移除的键
-                    if (faces.find(faceEntry.first) == faces.end()) {
-                        facesToErase.push_back(faceEntry.first);
-                    }
+                else if (faceName == "south") {
+                    elementVertices[faceName] = { {x2, y1, z2}, {x2, y2, z2}, {x1, y2, z2}, {x1, y1, z2} };
                 }
-                // 循环结束后移除元素
-                for (const auto& key : facesToErase) {
-                    elementVertices.erase(key);
+                else if (faceName == "east") {
+                    elementVertices[faceName] = { {x2, y1, z1}, {x2, y2, z1}, {x2, y2, z2}, {x2, y1, z2} };
                 }
-            } else {
-                // 正常厚度的区块,按常规方式生成所有面
-                // 遍历元素的面,动态生成顶点数据
-                for (auto& face : faces.items()) {
-                    std::string faceName = face.key();
-                    if (faceName == "north") {
-                        elementVertices[faceName] = { {x1, y1, z1}, {x1, y2, z1}, {x2, y2, z1}, {x2, y1, z1} };
-                    }
-                    else if (faceName == "south") {
-                        elementVertices[faceName] = { {x2, y1, z2}, {x2, y2, z2}, {x1, y2, z2}, {x1, y1, z2} };
-                    }
-                    else if (faceName == "east") {
-                        elementVertices[faceName] = { {x2, y1, z1}, {x2, y2, z1}, {x2, y2, z2}, {x2, y1, z2} };
-                    }
-                    else if (faceName == "west") {
-                        elementVertices[faceName] = { {x1, y1, z2}, {x1, y2, z2}, {x1, y2, z1}, {x1, y1, z1} };
-                    }
-                    else if (faceName == "up") {
-                        elementVertices[faceName] = { {x2, y2, z2}, {x2, y2, z1} ,{x1, y2, z1}, {x1, y2, z2}  };
-                    }
-                    else if (faceName == "down") {
-                        elementVertices[faceName] = { {x2, y1, z2}, {x1, y1, z2}, {x1, y1, z1}, {x2, y1, z1} };
-                    }
+                else if (faceName == "west") {
+                    elementVertices[faceName] = { {x1, y1, z2}, {x1, y2, z2}, {x1, y2, z1}, {x1, y1, z1} };
+                }
+                else if (faceName == "up") {
+                    elementVertices[faceName] = { {x2, y2, z2}, {x2, y2, z1} ,{x1, y2, z1}, {x1, y2, z2}  };
+                }
+                else if (faceName == "down") {
+                    elementVertices[faceName] = { {x2, y1, z2}, {x1, y1, z2}, {x1, y1, z1}, {x2, y1, z1} };
                 }
             }
 

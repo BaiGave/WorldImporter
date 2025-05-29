@@ -218,6 +218,15 @@ void ModelDeduplicator::DeduplicateFaces(ModelData& data) {
 
 // Greedy mesh 算法:合并相邻同材质、相同方向的面以减少面数
 void ModelDeduplicator::GreedyMesh(ModelData& data) {
+    // GreedyMesh 算法：按材质/法线/UV 连续性分组并合并面以减少面数
+    // 步骤1：并行计算所有面的法向量，用于判断面方向是否一致
+    // 步骤2：并行构建边到面映射，便于查找相邻面
+    // 步骤3：构建顶点坐标到索引的映射，用于合并后查找原始顶点
+    // 步骤4：定义UV连续性检查函数，判断面在UV贴图上是水平还是垂直
+    // 步骤5：并行将所有面按材质、法线、UV连续性分组，同组面可合并
+    // 步骤6：并行对每组调用 processGroup，执行贪心合并
+    // 步骤7：收集合并结果并更新 data.faces 和 data.uvCoordinates
+    // 步骤8：保留无法合并的单面，完成最终面列表
     // 基础类型与工具函数定义
     struct Vector3 { float x, y, z; };
     struct Vector2 { float x, y; };
@@ -249,7 +258,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             Vector3 p2 = getVertex(vs[2]);
             Vector3 e1{ p1.x-p0.x, p1.y-p0.y, p1.z-p0.z };
             Vector3 e2{ p2.x-p0.x, p2.y-p0.y, p2.z-p0.z };
-            faceNormals[i] = normalize(cross(e1, e2)); // 中文注释: 计算并存储法向量
+            faceNormals[i] = normalize(cross(e1, e2)); // 计算并存储法向量
         }
     };
     {
@@ -280,7 +289,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
                 const auto& vs = data.faces[i].vertexIndices;
                 for (int k = 0; k < 4; ++k) {
                     int a = vs[k], b = vs[(k+1)%4];
-                    EdgeKey e{ std::min(a,b), std::max(a,b) }; // 中文注释: 规范化边，确保v1<=v2
+                    EdgeKey e{ std::min(a,b), std::max(a,b) }; // 规范化边，确保v1<=v2
                     thread_edge_pairs[thread_id].emplace_back(e, (int)i);
                 }
             }
@@ -332,8 +341,8 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             if (std::fabs(u)<eps) ++cntLeft;
             if (std::fabs(u-1.0f)<eps) ++cntRight;
         }
-        if (cntTop==2 && cntBottom==2) return VERTICAL;   // 中文注释: 上下边贴合UV边界
-        if (cntLeft==2 && cntRight==2) return HORIZONTAL; // 中文注释: 左右边贴合UV边界
+        if (cntTop==2 && cntBottom==2) return VERTICAL;   // 上下边贴合UV边界
+        if (cntLeft==2 && cntRight==2) return HORIZONTAL; // 左右边贴合UV边界
         return NONE;
     };
 
@@ -341,31 +350,31 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     std::vector<std::atomic_bool> visited_atomic(faceCount);
     for(size_t i = 0; i < faceCount; ++i) visited_atomic[i].store(false, std::memory_order_relaxed);
     
-    std::vector<std::vector<int>> all_groups_collected; // 中文注释: 用于收集所有线程发现的组
-    std::mutex all_groups_mutex;       // 中文注释: 保护all_groups_collected的互斥锁
+    std::vector<std::vector<int>> all_groups_collected; // 用于收集所有线程发现的组
+    std::mutex all_groups_mutex;       // 保护all_groups_collected的互斥锁
 
     auto discover_groups_task = 
         [&](size_t start_idx, size_t end_idx) {
-        std::vector<std::vector<int>> local_thread_groups; // 中文注释: 每个线程的局部组列表
+        std::vector<std::vector<int>> local_thread_groups; // 每个线程的局部组列表
         for (size_t i = start_idx; i < end_idx; ++i) {
             bool expected_visited = false;
-            // 中文注释: 尝试原子地标记当前面为已访问，如果成功，则以此面为种子开始BFS建组
+            // 尝试原子地标记当前面为已访问，如果成功，则以此面为种子开始BFS建组
             if (!visited_atomic[i].compare_exchange_strong(expected_visited, true, std::memory_order_acq_rel, std::memory_order_relaxed)) {
                 continue; // 如果已经被其他线程标记或自身已处理，则跳过
             }
 
             const Face& f0 = data.faces[i];
             MaterialType mt = data.materials[f0.materialIndex].type;
-            if (mt == ANIMATED) { // 中文注释: 动态材质不参与合并，单独成组
+            if (mt == ANIMATED) { // 动态材质不参与合并，单独成组
                 local_thread_groups.push_back({(int)i});
                 continue;
             }
             UVAxis axis0 = checkUV(i);
-            if (axis0 == NONE) { // 中文注释: 不满足UV连续性条件的面，单独成组
+            if (axis0 == NONE) { // 不满足UV连续性条件的面，单独成组
                 local_thread_groups.push_back({(int)i});
                 continue;
             }
-            Vector3 n0 = faceNormals[i]; // 中文注释: 当前组的基准法向量
+            Vector3 n0 = faceNormals[i]; //  当前组的基准法向量
 
             std::vector<int> current_bfs_group;
             std::queue<int> q;
@@ -383,7 +392,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
                     if (it_edge == edgeFaces.end()) continue;
 
                     for (int nb_face_idx : it_edge->second) {
-                        // 中文注释: 检查邻接面是否满足合并条件
+                        // 检查邻接面是否满足合并条件
                         const Face& fn_check = data.faces[nb_face_idx];
                         if (fn_check.materialIndex != f0.materialIndex) continue; // 材质必须相同
                         
@@ -392,7 +401,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
                         if (checkUV(nb_face_idx) != axis0) continue; // UV连续性类型必须相同
 
                         bool expected_nb_visited = false;
-                        // 中文注释: 原子地标记合格的邻接面为已访问，并加入当前组的BFS队列
+                        // 原子地标记合格的邻接面为已访问，并加入当前组的BFS队列
                         if (visited_atomic[nb_face_idx].compare_exchange_strong(expected_nb_visited, true, std::memory_order_acq_rel, std::memory_order_relaxed)) {
                             current_bfs_group.push_back(nb_face_idx);
                             q.push(nb_face_idx);
@@ -404,7 +413,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
                 local_thread_groups.push_back(std::move(current_bfs_group));
             }
         }
-        // 中文注释: 将当前线程发现的组合并到全局组列表中（受互斥锁保护）
+        // 将当前线程发现的组合并到全局组列表中（受互斥锁保护）
         if (!local_thread_groups.empty()) {
             std::lock_guard<std::mutex> lock(all_groups_mutex);
             for (auto& lg : local_thread_groups) {
@@ -670,4 +679,5 @@ void ModelDeduplicator::DeduplicateModel(ModelData& data) {
         DeduplicateUV(data);
     }
 }
+
 
