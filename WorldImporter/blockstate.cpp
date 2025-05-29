@@ -332,9 +332,11 @@ void ProcessBlockstate(const std::string& namespaceName, const std::vector<std::
 
                     if (variant.value().contains("x")) {
                         rotationX = variant.value()["x"].get<int>();
+                        rotationX = (rotationX % 360 + 360) % 360; 
                     }
                     if (variant.value().contains("y")) {
                         rotationY = variant.value()["y"].get<int>();
+                        rotationY = (rotationY % 360 + 360) % 360;
                     }
                     if (variant.value().contains("uvlock")) {
                         uvlock = variant.value()["uvlock"].get<bool>();

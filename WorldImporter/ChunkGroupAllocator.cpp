@@ -12,7 +12,6 @@ namespace ChunkGroupAllocator {
 
     std::vector<ChunkGroup> g_chunkGroups; // 定义全局变量
     std::vector<ChunkBatch> g_chunkBatches; // 定义批处理全局变量
-
     void GenerateChunkGroups(
         int chunkXStart, int chunkXEnd,
         int chunkZStart, int chunkZEnd,

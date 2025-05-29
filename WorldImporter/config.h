@@ -27,6 +27,8 @@ struct Config {
     std::string versionJsonPath;
     std::string modsPath; // mods 路径
     std::vector<std::string> resourcepacksPaths; // 资源包路径
+    std::vector<std::string> dimensions; // 可用维度列表
+    std::string selectedDimension; // 当前选择的维度ID
 
     std::string solidBlocksFile;  // 固体方块列表文件路径
     std::string fluidsFile; //流体列表文件路径
@@ -68,7 +70,8 @@ struct Config {
         versionJsonPath(""),
         modsPath(""),
         resourcepacksPaths({}),
-
+        dimensions({"minecraft:overworld","minecraft:the_nether","minecraft:the_end"}),
+        selectedDimension("minecraft:overworld"),
         solidBlocksFile("config\\jsons\\solids.json"),
         fluidsFile("config\\jsons\\fluids.json"),
         minX(0), minY(0), minZ(0), maxX(0), maxY(0), maxZ(0),

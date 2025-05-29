@@ -7,6 +7,7 @@
 #include "ChunkLoader.h"
 #include "block.h"
 #include "LODManager.h"
+#include "RegionCache.h"
 
 void ChunkLoader::LoadChunks(int chunkXStart, int chunkXEnd, int chunkZStart, int chunkZEnd,
     int sectionYStart, int sectionYEnd) {
@@ -16,6 +17,10 @@ void ChunkLoader::LoadChunks(int chunkXStart, int chunkXEnd, int chunkZStart, in
 
     for (int chunkX = chunkXStart; chunkX <= chunkXEnd; ++chunkX) {
         for (int chunkZ = chunkZStart; chunkZ <= chunkZEnd; ++chunkZ) {
+            // 新增:如果 chunk 不存在于 region 文件中或为空，则跳过加载
+            if (!HasChunk(chunkX, chunkZ)) {
+                continue;
+            }
             futures.push_back(std::async(std::launch::async, [&, chunkX, chunkZ]() {
                 LoadAndCacheBlockData(chunkX, chunkZ);
                 for (int sectionY = sectionYStart; sectionY <= sectionYEnd; ++sectionY) {

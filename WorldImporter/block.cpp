@@ -572,11 +572,11 @@ int GetBlockId(int blockX, int blockY, int blockZ) {
     blockYToSectionY(blockY, sectionY);
     int adjustedSectionY = AdjustSectionY(sectionY);
     auto blockKey = std::make_tuple(chunkX, chunkZ, adjustedSectionY);
-    if (sectionCache.find(blockKey) == sectionCache.end()) {
-        LoadAndCacheBlockData(chunkX, chunkZ);
+    auto it = sectionCache.find(blockKey);
+    if (it == sectionCache.end()) {
+        return 0; // 区块未预加载，返回空气
     }
-
-    const auto& blockData = sectionCache[blockKey].blockData;
+    const auto& blockData = it->second.blockData;
     int relativeX = mod16(blockX);
     int relativeY = mod16(blockY);
     int relativeZ = mod16(blockZ);
@@ -731,11 +731,12 @@ int GetSkyLight(int blockX, int blockY, int blockZ) {
     int adjustedSectionY = AdjustSectionY(sectionY);
     auto blockKey = std::make_tuple(chunkX, chunkZ, adjustedSectionY);
 
-    if (sectionCache.find(blockKey) == sectionCache.end()) {
-        LoadAndCacheBlockData(chunkX, chunkZ);
+    auto it = sectionCache.find(blockKey);
+    if (it == sectionCache.end()) {
+        return 0; // 区块未预加载，返回默认天空光照0
     }
+    const auto& skyLightData = it->second.skyLight;
 
-    const auto& skyLightData = sectionCache[blockKey].skyLight;
     if (skyLightData.size() == 1) {
         return skyLightData[0]; // 标记为-1或-2
     }
@@ -757,11 +758,12 @@ int GetBlockLight(int blockX, int blockY, int blockZ) {
     int adjustedSectionY = AdjustSectionY(sectionY);
     auto blockKey = std::make_tuple(chunkX, chunkZ, adjustedSectionY);
 
-    if (sectionCache.find(blockKey) == sectionCache.end()) {
-        LoadAndCacheBlockData(chunkX, chunkZ);
+    auto it = sectionCache.find(blockKey);
+    if (it == sectionCache.end()) {
+        return 0; // 区块未预加载，返回默认方块光照0
     }
+    const auto& blockLightData = it->second.blockLight;
 
-    const auto& blockLightData = sectionCache[blockKey].blockLight;
     if (blockLightData.size() == 1) {
         return blockLightData[0]; // 标记为-1或-2
     }
