@@ -61,10 +61,7 @@ Config LoadConfig(const std::string& configFile) {
     // 读取每批次的区块任务数量上限（如果存在）
     config.maxTasksPerBatch = j.value("maxTasksPerBatch", config.maxTasksPerBatch);
 
-    // 读取可用维度列表和选择的维度ID
-    if (j.contains("dimensions")) {
-        config.dimensions = j["dimensions"].get<std::vector<std::string>>();
-    }
+
     config.selectedDimension = j.value("selectedDimension", config.selectedDimension);
 
     // 区块对齐处理
