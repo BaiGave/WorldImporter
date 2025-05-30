@@ -490,17 +490,20 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
                 }
                 uvs_rot_calc[j]={data.uvCoordinates[2*f_entry.uvIndices[j]],data.uvCoordinates[2*f_entry.uvIndices[j]+1]}; 
             }
-            if (!uv_valid_for_rotation) { e.rotation = 0; /* 默认旋转或错误处理 */ }
-            else {
-                Vector2 dWx_rot{pts_proj[1].x-pts_proj[0].x,pts_proj[1].y-pts_proj[0].y}, dWy_rot{pts_proj[3].x-pts_proj[0].x,pts_proj[3].y-pts_proj[0].y};
-                Vector2 dUx_rot{uvs_rot_calc[1].x-uvs_rot_calc[0].x,uvs_rot_calc[1].y-uvs_rot_calc[0].y}, dUy_rot{uvs_rot_calc[3].x-uvs_rot_calc[0].x,uvs_rot_calc[3].y-uvs_rot_calc[0].y};
-                auto dot2_rot=[&](Vector2 a,Vector2 b){return a.x*b.x+a.y*b.y;};
-                float t0_rot=dot2_rot(dWx_rot,dUx_rot)+dot2_rot(dWy_rot,dUy_rot), t90_rot=dot2_rot(dWx_rot,dUy_rot)-dot2_rot(dWy_rot,dUx_rot);
-                float t180_rot=-t0_rot, t270_rot=-t90_rot;
-                if(t0_rot>=t90_rot&&t0_rot>=t180_rot&&t0_rot>=t270_rot) e.rotation=0;
-                else if(t90_rot>=t0_rot&&t90_rot>=t180_rot&&t90_rot>=t270_rot) e.rotation=90;
-                else if(t180_rot>=t0_rot&&t180_rot>=t90_rot&&t180_rot>=t270_rot) e.rotation=180;
-                else e.rotation=270;
+            if (!uv_valid_for_rotation) {
+                e.rotation = 0; /* 默认旋转或错误处理 */
+            } else {
+                // 使用点积简化旋转检测
+                Vector2 dWx_rot{pts_proj[1].x - pts_proj[0].x, pts_proj[1].y - pts_proj[0].y};
+                Vector2 dUx_rot{uvs_rot_calc[1].x - uvs_rot_calc[0].x, uvs_rot_calc[1].y - uvs_rot_calc[0].y};
+                Vector2 dUy_rot{uvs_rot_calc[3].x - uvs_rot_calc[0].x, uvs_rot_calc[3].y - uvs_rot_calc[0].y};
+                float dotWx_Ux = dWx_rot.x * dUx_rot.x + dWx_rot.y * dUx_rot.y;
+                float dotWx_Uy = dWx_rot.x * dUy_rot.x + dWx_rot.y * dUy_rot.y;
+                if (std::fabs(dotWx_Ux) >= std::fabs(dotWx_Uy)) {
+                    e.rotation = (dotWx_Ux >= 0) ? 0 : 180;
+                } else {
+                    e.rotation = (dotWx_Uy >= 0) ? 90 : 270;
+                }
             }
             entries.push_back(e);
         }

@@ -44,9 +44,6 @@ void RegionModelExporter::ExportModels(const string& outputName) {
     const int sectionYStart = config.sectionYStart;
     const int sectionYEnd = config.sectionYEnd;
 
-
-    // 预先计算所有区块的LOD等级
-    monitor.SetStatus(TaskStatus::CALCULATING_LOD, "计算区块LOD等级");
     // 扩大区块范围,使其比将要导入的区块大一圈 (与ChunkLoader一致)
     int expandedChunkXStart = chunkXStart - 1;
     int expandedChunkXEnd = chunkXEnd + 1;
