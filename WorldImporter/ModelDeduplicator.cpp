@@ -364,6 +364,11 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             }
 
             const Face& f0 = data.faces[i];
+            // 添加对 f0.materialIndex 的边界检查
+            if (f0.materialIndex < 0 || static_cast<size_t>(f0.materialIndex) >= data.materials.size()) {
+                local_thread_groups.push_back({(int)i}); // 无效材质索引，单独成组
+                continue;
+            }
             MaterialType mt = data.materials[f0.materialIndex].type;
             if (mt == ANIMATED) { // 动态材质不参与合并，单独成组
                 local_thread_groups.push_back({(int)i});
@@ -394,6 +399,10 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
                     for (int nb_face_idx : it_edge->second) {
                         // 检查邻接面是否满足合并条件
                         const Face& fn_check = data.faces[nb_face_idx];
+                        // 添加对 fn_check.materialIndex 的边界检查
+                        if (fn_check.materialIndex < 0 || static_cast<size_t>(fn_check.materialIndex) >= data.materials.size()) {
+                            continue; // 邻接面材质索引无效，跳过
+                        }
                         if (fn_check.materialIndex != f0.materialIndex) continue; // 材质必须相同
                         
                         Vector3 dn_check{faceNormals[nb_face_idx].x - n0.x, faceNormals[nb_face_idx].y - n0.y, faceNormals[nb_face_idx].z - n0.z};
@@ -651,13 +660,13 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     for(auto& grp_single: groups) { 
         if(grp_single.size()==1) {
             newFaces.push_back(data.faces[grp_single[0]]);
-            // 注意: 单面组的UV索引不需要改变，因为它们直接来自原始data.faces
+            // 注意: 单面组的UV索引不需要改变，因为它们   直接来自原始data.faces
             // 并且其UV数据已经在data.uvCoordinates中。
             // 但如果后续需要所有UV都来自新的 MergedResult 结构，则这里也需要调整。
             // 当前假设：单面组的UV坐标和索引保持原样。
         }
     }
-    data.faces.swap(newFaces);
+    data.faces= newFaces;
 }
 
 // 综合去重和优化方法

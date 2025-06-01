@@ -270,7 +270,6 @@ int Biome::GetColor(int biomeId, BiomeColorType colorType) {
     }
 }
 
-
 int Biome::GetBiomeColor(int blockX, int blockY, int blockZ, BiomeColorType colorType) {
     // 生物群系过渡距离,默认值为4,可根据需要调整
     const int biomeTransitionDistance = 4;
@@ -367,7 +366,6 @@ int Biome::GetBiomeColor(int blockX, int blockY, int blockZ, BiomeColorType colo
     int finalColor = (avgR << 16) | (avgG << 8) | avgB;
     return finalColor;
 }
-
 
 int Biome::CalculateColorFromColormap(const std::string& filePath,float adjTemperature,float adjDownfall) {
     if (filePath.empty()) {
