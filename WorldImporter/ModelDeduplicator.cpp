@@ -82,7 +82,7 @@ struct Matrix2x2 {
 void ModelDeduplicator::DeduplicateVertices(ModelData& data) {
     std::unordered_map<VertexKey, int> vertexMap;
     // 预先分配容量,避免多次rehash
-    vertexMap.reserve(data.vertices.size() / 3);
+    vertexMap.reserve(data.vertices.size() / 3 );
     std::vector<float> newVertices;
     newVertices.reserve(data.vertices.size());
     std::vector<int> indexMap(data.vertices.size() / 3);

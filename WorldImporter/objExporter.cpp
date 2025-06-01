@@ -2,6 +2,7 @@
 #include <chrono>
 #include <fstream>
 #include <sstream>
+#include <locale>
 
 using namespace std::chrono;
 
@@ -134,7 +135,7 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
     std::string modelName = objName.substr(objName.find_last_of("//") + 1);
     totalSize += snprintf(nullptr, 0, "o %s\n\n", modelName.c_str());
 
-    //【新增】预计算顶点注释行的长度
+    // 预计算顶点注释行的长度
     totalSize += snprintf(nullptr, 0, "# Vertices (%zu)\n", data.vertices.size() / 3);
 
     // 预计算所有浮点数的字符串长度(顶点数据)
@@ -327,6 +328,7 @@ void createObjFile(const ModelData& data, const std::string& objName, const std:
 
     // 使用流缓冲区进行拼接,减少IO操作次数
     std::ostringstream oss;
+    oss.imbue(std::locale::classic());
 
     // 写入文件头
     oss << "mtllib " << mtlFilePath << "\n";
