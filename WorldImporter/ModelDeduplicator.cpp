@@ -219,12 +219,12 @@ void ModelDeduplicator::DeduplicateFaces(ModelData& data) {
 // Greedy mesh 算法:合并相邻同材质、相同方向的面以减少面数
 void ModelDeduplicator::GreedyMesh(ModelData& data) {
     // GreedyMesh 算法：按材质/法线/UV 连续性分组并合并面以减少面数
-    // 步骤1：并行计算所有面的法向量，用于判断面方向是否一致
-    // 步骤2：并行构建边到面映射，便于查找相邻面
+    // 步骤1：计算所有面的法向量，用于判断面方向是否一致
+    // 步骤2：构建边到面映射，便于查找相邻面
     // 步骤3：构建顶点坐标到索引的映射，用于合并后查找原始顶点
     // 步骤4：定义UV连续性检查函数，判断面在UV贴图上是水平还是垂直
-    // 步骤5：并行将所有面按材质、法线、UV连续性分组，同组面可合并
-    // 步骤6：并行对每组调用 processGroup，执行贪心合并
+    // 步骤5：将所有面按材质、法线、UV连续性分组，同组面可合并
+    // 步骤6：对每组调用 processGroup，执行贪心合并
     // 步骤7：收集合并结果并更新 data.faces 和 data.uvCoordinates
     // 步骤8：保留无法合并的单面，完成最终面列表
     // 基础类型与工具函数定义
@@ -245,75 +245,35 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     size_t faceCount = data.faces.size();
     if (faceCount == 0) return;
 
-    unsigned int num_threads = std::max(1u, std::thread::hardware_concurrency()); // 获取硬件线程数，至少为1
-
-    // 1. 计算所有面的法向量 (并行化)
+    // 1. 计算所有面的法向量 (串行化)
     std::vector<Vector3> faceNormals(faceCount);
-    auto calculate_normals_task = 
-        [&](size_t start_idx, size_t end_idx) {
-        for (size_t i = start_idx; i < end_idx; ++i) {
-            const auto& vs = data.faces[i].vertexIndices;
-            Vector3 p0 = getVertex(vs[0]);
-            Vector3 p1 = getVertex(vs[1]);
-            Vector3 p2 = getVertex(vs[2]);
-            Vector3 e1{ p1.x-p0.x, p1.y-p0.y, p1.z-p0.z };
-            Vector3 e2{ p2.x-p0.x, p2.y-p0.y, p2.z-p0.z };
-            faceNormals[i] = normalize(cross(e1, e2)); // 计算并存储法向量
-        }
-    };
-    {
-        std::vector<std::future<void>> futures;
-        size_t chunk_size_normals = (faceCount + num_threads - 1) / num_threads;
-        for (unsigned int t = 0; t < num_threads; ++t) {
-            size_t start = t * chunk_size_normals;
-            size_t end = std::min((t + 1) * chunk_size_normals, faceCount);
-            if (start < end) {
-                futures.push_back(std::async(std::launch::async, calculate_normals_task, start, end));
-            }
-        }
-        for (auto& fut : futures) fut.get();
+    for (size_t i = 0; i < faceCount; ++i) {
+        const auto& vs = data.faces[i].vertexIndices;
+        Vector3 p0 = getVertex(vs[0]);
+        Vector3 p1 = getVertex(vs[1]);
+        Vector3 p2 = getVertex(vs[2]);
+        Vector3 e1{ p1.x-p0.x, p1.y-p0.y, p1.z-p0.z };
+        Vector3 e2{ p2.x-p0.x, p2.y-p0.y, p2.z-p0.z };
+        faceNormals[i] = normalize(cross(e1, e2)); // 计算并存储法向量
     }
 
-    // 2. 构建边->面映射 (并行化 Map-Reduce)
+    // 2. 构建边->面映射 (串行化)
     struct EdgeKey { int v1, v2; bool operator==(const EdgeKey& o) const { return v1==o.v1 && v2==o.v2; } };
     struct EdgeKeyHasher { size_t operator()(const EdgeKey& e) const {
             return std::hash<long long>()(((long long)std::min(e.v1,e.v2)<<32) ^ (unsigned long long)std::max(e.v1,e.v2)); // 确保哈希一致性
         }
     };
     std::unordered_map<EdgeKey, std::vector<int>, EdgeKeyHasher> edgeFaces;
-    {
-        std::vector<std::vector<std::pair<EdgeKey, int>>> thread_edge_pairs(num_threads);
-        auto build_edge_pairs_task = 
-            [&](size_t thread_id, size_t start_idx, size_t end_idx) {
-            for (size_t i = start_idx; i < end_idx; ++i) {
-                const auto& vs = data.faces[i].vertexIndices;
-                for (int k = 0; k < 4; ++k) {
-                    int a = vs[k], b = vs[(k+1)%4];
-                    EdgeKey e{ std::min(a,b), std::max(a,b) }; // 规范化边，确保v1<=v2
-                    thread_edge_pairs[thread_id].emplace_back(e, (int)i);
-                }
-            }
-        };
-        std::vector<std::future<void>> futures;
-        size_t chunk_size_edges = (faceCount + num_threads - 1) / num_threads;
-        for (unsigned int t = 0; t < num_threads; ++t) {
-            size_t start = t * chunk_size_edges;
-            size_t end = std::min((t + 1) * chunk_size_edges, faceCount);
-            if (start < end) {
-                futures.push_back(std::async(std::launch::async, build_edge_pairs_task, t, start, end));
-            }
-        }
-        for (auto& fut : futures) fut.get();
-
-        // Reduce step (串行汇总)
-        for (const auto& pairs_vec : thread_edge_pairs) {
-            for (const auto& pair : pairs_vec) {
-                edgeFaces[pair.first].push_back(pair.second);
-            }
+    for (size_t i = 0; i < faceCount; ++i) {
+        const auto& vs = data.faces[i].vertexIndices;
+        for (int k = 0; k < 4; ++k) {
+            int a = vs[k], b = vs[(k+1)%4];
+            EdgeKey e{ std::min(a,b), std::max(a,b) }; // 规范化边，确保v1<=v2
+            edgeFaces[e].push_back((int)i);
         }
     }
 
-    // 3. 构建顶点键->索引映射（用于合并后查顶点，暂时保持串行）
+    // 3. 构建顶点键->索引映射（用于合并后查顶点，保持串行）
     std::unordered_map<VertexKey,int> vertMap;
     int vertCount = data.vertices.size()/3;
     for (int i = 0; i < vertCount; ++i) {
@@ -329,10 +289,8 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         const auto& uvs_indices = data.faces[fi].uvIndices;
         int cntTop=0, cntBottom=0, cntLeft=0, cntRight=0;
         for (int j=0;j<4;++j) {
-            // 检查uvIndices是否有效
             if (uvs_indices[j] < 0 || (uvs_indices[j] * 2 + 1) >= data.uvCoordinates.size()) {
-                 // std::cerr << "Warning: Invalid UV index " << uvs_indices[j] << " for face " << fi << std::endl;
-                 return NONE; // 无效UV索引，无法判断连续性
+                 return NONE; 
             }
             float u = data.uvCoordinates[2*uvs_indices[j]];
             float v = data.uvCoordinates[2*uvs_indices[j]+1];
@@ -341,111 +299,81 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             if (std::fabs(u)<eps) ++cntLeft;
             if (std::fabs(u-1.0f)<eps) ++cntRight;
         }
-        if (cntTop==2 && cntBottom==2) return VERTICAL;   // 上下边贴合UV边界
-        if (cntLeft==2 && cntRight==2) return HORIZONTAL; // 左右边贴合UV边界
+        if (cntTop==2 && cntBottom==2) return VERTICAL;
+        if (cntLeft==2 && cntRight==2) return HORIZONTAL;
         return NONE;
     };
 
-    // 5. 分组（排除动态材质，按法线/材质/UV轴一致性） (并行化)
-    std::vector<std::atomic_bool> visited_atomic(faceCount);
-    for(size_t i = 0; i < faceCount; ++i) visited_atomic[i].store(false, std::memory_order_relaxed);
+    // 5. 分组（排除动态材质，按法线/材质/UV轴一致性） (串行化)
+    std::vector<bool> visited(faceCount, false);
+    std::vector<std::vector<int>> groups; 
     
-    std::vector<std::vector<int>> all_groups_collected; // 用于收集所有线程发现的组
-    std::mutex all_groups_mutex;       // 保护all_groups_collected的互斥锁
+    for (size_t i = 0; i < faceCount; ++i) {
+        if (visited[i]) {
+            continue;
+        }
 
-    auto discover_groups_task = 
-        [&](size_t start_idx, size_t end_idx) {
-        std::vector<std::vector<int>> local_thread_groups; // 每个线程的局部组列表
-        for (size_t i = start_idx; i < end_idx; ++i) {
-            bool expected_visited = false;
-            // 尝试原子地标记当前面为已访问，如果成功，则以此面为种子开始BFS建组
-            if (!visited_atomic[i].compare_exchange_strong(expected_visited, true, std::memory_order_acq_rel, std::memory_order_relaxed)) {
-                continue; // 如果已经被其他线程标记或自身已处理，则跳过
-            }
+        const Face& f0 = data.faces[i];
+        if (f0.materialIndex < 0 || static_cast<size_t>(f0.materialIndex) >= data.materials.size()) {
+            visited[i] = true;
+            groups.push_back({(int)i}); 
+            continue;
+        }
+        MaterialType mt = data.materials[f0.materialIndex].type;
+        if (mt == ANIMATED) { 
+            visited[i] = true;
+            groups.push_back({(int)i});
+            continue;
+        }
+        UVAxis axis0 = checkUV(i);
+        if (axis0 == NONE) { 
+            visited[i] = true;
+            groups.push_back({(int)i});
+            continue;
+        }
+        
+        Vector3 n0 = faceNormals[i]; 
+        std::vector<int> current_bfs_group;
+        std::queue<int> q;
+        
+        visited[i] = true;
+        current_bfs_group.push_back((int)i);
+        q.push((int)i);
 
-            const Face& f0 = data.faces[i];
-            // 添加对 f0.materialIndex 的边界检查
-            if (f0.materialIndex < 0 || static_cast<size_t>(f0.materialIndex) >= data.materials.size()) {
-                local_thread_groups.push_back({(int)i}); // 无效材质索引，单独成组
-                continue;
-            }
-            MaterialType mt = data.materials[f0.materialIndex].type;
-            if (mt == ANIMATED) { // 动态材质不参与合并，单独成组
-                local_thread_groups.push_back({(int)i});
-                continue;
-            }
-            UVAxis axis0 = checkUV(i);
-            if (axis0 == NONE) { // 不满足UV连续性条件的面，单独成组
-                local_thread_groups.push_back({(int)i});
-                continue;
-            }
-            Vector3 n0 = faceNormals[i]; //  当前组的基准法向量
+        while (!q.empty()) {
+            int cur = q.front();
+            q.pop();
+            const auto& vs_cur = data.faces[cur].vertexIndices;
+            for (int k_edge = 0; k_edge < 4; ++k_edge) {
+                EdgeKey ek{std::min(vs_cur[k_edge], vs_cur[(k_edge + 1) % 4]), std::max(vs_cur[k_edge], vs_cur[(k_edge + 1) % 4])};
+                auto it_edge = edgeFaces.find(ek);
+                if (it_edge == edgeFaces.end()) continue;
 
-            std::vector<int> current_bfs_group;
-            std::queue<int> q;
-            
-            current_bfs_group.push_back((int)i);
-            q.push((int)i);
+                for (int nb_face_idx : it_edge->second) {
+                    if (visited[nb_face_idx]) continue;
 
-            while (!q.empty()) {
-                int cur = q.front();
-                q.pop();
-                const auto& vs = data.faces[cur].vertexIndices;
-                for (int k_edge = 0; k_edge < 4; ++k_edge) {
-                    EdgeKey ek{std::min(vs[k_edge], vs[(k_edge + 1) % 4]), std::max(vs[k_edge], vs[(k_edge + 1) % 4])};
-                    auto it_edge = edgeFaces.find(ek);
-                    if (it_edge == edgeFaces.end()) continue;
-
-                    for (int nb_face_idx : it_edge->second) {
-                        // 检查邻接面是否满足合并条件
-                        const Face& fn_check = data.faces[nb_face_idx];
-                        // 添加对 fn_check.materialIndex 的边界检查
-                        if (fn_check.materialIndex < 0 || static_cast<size_t>(fn_check.materialIndex) >= data.materials.size()) {
-                            continue; // 邻接面材质索引无效，跳过
-                        }
-                        if (fn_check.materialIndex != f0.materialIndex) continue; // 材质必须相同
-                        
-                        Vector3 dn_check{faceNormals[nb_face_idx].x - n0.x, faceNormals[nb_face_idx].y - n0.y, faceNormals[nb_face_idx].z - n0.z};
-                        if (std::sqrt(dn_check.x*dn_check.x + dn_check.y*dn_check.y + dn_check.z*dn_check.z) > eps) continue; // 法线必须相同
-                        if (checkUV(nb_face_idx) != axis0) continue; // UV连续性类型必须相同
-
-                        bool expected_nb_visited = false;
-                        // 原子地标记合格的邻接面为已访问，并加入当前组的BFS队列
-                        if (visited_atomic[nb_face_idx].compare_exchange_strong(expected_nb_visited, true, std::memory_order_acq_rel, std::memory_order_relaxed)) {
-                            current_bfs_group.push_back(nb_face_idx);
-                            q.push(nb_face_idx);
-                        }
+                    const Face& fn_check = data.faces[nb_face_idx];
+                    if (fn_check.materialIndex < 0 || static_cast<size_t>(fn_check.materialIndex) >= data.materials.size()) {
+                        continue; 
                     }
+                    if (fn_check.materialIndex != f0.materialIndex) continue; 
+                    
+                    Vector3 dn_check{faceNormals[nb_face_idx].x - n0.x, faceNormals[nb_face_idx].y - n0.y, faceNormals[nb_face_idx].z - n0.z};
+                    if (std::sqrt(dn_check.x*dn_check.x + dn_check.y*dn_check.y + dn_check.z*dn_check.z) > eps) continue; 
+                    if (checkUV(nb_face_idx) != axis0) continue; 
+
+                    visited[nb_face_idx] = true;
+                    current_bfs_group.push_back(nb_face_idx);
+                    q.push(nb_face_idx);
                 }
             }
-            if (!current_bfs_group.empty()) {
-                local_thread_groups.push_back(std::move(current_bfs_group));
-            }
         }
-        // 将当前线程发现的组合并到全局组列表中（受互斥锁保护）
-        if (!local_thread_groups.empty()) {
-            std::lock_guard<std::mutex> lock(all_groups_mutex);
-            for (auto& lg : local_thread_groups) {
-                all_groups_collected.push_back(std::move(lg));
-            }
+        if (!current_bfs_group.empty()) {
+            groups.push_back(std::move(current_bfs_group));
         }
-    };
-    {
-        std::vector<std::future<void>> futures_grouping;
-        size_t chunk_size_grouping = (faceCount + num_threads - 1) / num_threads;
-        for (unsigned int t = 0; t < num_threads; ++t) {
-            size_t start = t * chunk_size_grouping;
-            size_t end = std::min((t + 1) * chunk_size_grouping, faceCount);
-            if (start < end) {
-                futures_grouping.push_back(std::async(std::launch::async, discover_groups_task, start, end));
-            }
-        }
-        for (auto& fut : futures_grouping) fut.get();
     }
-    // 替换原有 groups 变量
-    std::vector<std::vector<int>>& groups = all_groups_collected;
 
-    // 6. 并行处理每个可合并组 (此部分逻辑来自您之前的版本，保持不变)
+    // 6. 处理每个可合并组 (串行化)
     struct MergedResult { std::vector<Face> faces; std::vector<float> uvCoords; };
     auto processGroup = [&](std::vector<int> grp_indices)->MergedResult {
         MergedResult res;
@@ -467,7 +395,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             Entry e;
             const auto& f_entry = data.faces[fi_original_idx];
             e.vids = f_entry.vertexIndices;
-            e.originalFaceIndex = fi_original_idx; // 保存原始索引用于后续UV旋转计算
+            e.originalFaceIndex = fi_original_idx;
 
             std::array<Vector2,4> pts_proj;
             for(int j=0;j<4;++j){
@@ -481,8 +409,8 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             }
             for(int j=0;j<4;++j){
                 if (f_entry.uvIndices[j] < 0 || (f_entry.uvIndices[j] * 2 + 1) >= data.uvCoordinates.size()) {
-                     e.uMin=0; e.uMax=0; e.vMin=0; e.vMax=0; // 处理无效UV的情况
-                     break; // 如果一个UV无效，整个面的UV范围可能无意义
+                     e.uMin=0; e.uMax=0; e.vMin=0; e.vMax=0; 
+                     break; 
                 }
                 float u_coord = data.uvCoordinates[2*f_entry.uvIndices[j]];
                 float v_coord = data.uvCoordinates[2*f_entry.uvIndices[j]+1];
@@ -500,9 +428,8 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
                 uvs_rot_calc[j]={data.uvCoordinates[2*f_entry.uvIndices[j]],data.uvCoordinates[2*f_entry.uvIndices[j]+1]}; 
             }
             if (!uv_valid_for_rotation) {
-                e.rotation = 0; /* 默认旋转或错误处理 */
+                e.rotation = 0; 
             } else {
-                // 使用点积简化旋转检测
                 Vector2 dWx_rot{pts_proj[1].x - pts_proj[0].x, pts_proj[1].y - pts_proj[0].y};
                 Vector2 dUx_rot{uvs_rot_calc[1].x - uvs_rot_calc[0].x, uvs_rot_calc[1].y - uvs_rot_calc[0].y};
                 Vector2 dUy_rot{uvs_rot_calc[3].x - uvs_rot_calc[0].x, uvs_rot_calc[3].y - uvs_rot_calc[0].y};
@@ -567,7 +494,6 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
                 }
                 next_entries_list.push_back(cur_pass); 
             }
-            // 将未被消耗(processed_mask[k]==0)且未作为基础(processed_mask[k]!=1)的条目也加入next_entries_list
             for(size_t k_pass=0; k_pass < current_entries_ref.size(); ++k_pass) {
                 if(processed_mask[k_pass] == 0) next_entries_list.push_back(current_entries_ref[k_pass]);
             }
@@ -623,50 +549,34 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         return res;
     };
 
-    // 7. 异步执行各组合并 (保持不变，但使用上面修改后的 groups 变量)
-    std::vector<std::future<MergedResult>> futures;
-    for(auto& grp_item: groups) { // 使用 all_groups_collected (现在是 groups 的引用)
-        if(grp_item.size()>1) { // 只为包含多个面的组创建任务
-            futures.push_back(std::async(std::launch::async, processGroup, grp_item));
-        } else if (grp_item.size() == 1) { // 单面组直接加入结果，无需processGroup
-            // This logic will be handled later when collecting results.
-        }
-    }
+    // 7. & 8. 串行执行各组合并，并收集合并结果更新 data
+    std::vector<Face> final_model_faces;
+    final_model_faces.reserve(faceCount); 
+    size_t next_new_uv_start_index = data.uvCoordinates.size() / 2;
+    data.uvCoordinates.reserve(data.uvCoordinates.size() + faceCount * 8); 
 
-    // 8. 收集合并结果并更新 data
-    std::vector<Face> newFaces;
-    size_t current_uv_offset = data.uvCoordinates.size() / 2;
-    data.uvCoordinates.reserve(data.uvCoordinates.size() + faceCount * 8); // 预估UV增长
-    newFaces.reserve(faceCount); // 预估面数
-
-    for(auto& f_future: futures){
-        MergedResult mr = f_future.get();
-        for(const auto& face_res : mr.faces) {
-            newFaces.push_back(face_res); // 添加合并后的面
-        }
-        // 为新面添加对应的UV坐标，并更新其uvIndices
-        size_t faces_in_mr = mr.faces.size();
-        for(size_t i_mr_face=0; i_mr_face < faces_in_mr; ++i_mr_face) {
-            Face& added_face = newFaces[newFaces.size() - faces_in_mr + i_mr_face];
-            for(int k_uv_idx=0; k_uv_idx<4; ++k_uv_idx) {
-                 added_face.uvIndices[k_uv_idx] = current_uv_offset + (i_mr_face * 4) + k_uv_idx;
+    for(auto& grp_item: groups) { 
+        if(grp_item.size() > 1) { 
+            MergedResult mr = processGroup(std::move(grp_item));
+            
+            for(size_t i_mr_face = 0; i_mr_face < mr.faces.size(); ++i_mr_face) {
+                Face processed_face = mr.faces[i_mr_face];
+                for(int k_uv_idx = 0; k_uv_idx < 4; ++k_uv_idx) {
+                    processed_face.uvIndices[k_uv_idx] = next_new_uv_start_index + (i_mr_face * 4) + k_uv_idx;
+                }
+                final_model_faces.push_back(processed_face);
             }
-        }
-        // 添加UV数据到总的uvCoordinates
-        data.uvCoordinates.insert(data.uvCoordinates.end(), mr.uvCoords.begin(), mr.uvCoords.end());
-        current_uv_offset += mr.uvCoords.size() / 2;
-    }
-    // 9. 保留单面组 (之前未通过 processGroup 处理的组)
-    for(auto& grp_single: groups) { 
-        if(grp_single.size()==1) {
-            newFaces.push_back(data.faces[grp_single[0]]);
-            // 注意: 单面组的UV索引不需要改变，因为它们   直接来自原始data.faces
-            // 并且其UV数据已经在data.uvCoordinates中。
-            // 但如果后续需要所有UV都来自新的 MergedResult 结构，则这里也需要调整。
-            // 当前假设：单面组的UV坐标和索引保持原样。
+            
+            data.uvCoordinates.insert(data.uvCoordinates.end(), 
+                                      std::make_move_iterator(mr.uvCoords.begin()), 
+                                      std::make_move_iterator(mr.uvCoords.end()));
+            next_new_uv_start_index += mr.uvCoords.size() / 2;
+
+        } else if (grp_item.size() == 1) {
+            final_model_faces.push_back(data.faces[grp_item[0]]);
         }
     }
-    data.faces= newFaces;
+    data.faces.swap(final_model_faces);
 }
 
 // 综合去重和优化方法
