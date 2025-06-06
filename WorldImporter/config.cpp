@@ -44,7 +44,6 @@ Config LoadConfig(const std::string& configFile) {
     config.exportLightBlockOnly = j.value("exportLightBlockOnly", config.exportLightBlockOnly);
     config.lightBlockSize = j.value("lightBlockSize", config.lightBlockSize);
     config.allowDoubleFace = j.value("allowDoubleFace", config.allowDoubleFace);
-    config.activeLOD = j.value("activeLOD", config.activeLOD);
     config.isLODAutoCenter = j.value("isLODAutoCenter", config.isLODAutoCenter);
     config.LODCenterX = j.value("LODCenterX", config.LODCenterX);
     config.LODCenterZ = j.value("LODCenterZ", config.LODCenterZ);
@@ -54,6 +53,25 @@ Config LoadConfig(const std::string& configFile) {
     config.LOD3renderDistance = j.value("LOD3renderDistance", config.LOD3renderDistance);
     config.useUnderwaterLOD = j.value("useUnderwaterLOD", config.useUnderwaterLOD);
     config.useGreedyMesh = j.value("useGreedyMesh", config.useGreedyMesh);
+    config.activeLOD = j.value("activeLOD", config.activeLOD);
+    config.activeLOD2 = j.value("activeLOD2", config.activeLOD2);
+    config.activeLOD3 = j.value("activeLOD3", config.activeLOD3);
+    config.useBiomeColors = j.value("useBiomeColors", config.useBiomeColors);
+    
+    // 读取LOD1级别使用原始模型的方块列表
+    /*格式：
+    "lod1Blocks": [
+        "minecraft:packed_ice",
+        "minecraft:campfire",
+        "minecraft:cherry_leaves"
+    ]*/
+    if (j.contains("lod1Blocks") && j["lod1Blocks"].is_array()) {
+        for (const auto& block : j["lod1Blocks"]) {
+            if (block.is_string()) {
+                config.lod1Blocks.insert(block.get<std::string>());
+            }
+        }
+    }
 
     config.exportFullModel = j.value("exportFullModel", config.exportFullModel);
     config.partitionSize = j.value("partitionSize", config.partitionSize);

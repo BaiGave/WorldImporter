@@ -7,6 +7,8 @@
 #include "model.h"
 #include "hashutils.h"
 #include <shared_mutex>
+#include <unordered_set>
+#include <string>
 
 // 结构体：包含LOD等级和加载状态
 struct ChunkSectionInfo {
@@ -68,10 +70,11 @@ public:
     // 获取块颜色
     static std::vector<std::string> GetBlockColor(int x, int y, int z, int id, BlockType blockType);
 
-
     // 生成包围盒模型并剔除不需要的面
     static ModelData GenerateBox(int x, int y, int z, int baseSize, float boxHeight, const std::vector<std::string>& colors);
-
+    
+    // 检查方块是否应该使用原始模型
+    static bool ShouldUseOriginalModel(const std::string& blockName);
 };
 
 #endif // LOD_MANAGER_H

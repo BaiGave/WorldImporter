@@ -23,20 +23,150 @@
 #include <utility>
 #include "hashutils.h"
 #include "ChunkLoader.h"
-
 using namespace std;
 using namespace std::chrono;
 
 std::unordered_set<std::pair<int, int>, pair_hash> processedChunks;
 std::mutex entityCacheMutex; // 互斥量,确保线程安全
+static const std::unordered_map<FaceType, int> neighborIndexMap = {
+        {FaceType::DOWN, 1}, {FaceType::UP, 0}, {FaceType::NORTH, 4},
+        {FaceType::SOUTH, 5}, {FaceType::WEST, 2}, {FaceType::EAST, 3}
+};
+void ChunkGenerator::ProcessBlockForModel(ModelData& chunkModel, int x, int y, int z) {
+    std::array<bool, 6> neighbors; // 邻居是否为空气
+    std::array<int, 10> fluidLevels; // 流体液位
+
+    int id = GetBlockIdWithNeighbors(x, y, z, neighbors.data(), fluidLevels.data());
+    Block currentBlock = GetBlockById(id);
+    string blockName = currentBlock.GetModifiedNameWithNamespace();
+    if (blockName == "minecraft:air") return;
+
+    if (config.exportLightBlockOnly)
+    {
+        string processed = blockName;
+
+        // 提取命名空间
+        size_t colonPos = processed.find(':');
+        string ns = "minecraft"; // 默认命名空间
+        if (colonPos != string::npos) {
+            ns = processed.substr(0, colonPos);
+            processed = processed.substr(colonPos + 1);
+        }
+
+        // 提取方块ID和状态
+        size_t bracketPos = processed.find('[');
+        string LN = processed.substr(0, bracketPos);
+
+
+        if (LN != "light") {
+            return;
+        }
+    }
+    if (config.cullCave)
+    {
+        if (GetSkyLight(x, y, z) == -1) return;
+    }
+    if (GetBlockLight(x, y, z) > 12) return;
+
+    string ns = currentBlock.GetNamespace();
+
+    // 标准化方块名称(去掉命名空间,处理状态)
+    size_t colonPos = blockName.find(':');
+    if (colonPos != string::npos) {
+        blockName = blockName.substr(colonPos + 1);
+    }
+
+    ModelData blockModel;
+    ModelData liquidModel;
+    if (currentBlock.level > -1) {
+        blockModel = GetRandomModelFromCache(ns, blockName);
+
+        if (blockModel.vertices.empty()) {
+            liquidModel = GenerateFluidModel(fluidLevels);
+            AssignFluidMaterials(liquidModel, currentBlock.name);
+            blockModel = liquidModel;
+        }
+        else
+        {
+            liquidModel = GenerateFluidModel(fluidLevels);
+            AssignFluidMaterials(liquidModel, currentBlock.name);
+
+            // 将所有面的方向设置为不剔除
+            for (auto& face : blockModel.faces)
+            {
+                face.faceDirection = FaceType::DO_NOT_CULL;
+            }
+
+            blockModel = MergeFluidModelData(blockModel, liquidModel);
+        }
+    }
+    else
+    {
+        // 处理其他方块
+        blockModel = GetRandomModelFromCache(ns, blockName);
+    }
+
+    if (blockModel.vertices.empty()) return;
+
+    // 剔除被遮挡的面
+    std::vector<int> validFaceIndices;
+    validFaceIndices.reserve(blockModel.faces.size());
+
+    // 遍历所有面
+    for (size_t faceIdx = 0; faceIdx < blockModel.faces.size(); ++faceIdx) {
+        // 检查faceIdx是否超出范围
+        if (faceIdx >= blockModel.faces.size()) {
+            throw std::runtime_error("faceIdx out of range");
+        }
+
+        FaceType dir = blockModel.faces[faceIdx].faceDirection; // 获取面的方向
+        // 如果是DO_NOT_CULL,保留该面
+        if (dir == FaceType::DO_NOT_CULL) {
+            validFaceIndices.push_back(faceIdx);
+        }
+        else {
+            auto it = neighborIndexMap.find(dir);
+            if (it != neighborIndexMap.end()) {
+                int neighborIdx = it->second;
+                if (!neighbors[neighborIdx]) { // 如果邻居存在(非空气),跳过该面
+                    continue;
+                }
+            }
+            validFaceIndices.push_back(faceIdx);
+        }
+    }
+
+    // 重建面数据(使用新的Face结构体)
+    ModelData filteredModel;
+    filteredModel.faces.reserve(validFaceIndices.size());
+
+    for (int faceIdx : validFaceIndices) {
+        // 直接复制Face结构体
+        filteredModel.faces.push_back(blockModel.faces[faceIdx]);
+    }
+
+    // 顶点和UV数据保持不变(后续合并时会去重)
+    filteredModel.vertices = blockModel.vertices;
+    filteredModel.uvCoordinates = blockModel.uvCoordinates;
+    filteredModel.materials = blockModel.materials;
+
+    // 使用过滤后的模型
+    blockModel = std::move(filteredModel);
+
+    ApplyPositionOffset(blockModel, x, y, z);
+
+    // 合并到主模型
+    if (chunkModel.vertices.empty()) {
+        chunkModel = blockModel;
+    }
+    else {
+        MergeModelsDirectly(chunkModel, blockModel);
+    }
+}
 
 ModelData ChunkGenerator::GenerateChunkModel(int chunkX, int sectionY, int chunkZ) {
     // 从RegionModelExporter.cpp中复制GenerateChunkModel的实现
     ModelData chunkModel;
-    static const std::unordered_map<FaceType, int> neighborIndexMap = {
-        {FaceType::DOWN, 1}, {FaceType::UP, 0}, {FaceType::NORTH, 4}, 
-        {FaceType::SOUTH, 5}, {FaceType::WEST, 2}, {FaceType::EAST, 3}
-    };
     int xStart = config.minX;
     int xEnd = config.maxX;
     int yStart = config.minY;
@@ -59,138 +189,7 @@ ModelData ChunkGenerator::GenerateChunkModel(int chunkX, int sectionY, int chunk
                 if (x < xStart || x > xEnd || y < yStart || y > yEnd || z < zStart || z > zEnd) {
                     continue; // 跳过不在导出区域内的方块
                 }
-                
-                
-                std::array<bool, 6> neighbors; // 邻居是否为空气
-                std::array<int, 10> fluidLevels; // 流体液位
-
-                int id = GetBlockIdWithNeighbors(x, y, z,neighbors.data(),fluidLevels.data());
-                Block currentBlock = GetBlockById(id);
-                string blockName = currentBlock.GetModifiedNameWithNamespace();
-                if (blockName == "minecraft:air" ) continue;
-
-                if (config.exportLightBlockOnly)
-                {
-                    string processed = blockName;
-
-                    // 提取命名空间
-                    size_t colonPos = processed.find(':');
-                    string ns = "minecraft"; // 默认命名空间
-                    if (colonPos != string::npos) {
-                        ns = processed.substr(0, colonPos);
-                        processed = processed.substr(colonPos + 1);
-                    }
-
-                    // 提取方块ID和状态
-                    size_t bracketPos = processed.find('[');
-                    string LN = processed.substr(0, bracketPos);
-
-
-                    if (LN != "light") {
-                        continue;
-                    }
-                }
-                if (config.cullCave)
-                {
-                    if (GetSkyLight(x, y, z) == -1)continue;
-                }
-                
-
-                string ns = currentBlock.GetNamespace();
-
-                // 标准化方块名称(去掉命名空间,处理状态)
-                size_t colonPos = blockName.find(':');
-                if (colonPos != string::npos) {
-                    blockName = blockName.substr(colonPos + 1);
-                }
-
-                ModelData blockModel;
-                ModelData liquidModel;
-                if (currentBlock.level > -1) {
-                    blockModel = GetRandomModelFromCache(ns, blockName);
-
-                    if (blockModel.vertices.empty()) {
-                        // 如果是流体方块,生成流体模型
-                        liquidModel = GenerateFluidModel(fluidLevels);
-                        AssignFluidMaterials(liquidModel, currentBlock.name);
-                        blockModel = liquidModel;
-                    }
-                    else
-                    {
-                        // 如果是流体方块,生成流体模型
-                        liquidModel = GenerateFluidModel(fluidLevels);
-                        AssignFluidMaterials(liquidModel, currentBlock.name);
-                        
-                        // 将所有面的方向设置为不剔除
-                        for (auto& face : blockModel.faces)
-                        {
-                            face.faceDirection = FaceType::DO_NOT_CULL;
-                        }
-
-                        blockModel = MergeFluidModelData(blockModel, liquidModel);
-                    }
-
-                }
-                else
-                {
-                    // 处理其他方块
-                    blockModel = GetRandomModelFromCache(ns, blockName);
-                }
-                
-                // 剔除被遮挡的面
-                std::vector<int> validFaceIndices;
-                validFaceIndices.reserve(blockModel.faces.size());
-
-                // 遍历所有面
-                for (size_t faceIdx = 0; faceIdx < blockModel.faces.size(); ++faceIdx) {
-                    // 检查faceIdx是否超出范围
-                    if (faceIdx >= blockModel.faces.size()) {
-                        throw std::runtime_error("faceIdx out of range");
-                    }
-
-                    FaceType dir = blockModel.faces[faceIdx].faceDirection; // 获取面的方向
-                    // 如果是DO_NOT_CULL,保留该面
-                    if (dir == FaceType::DO_NOT_CULL) {
-                        validFaceIndices.push_back(faceIdx);
-                    }
-                    else {
-                        auto it = neighborIndexMap.find(dir);
-                        if (it != neighborIndexMap.end()) {
-                            int neighborIdx = it->second;
-                            if (!neighbors[neighborIdx]) { // 如果邻居存在(非空气),跳过该面
-                                continue;
-                            }
-                        }
-                        validFaceIndices.push_back(faceIdx);
-                    }
-                }
-
-                // 重建面数据(使用新的Face结构体)
-                ModelData filteredModel;
-                filteredModel.faces.reserve(validFaceIndices.size());
-
-                for (int faceIdx : validFaceIndices) {
-                    // 直接复制Face结构体
-                    filteredModel.faces.push_back(blockModel.faces[faceIdx]);
-                }
-
-                // 顶点和UV数据保持不变(后续合并时会去重)
-                filteredModel.vertices = blockModel.vertices;
-                filteredModel.uvCoordinates = blockModel.uvCoordinates;
-                filteredModel.materials = blockModel.materials;
-
-                // 使用过滤后的模型
-                blockModel = std::move(filteredModel);
-            
-                ApplyPositionOffset(blockModel, x, y, z);
-
-                // 合并到主模型
-                if (chunkModel.vertices.empty()) {
-                    chunkModel = blockModel;
-                }
-                else {
-                    MergeModelsDirectly(chunkModel, blockModel);
-                }
+                ProcessBlockForModel(chunkModel, x, y, z);
             }
         }
     }
@@ -259,6 +258,19 @@ ModelData ChunkGenerator::GenerateLODChunkModel(int chunkX, int sectionY, int ch
                 int id = -1;
                 int level=0;
                 BlockType type = LODManager::DetermineLODBlockTypeWithUpperCheck(x, y, z, lodBlockSize, &id, &level);
+                
+                // 检查是否应该使用原始模型
+                if (id != -1) {
+                    Block currentBlock = GetBlockById(id);
+                    std::string blockName = currentBlock.GetModifiedNameWithNamespace();
+                    
+                    // 仅在LOD级别为1时启用原始模型功能
+                    if (lodBlockSize == 1 && LODManager::ShouldUseOriginalModel(blockName)) {
+                        ProcessBlockForModel(chunkModel, x, y, z);
+                        continue; // 跳过LOD方块生成
+                    }
+                }
+                
                 std::vector<std::string> color = LODManager::GetBlockColor(x, y, z, id, type);
                 level = (lodBlockSize - (level));
                 // 如果块类型是固体
@@ -271,8 +283,6 @@ ModelData ChunkGenerator::GenerateLODChunkModel(int chunkX, int sectionY, int ch
                     ModelData solidBox = LODManager::GenerateBox(x, y, z, lodBlockSize, level, color);
                     MergeModelsDirectly(chunkModel, solidBox);
                 }
-                
-                
             }
         }
     }

@@ -7,12 +7,18 @@
 #include <Windows.h>
 #include <iostream>
 #include <sstream>
+#include <mutex>
+#include <shared_mutex>
 
 std::unordered_map<std::string, std::unordered_map<std::string, ModelData>> BlockModelCache;
 
 std::unordered_map<std::string,std::unordered_map<std::string,std::vector<WeightedModelData>>> VariantModelCache;
 
 std::unordered_map<std::string,std::unordered_map<std::string,std::vector<std::vector<WeightedModelData>>>> MultipartModelCache;
+
+// 将互斥锁类型更改为 std::shared_mutex
+std::shared_mutex blockstateCachesMutex;
+
 // --------------------------------------------------------------------------------
 // 条件匹配函数
 // --------------------------------------------------------------------------------
@@ -208,6 +214,7 @@ nlohmann::json GetBlockstateJson(const std::string& namespaceName, const std::st
 // 方块状态 JSON 处理
 // --------------------------------------------------------------------------------
 ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::string& blockId) {
+    std::shared_lock<std::shared_mutex> lock(blockstateCachesMutex); // 使用 shared_lock 进行读操作
     // 先检查主缓存
     if (BlockModelCache.count(namespaceName) &&
         BlockModelCache[namespaceName].count(blockId)) {
@@ -224,8 +231,7 @@ ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::s
         }
 
         if (totalWeight > 0) {
-            static std::random_device rd;
-            static std::mt19937 gen(rd());
+            thread_local static std::mt19937 gen(std::random_device{}()); // 使用 thread_local 随机数生成器
             std::uniform_int_distribution<> dis(1, totalWeight);
             int randomWeight = dis(gen);
             int cumulative = 0;
@@ -255,10 +261,9 @@ ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::s
             return ModelData();
         }
 
-        static std::random_device rd;
-        static std::mt19937 gen(rd());
+        thread_local static std::mt19937 gen_multi(std::random_device{}()); // 为 multipart 使用单独的 thread_local 生成器
         std::uniform_int_distribution<> dis(0, maxCount - 1);
-        int randomIndex = dis(gen);
+        int randomIndex = dis(gen_multi);
 
         ModelData merged;
         for (auto& parts : partList) {
@@ -384,7 +389,10 @@ void ProcessBlockstate(const std::string& namespaceName, const std::vector<std::
                         }
 
                         // 存入缓存
-                        VariantModelCache[namespaceName][blockId] = weightedModels;
+                        {
+                            std::unique_lock<std::shared_mutex> lock(blockstateCachesMutex); // 使用 unique_lock 进行写操作
+                            VariantModelCache[namespaceName][blockId] = weightedModels;
+                        }
                         continue;
 
                     }
@@ -400,7 +408,10 @@ void ProcessBlockstate(const std::string& namespaceName, const std::vector<std::
                             }
 
                             mergedModel = ProcessModelJson(modelNamespace, modelId, rotationX, rotationY, uvlock, 0, blockstateName);
-                            BlockModelCache[namespaceName][blockId] = mergedModel;
+                            {
+                                std::unique_lock<std::shared_mutex> lock(blockstateCachesMutex); // 使用 unique_lock 进行写操作
+                                BlockModelCache[namespaceName][blockId] = mergedModel;
+                            }
                         }
                     }
                 }
@@ -499,7 +510,10 @@ void ProcessBlockstate(const std::string& namespaceName, const std::vector<std::
                     }
                 }
                 // 存入 MultipartModelCache
-                MultipartModelCache[namespaceName][blockId] = multipartModelsList;
+                {
+                    std::unique_lock<std::shared_mutex> lock(blockstateCachesMutex); // 使用 unique_lock 进行写操作
+                    MultipartModelCache[namespaceName][blockId] = multipartModelsList;
+                }
             }
             else {
                 // 如果所有 apply 均为对象,则按照原来的逻辑处理,合并模型后存入 BlockModelCache
@@ -545,7 +559,10 @@ void ProcessBlockstate(const std::string& namespaceName, const std::vector<std::
                         mergedModel = MergeModelData(mergedModel, selectedModels[i]);
                     }
                 }
-                BlockModelCache[namespaceName][blockId] = mergedModel;
+                {
+                    std::unique_lock<std::shared_mutex> lock(blockstateCachesMutex); // 使用 unique_lock 进行写操作
+                    BlockModelCache[namespaceName][blockId] = mergedModel;
+                }
             }
         }
 

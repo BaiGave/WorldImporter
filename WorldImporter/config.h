@@ -5,6 +5,7 @@
 #include <vector>
 #include <map>
 #include <locale>
+#include <unordered_set>
 
 // 游戏整合包配置结构体
 struct VersionConfig {
@@ -27,6 +28,7 @@ struct Config {
     std::string versionJsonPath;
     std::string modsPath; // mods 路径
     std::vector<std::string> resourcepacksPaths; // 资源包路径
+    std::unordered_set<std::string> lod1Blocks; // LOD1级别使用原始模型的方块列表
     std::string selectedDimension; // 当前选择的维度ID
     std::string solidBlocksFile;  // 固体方块列表文件路径
     std::string fluidsFile; //流体列表文件路径
@@ -53,6 +55,10 @@ struct Config {
     int LOD3renderDistance;//LOD1 x4渲染距离
     bool useUnderwaterLOD; //水下LOD模型生成
     bool useGreedyMesh; //是否使用GreedyMesh算法合并面
+    bool activeLOD2; // 是否启用LOD2
+    bool activeLOD3; // 是否启用LOD3
+    bool useBiomeColors; // 是否启用群系颜色叠加
+    
 
     bool exportFullModel;  // 是否完整导入
     int partitionSize; //分割大小
@@ -82,7 +88,6 @@ struct Config {
         exportLightBlockOnly(false),
         lightBlockSize(0.05f),
         allowDoubleFace(false),
-        activeLOD(true),
         isLODAutoCenter(true),
         LODCenterX(0),
         LODCenterZ(0),
@@ -92,6 +97,12 @@ struct Config {
         LOD3renderDistance(6),
         useUnderwaterLOD(true),
         useGreedyMesh(false),
+        activeLOD(true),
+        activeLOD2(true),
+        activeLOD3(true),
+        lod1Blocks({}),
+        useBiomeColors(true),
+        
 
         exportFullModel(false),
         partitionSize(4),
@@ -103,7 +114,6 @@ struct Config {
         {}
 };
 
-// 声明全局 config 变量
 extern Config config;
 
 // 声明读取配置函数

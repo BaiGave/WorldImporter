@@ -759,7 +759,7 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                     elementVertices[faceName] = { {x2, y2, z2}, {x2, y2, z1} ,{x1, y2, z1}, {x1, y2, z2}  };
                 }
                 else if (faceName == "down") {
-                    elementVertices[faceName] = { {x2, y1, z2}, {x1, y1, z2}, {x1, y1, z1}, {x2, y1, z1} };
+                    elementVertices[faceName] = {  {x1, y1, z2}, {x1, y1, z1}, {x2, y1, z1},{ x2, y1, z2 }};
                 }
             }
 

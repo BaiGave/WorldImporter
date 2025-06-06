@@ -119,11 +119,29 @@ void ChunkLoader::CalculateChunkLODs(int expandedChunkXStart, int expandedChunkX
                 } else if (dist2 <= L1d2) {
                     chunkLOD = 1.0f;
                 } else if (dist2 <= L2d2) {
-                    chunkLOD = 2.0f;
+                    if (config.activeLOD2) {
+                        chunkLOD = 2.0f;
+                    } else {
+                        chunkLOD = 1.0f; // 如果LOD2未激活，则回退到LOD1
+                    }
                 } else if (dist2 <= L3d2) {
-                    chunkLOD = 4.0f;
+                    if (config.activeLOD3) {
+                        chunkLOD = 4.0f;
+                    } else if (config.activeLOD2) {
+                        chunkLOD = 2.0f; // 如果LOD3未激活但LOD2已激活，则回退到LOD2
+                    } else {
+                        chunkLOD = 1.0f; // 如果LOD3和LOD2都未激活，则回退到LOD1
+                    }
                 } else {
-                    chunkLOD = 8.0f;
+                    // 默认情况下，如果距离超过L3，我们使用一个更高的LOD值，例如8.0f
+                    // 如果LOD3未激活，则尝试LOD2，然后是LOD1
+                    if (config.activeLOD3) {
+                        chunkLOD = 8.0f;
+                    } else if (config.activeLOD2) {
+                        chunkLOD = 2.0f; // 如果LOD3未激活但LOD2已激活，则回退到LOD2（或者根据需求选择一个合适的值，比如4.0f如果LOD3的替代值应该是比LOD2更高的）
+                    } else {
+                        chunkLOD = 1.0f; // 如果LOD3和LOD2都未激活，则回退到LOD1
+                    }
                 }
             }
             for (int sy = sectionYStart; sy <= sectionYEnd; ++sy) {

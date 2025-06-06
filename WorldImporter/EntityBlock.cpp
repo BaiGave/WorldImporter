@@ -1,5 +1,8 @@
 #include "EntityBlock.h"
 #include "RegionModelExporter.h"  // 包含必要的头文件,确保相关函数可用
+#include "blockstate.h"         // 为了调用 ProcessBlockstate
+#include <span>                  // 为了 std::span (C++20)
+#include <iostream>            // 为了 std::cout, std::cerr (如果尚未包含)
 
 
 void EntityBlock::PrintDetails() const {
@@ -49,6 +52,12 @@ ModelData YuushyaShowBlockEntity::GenerateModel() const {
         size_t colonPos = blockName.find(':');
         if (colonPos != std::string::npos) blockName = blockName.substr(colonPos + 1);
         ModelData blockModel = GetRandomModelFromCache(ns, blockName);
+
+        // 如果缓存未命中,尝试处理 blockstate 并重新获取模型
+        if (blockModel.vertices.empty() && !blockName.empty()) {
+            ProcessBlockstate(ns, {blockName}); // blockName 应包含方块状态, ns 是命名空间
+            blockModel = GetRandomModelFromCache(ns, blockName); // 再次尝试获取
+        }
 
         // 将所有面设置为DO_NOT_CULL,确保不会被贪心合并算法错误剔除
         for (auto& face : blockModel.faces) {

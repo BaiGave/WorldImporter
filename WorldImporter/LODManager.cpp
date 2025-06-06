@@ -164,7 +164,7 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
         }
     }
     
-    if (hasTintIndex) {
+    if (hasTintIndex && config.useBiomeColors) {
         float textureR, textureG, textureB;
         sscanf(textureAverage.c_str(), "%f %f %f", &textureR, &textureG, &textureB);
         uint32_t hexColor = Biome::GetBiomeColor(x, y, z,tintIndexValue == 2 ? BiomeColorType::Water : BiomeColorType::Foliage);
@@ -783,4 +783,17 @@ ModelData LODManager::GenerateBox(int x, int y, int z, int baseSize, float boxHe
         }
     }
     return filteredBox;
+}
+
+// 检查方块是否应该使用原始模型
+bool LODManager::ShouldUseOriginalModel(const std::string& blockName) {
+    // 标准化方块名称（移除状态信息）
+    std::string normalizedName = blockName;
+    size_t bracketPos = normalizedName.find('[');
+    if (bracketPos != std::string::npos) {
+        normalizedName = normalizedName.substr(0, bracketPos);
+    }
+    
+    // 检查是否在配置的lod1Blocks列表中
+    return config.lod1Blocks.find(normalizedName) != config.lod1Blocks.end();
 }
