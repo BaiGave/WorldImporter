@@ -66,7 +66,6 @@ void ChunkGenerator::ProcessBlockForModel(ModelData& chunkModel, int x, int y, i
     {
         if (GetSkyLight(x, y, z) == -1) return;
     }
-    if (GetBlockLight(x, y, z) > 12) return;
 
     string ns = currentBlock.GetNamespace();
 

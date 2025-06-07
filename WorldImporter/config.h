@@ -57,6 +57,7 @@ struct Config {
     bool useGreedyMesh; //是否使用GreedyMesh算法合并面
     bool activeLOD2; // 是否启用LOD2
     bool activeLOD3; // 是否启用LOD3
+    bool activeLOD4; // 是否启用LOD4
     bool useBiomeColors; // 是否启用群系颜色叠加
     
 
@@ -100,6 +101,7 @@ struct Config {
         activeLOD(true),
         activeLOD2(true),
         activeLOD3(true),
+        activeLOD4(true),
         lod1Blocks({}),
         useBiomeColors(true),
         
