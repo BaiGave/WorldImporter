@@ -4,6 +4,8 @@
 #include <span>                  // 为了 std::span (C++20)
 #include <iostream>            // 为了 std::cout, std::cerr (如果尚未包含)
 #include <map>
+#include <vector>
+#include <string>
 
 
 void EntityBlock::PrintDetails() const {
@@ -110,7 +112,12 @@ void LittleTilesTilesEntity::PrintDetails() const {
     }
 }
 
-ModelData CreateCube(float minX, float minY, float minZ, float maxX, float maxY, float maxZ, const ModelData& templateModel) {
+// 检查面是否被完全覆盖,如果是则应被剔除
+static bool IsFaceCovered(LittleFaceState state) {
+    return state == LittleFaceState::INSIDE_COVERED || state == LittleFaceState::OUTSIDE_COVERED;
+}
+
+ModelData CreateCube(float minX, float minY, float minZ, float maxX, float maxY, float maxZ, const ModelData& templateModel, std::span<const int> faceStates) {
     ModelData cubeModel;
 
     // 1. 复制材质
@@ -180,14 +187,43 @@ ModelData CreateCube(float minX, float minY, float minZ, float maxX, float maxY,
         maxX, minY,   minX, minY,   minX, maxY,   maxX, maxY
     };
 
-    // 5. 面
-    cubeModel.faces.resize(6);
-    cubeModel.faces[0] = { {0, 1, 2, 3}, {0, 1, 2, 3}, getMaterialForFace(UP), UP };
-    cubeModel.faces[1] = { {4, 5, 6, 7}, {4, 5, 6, 7}, getMaterialForFace(DOWN), DOWN };
-    cubeModel.faces[2] = { {8, 9, 10, 11}, {8, 9, 10, 11}, getMaterialForFace(EAST), EAST };
-    cubeModel.faces[3] = { {12, 13, 14, 15}, {12, 13, 14, 15}, getMaterialForFace(WEST), WEST };
-    cubeModel.faces[4] = { {16, 17, 18, 19}, {16, 17, 18, 19}, getMaterialForFace(NORTH), NORTH };
-    cubeModel.faces[5] = { {20, 21, 22, 23}, {20, 21, 22, 23}, getMaterialForFace(SOUTH), SOUTH };
+    // 5. 面 - 根据faceStates决定是否生成
+    struct FaceInfo {
+        FaceType type;
+        std::array<int, 4> vertIndices;
+        std::array<int, 4> uvIndices;
+    };
+
+    const std::vector<FaceInfo> faceInfos = {
+        {UP,    {0, 1, 2, 3},    {0, 1, 2, 3}},
+        {DOWN,  {4, 5, 6, 7},    {4, 5, 6, 7}},
+        {EAST,  {8, 9, 10, 11},  {8, 9, 10, 11}},
+        {WEST,  {12, 13, 14, 15}, {12, 13, 14, 15}},
+        {NORTH, {16, 17, 18, 19}, {16, 17, 18, 19}},
+        {SOUTH, {20, 21, 22, 23}, {20, 21, 22, 23}}
+    };
+
+    // 根据 EntityBlock.h 中的注释, faceStates 的顺序是 EAST, WEST, UP, DOWN, SOUTH, NORTH
+    std::map<FaceType, LittleFaceState> stateMap;
+    if (faceStates.size() >= 6) {
+        stateMap[FaceType::UP] = static_cast<LittleFaceState>(faceStates[0]);
+        stateMap[FaceType::DOWN] = static_cast<LittleFaceState>(faceStates[1]);
+        stateMap[FaceType::SOUTH] = static_cast<LittleFaceState>(faceStates[2]);
+        stateMap[FaceType::NORTH] = static_cast<LittleFaceState>(faceStates[3]);
+        stateMap[FaceType::EAST] = static_cast<LittleFaceState>(faceStates[4]);
+        stateMap[FaceType::WEST] = static_cast<LittleFaceState>(faceStates[5]);
+    }
+
+
+    for (const auto& info : faceInfos) {
+        LittleFaceState state = LittleFaceState::UNLOADED;
+        if (stateMap.count(info.type)) {
+            state = stateMap.at(info.type);
+        }
+        if (!IsFaceCovered(state)) {
+            cubeModel.faces.push_back({ info.vertIndices, info.uvIndices, getMaterialForFace(info.type), info.type });
+        }
+    }
 
     return cubeModel;
 }
@@ -224,7 +260,7 @@ ModelData LittleTilesTilesEntity::GenerateModel() const {
         }
 
         for (const auto& boxData : tile.boxDataList) {
-            if (boxData.size() != 12) continue; // 确保 boxData 有效
+            if (boxData.size() != 12) continue; // 现在需要12个元素
 
             // 从 boxData 中提取位置和大小
             int minX = boxData[6];
@@ -234,8 +270,8 @@ ModelData LittleTilesTilesEntity::GenerateModel() const {
             int maxY = boxData[10];
             int maxZ = boxData[11];
             
-            // 为该 box 创建立方体模型
-            ModelData cube = CreateCube(minX / 16.0f, minY / 16.0f, minZ / 16.0f, maxX / 16.0f, maxY / 16.0f, maxZ / 16.0f, templateModel);
+            // 为该 box 创建立方体模型,并传入面状态
+            ModelData cube = CreateCube(minX / 16.0f, minY / 16.0f, minZ / 16.0f, maxX / 16.0f, maxY / 16.0f, maxZ / 16.0f, templateModel, std::span<const int>(boxData.data(), 6));
 
             // 合并到最终模型中
             if (model.vertices.empty()) {

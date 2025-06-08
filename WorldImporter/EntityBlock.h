@@ -53,7 +53,7 @@ struct LittleTilesTileEntry {
     std::string blockName;
     std::vector<int> color;
     // 用列表保存任意多个 boxData,每个 boxData 是一个 int 数组
-    std::vector<std::vector<int>> boxDataList;// 其中每个boxData第一个int中的前3个十六进制字节解析成6个状态值(按照EAST  WEST UP DOWN SOUTH NORTH 排序),后续6个int为边界值(minX,minY,minZ,maxX,maxY,maxZ)
+    std::vector<std::vector<int>> boxDataList; // 每个boxData包含12个整数。前6个为面状态(顺序:EAST,WEST,UP,DOWN,SOUTH,NORTH),后6个为边界(minX,minY,minZ,maxX,maxY,maxZ)
 };
 
 // 新增 littletiles 实体类
