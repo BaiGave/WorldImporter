@@ -3,6 +3,7 @@
 #include "blockstate.h"         // 为了调用 ProcessBlockstate
 #include <span>                  // 为了 std::span (C++20)
 #include <iostream>            // 为了 std::cout, std::cerr (如果尚未包含)
+#include <map>
 
 
 void EntityBlock::PrintDetails() const {
@@ -109,82 +110,84 @@ void LittleTilesTilesEntity::PrintDetails() const {
     }
 }
 
-ModelData CreateCube(float minX, float minY, float minZ, float maxX, float maxY, float maxZ, const std::string& texturePath) {
+ModelData CreateCube(float minX, float minY, float minZ, float maxX, float maxY, float maxZ, const ModelData& templateModel) {
     ModelData cubeModel;
-    float halfSizeX = (maxX - minX) / 2.0f;
-    float halfSizeY = (maxY - minY) / 2.0f;
-    float halfSizeZ = (maxZ - minZ) / 2.0f;
 
+    // 1. 复制材质
+    cubeModel.materials = templateModel.materials;
+
+    // 2. 构建面-材质映射
+    std::map<FaceType, int> faceMaterialMap;
+    int anySideMaterial = -1;
+    for (const auto& face : templateModel.faces) {
+        if (faceMaterialMap.find(face.faceDirection) == faceMaterialMap.end()) {
+            faceMaterialMap[face.faceDirection] = face.materialIndex;
+        }
+        if (anySideMaterial == -1 && (face.faceDirection == NORTH || face.faceDirection == SOUTH || face.faceDirection == EAST || face.faceDirection == WEST)) {
+            anySideMaterial = face.materialIndex;
+        }
+    }
+
+    auto getMaterialForFace = [&](FaceType dir) -> int {
+        auto it = faceMaterialMap.find(dir);
+        if (it != faceMaterialMap.end()) {
+            return it->second;
+        }
+        // 侧面的备用方案
+        if (dir == NORTH || dir == SOUTH || dir == EAST || dir == WEST) {
+            if (anySideMaterial != -1) return anySideMaterial;
+        }
+        // 顶部/底部的备用方案
+        auto it_up = faceMaterialMap.find(UP);
+        if (it_up != faceMaterialMap.end()) return it_up->second;
+        auto it_down = faceMaterialMap.find(DOWN);
+        if (it_down != faceMaterialMap.end()) return it_down->second;
+
+        if (anySideMaterial != -1) return anySideMaterial; // 再次尝试侧面
+        if (!faceMaterialMap.empty()) return faceMaterialMap.begin()->second; // 尝试任何一个
+        return 0; // 最后手段
+    };
+
+    // 3. 为6个独立的面创建顶点 (每个面4个顶点)
     cubeModel.vertices = {
-        // 前面
-        minX, maxY, maxZ, maxX, maxY, maxZ, maxX, minY, maxZ, minX, minY, maxZ,
-        // 后面
-        maxX, maxY, minZ, minX, maxY, minZ, minX, minY, minZ, maxX, minY, minZ,
-        // 上面
-        maxX, maxY, maxZ, minX, maxY, maxZ, minX, maxY, minZ, maxX, maxY, minZ,
-        // 下面
-        minX, minY, maxZ, maxX, minY, maxZ, maxX, minY, minZ, minX, minY, minZ,
-        // 左面
-        minX, maxY, minZ, minX, maxY, maxZ, minX, minY, maxZ, minX, minY, minZ,
-        // 右面
-        maxX, maxY, maxZ, maxX, maxY, minZ, maxX, minY, minZ, maxX, minY, maxZ
+        // 上 (Y max). 从顶部看逆时针: (minX,maxY,minZ), (maxX,maxY,minZ), (maxX,maxY,maxZ), (minX,maxY,maxZ)
+        minX, maxY, minZ,   maxX, maxY, minZ,   maxX, maxY, maxZ,   minX, maxY, maxZ,
+        // 下 (Y min). 从底部看逆时针: (minX,minY,maxZ), (maxX,minY,maxZ), (maxX,minY,minZ), (minX,minY,minZ)
+        minX, minY, maxZ,   maxX, minY, maxZ,   maxX, minY, minZ,   minX, minY, minZ,
+        // 东 (X max). 从东面看逆时针: (maxX,minY,minZ), (maxX,maxY,minZ), (maxX,maxY,maxZ), (maxX,minY,maxZ)
+        maxX, minY, minZ,   maxX, maxY, minZ,   maxX, maxY, maxZ,   maxX, minY, maxZ,
+        // 西 (X min). 从西面看逆时針: (minX,minY,maxZ), (minX,maxY,maxZ), (minX,maxY,minZ), (minX,minY,minZ)
+        minX, minY, maxZ,   minX, maxY, maxZ,   minX, maxY, minZ,   minX, minY, minZ,
+        // 北 (Z min). 从北面看逆时针: (minX,minY,minZ), (maxX,minY,minZ), (maxX,maxY,minZ), (minX,maxY,minZ)
+        minX, minY, minZ,   maxX, minY, minZ,   maxX, maxY, minZ,   minX, maxY, minZ,
+        // 南 (Z max). 从南面看逆时针: (maxX,minY,maxZ), (minX,minY,maxZ), (minX,maxY,maxZ), (maxX,maxY,maxZ)
+        maxX, minY, maxZ,   minX, minY, maxZ,   minX, maxY, maxZ,   maxX, maxY, maxZ
     };
 
-    // 设置 UV 坐标(此处是示例,实际可以根据不同的纹理进行调整)
+    // 4. UV坐标 (每个顶点一对)
     cubeModel.uvCoordinates = {
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f
+        // 上 (XZ平面)
+        minX, minZ,   maxX, minZ,   maxX, maxZ,   minX, maxZ,
+        // 下 (XZ平面)
+        minX, maxZ,   maxX, maxZ,   maxX, minZ,   minX, minZ,
+        // 东 (ZY平面)
+        minZ, minY,   minZ, maxY,   maxZ, maxY,   maxZ, minY,
+        // 西 (ZY平面)
+        maxZ, minY,   maxZ, maxY,   minZ, maxY,   minZ, minY,
+        // 北 (XY平面)
+        minX, minY,   maxX, minY,   maxX, maxY,   minX, maxY,
+        // 南 (XY平面)
+        maxX, minY,   minX, minY,   minX, maxY,   maxX, maxY
     };
 
-    // 创建材质
-    Material material;
-    material.name = texturePath;
-    material.texturePath = "None";
-    material.tintIndex = -1;  // 设置默认tint索引
-    cubeModel.materials = { material };
-
-    // 使用Face结构体创建六个面
+    // 5. 面
     cubeModel.faces.resize(6);
-    
-    // 前面
-    cubeModel.faces[0].vertexIndices = { 0, 1, 2, 3 };
-    cubeModel.faces[0].uvIndices = { 0, 1, 2, 3 };
-    cubeModel.faces[0].materialIndex = 0;
-    cubeModel.faces[0].faceDirection = FaceType::SOUTH;
-    
-    // 后面
-    cubeModel.faces[1].vertexIndices = { 4, 5, 6, 7 };
-    cubeModel.faces[1].uvIndices = { 4, 5, 6, 7 };
-    cubeModel.faces[1].materialIndex = 0;
-    cubeModel.faces[1].faceDirection = FaceType::NORTH;
-    
-    // 上面
-    cubeModel.faces[2].vertexIndices = { 8, 9, 10, 11 };
-    cubeModel.faces[2].uvIndices = { 8, 9, 10, 11 };
-    cubeModel.faces[2].materialIndex = 0;
-    cubeModel.faces[2].faceDirection = FaceType::UP;
-    
-    // 下面
-    cubeModel.faces[3].vertexIndices = { 12, 13, 14, 15 };
-    cubeModel.faces[3].uvIndices = { 12, 13, 14, 15 };
-    cubeModel.faces[3].materialIndex = 0;
-    cubeModel.faces[3].faceDirection = FaceType::DOWN;
-    
-    // 左面
-    cubeModel.faces[4].vertexIndices = { 16, 17, 18, 19 };
-    cubeModel.faces[4].uvIndices = { 16, 17, 18, 19 };
-    cubeModel.faces[4].materialIndex = 0;
-    cubeModel.faces[4].faceDirection = FaceType::WEST;
-    
-    // 右面
-    cubeModel.faces[5].vertexIndices = { 20, 21, 22, 23 };
-    cubeModel.faces[5].uvIndices = { 20, 21, 22, 23 };
-    cubeModel.faces[5].materialIndex = 0;
-    cubeModel.faces[5].faceDirection = FaceType::EAST;
+    cubeModel.faces[0] = { {0, 1, 2, 3}, {0, 1, 2, 3}, getMaterialForFace(UP), UP };
+    cubeModel.faces[1] = { {4, 5, 6, 7}, {4, 5, 6, 7}, getMaterialForFace(DOWN), DOWN };
+    cubeModel.faces[2] = { {8, 9, 10, 11}, {8, 9, 10, 11}, getMaterialForFace(EAST), EAST };
+    cubeModel.faces[3] = { {12, 13, 14, 15}, {12, 13, 14, 15}, getMaterialForFace(WEST), WEST };
+    cubeModel.faces[4] = { {16, 17, 18, 19}, {16, 17, 18, 19}, getMaterialForFace(NORTH), NORTH };
+    cubeModel.faces[5] = { {20, 21, 22, 23}, {20, 21, 22, 23}, getMaterialForFace(SOUTH), SOUTH };
 
     return cubeModel;
 }
@@ -193,8 +196,35 @@ ModelData CreateCube(float minX, float minY, float minZ, float maxX, float maxY,
 ModelData LittleTilesTilesEntity::GenerateModel() const {
     ModelData model;
     for (const auto& tile : tiles) {
+        // 获取方块类型的模板模型
+        std::string fullBlockName = tile.blockName;
+        std::string ns = "minecraft"; // 默认命名空间
+        std::string blockName;
+        size_t colonPos = fullBlockName.find(':');
+        if (colonPos != std::string::npos) {
+            ns = fullBlockName.substr(0, colonPos);
+            blockName = fullBlockName.substr(colonPos + 1);
+        }
+        else {
+            blockName = fullBlockName;
+        }
+
+        ModelData templateModel = GetRandomModelFromCache(ns, blockName);
+        if (templateModel.vertices.empty() && !blockName.empty()) {
+            ProcessBlockstate(ns, { blockName });
+            templateModel = GetRandomModelFromCache(ns, blockName);
+        }
+
+        if (templateModel.materials.empty()) {
+            // 如果没有材质,创建一个虚拟材质以防止崩溃
+            Material dummyMaterial;
+            dummyMaterial.name = "dummy";
+            dummyMaterial.texturePath = "None";
+            templateModel.materials.push_back(dummyMaterial);
+        }
+
         for (const auto& boxData : tile.boxDataList) {
-            if (boxData.size() !=12) continue; // 确保 boxData 有效
+            if (boxData.size() != 12) continue; // 确保 boxData 有效
 
             // 从 boxData 中提取位置和大小
             int minX = boxData[6];
@@ -203,9 +233,9 @@ ModelData LittleTilesTilesEntity::GenerateModel() const {
             int maxX = boxData[9];
             int maxY = boxData[10];
             int maxZ = boxData[11];
-
+            
             // 为该 box 创建立方体模型
-            ModelData cube = CreateCube(minX / 16.0f, minY / 16.0f, minZ / 16.0f, maxX / 16.0f, maxY / 16.0f, maxZ / 16.0f, tile.blockName);
+            ModelData cube = CreateCube(minX / 16.0f, minY / 16.0f, minZ / 16.0f, maxX / 16.0f, maxY / 16.0f, maxZ / 16.0f, templateModel);
 
             // 合并到最终模型中
             if (model.vertices.empty()) {
