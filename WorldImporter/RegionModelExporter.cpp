@@ -115,6 +115,11 @@ void RegionModelExporter::ExportModels(const string& outputName) {
     monitor.UpdateProgress("总体进度", 0, totalTasksAllBatches);
     
     auto processModel = [](const ChunkTask& task) -> ModelData {
+        // 如果 activeLOD 为 false,则始终生成完整模型
+        if (!config.activeLOD) {
+            return ChunkGenerator::GenerateChunkModel(task.chunkX, task.sectionY, task.chunkZ);
+        }
+
         // 如果 LOD0renderDistance 为 0 且是普通区块,跳过生成
         if (config.LOD0renderDistance == 0 && task.lodLevel == 0.0f) {
             // LOD0 禁用时,将中央区块按 LOD1 生成

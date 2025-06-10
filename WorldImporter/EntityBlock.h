@@ -56,9 +56,16 @@ struct LittleTilesTileEntry {
     std::vector<std::vector<int>> boxDataList; // 每个boxData包含12个整数。前6个为面状态(顺序:EAST,WEST,UP,DOWN,SOUTH,NORTH),后6个为边界(minX,minY,minZ,maxX,maxY,maxZ)
 };
 
+struct LittleTilesChildEntry {
+    std::vector<int> coord;
+    std::vector<LittleTilesTileEntry> tiles;
+};
+
 // 新增 littletiles 实体类
 struct LittleTilesTilesEntity : public EntityBlock {
     std::vector<LittleTilesTileEntry> tiles;
+    std::vector<LittleTilesChildEntry> children; // 新增: 用于存储子结构
+    int grid = 16; // 小方块的精度,默认为16
 
     void PrintDetails() const override;
     ModelData GenerateModel() const override;

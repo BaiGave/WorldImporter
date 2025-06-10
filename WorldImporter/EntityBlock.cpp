@@ -83,7 +83,8 @@ ModelData YuushyaShowBlockEntity::GenerateModel() const {
 
 void LittleTilesTilesEntity::PrintDetails() const {
     std::cout << "LittleTilesTilesEntity - ID: " << id
-        << ", X: " << x << ", Y: " << y << ", Z: " << z << std::endl;
+        << ", X: " << x << ", Y: " << y << ", Z: " << z
+        << ", Grid: " << grid << std::endl;
 
     for (const auto& tile : tiles) {
         std::cout << " Tile - BlockName: " << tile.blockName << std::endl;
@@ -108,6 +109,19 @@ void LittleTilesTilesEntity::PrintDetails() const {
         }
         else {
             std::cout << "  (No boxes)" << std::endl;
+        }
+    }
+
+    if (!children.empty()) {
+        std::cout << " Children:" << std::endl;
+        for (size_t i = 0; i < children.size(); ++i) {
+            const auto& child = children[i];
+            std::cout << "  Child " << i << " - Coord: ";
+            for (int c : child.coord) std::cout << c << " ";
+            std::cout << std::endl;
+            for (const auto& tile : child.tiles) {
+                std::cout << "    Tile - BlockName: " << tile.blockName << std::endl;
+            }
         }
     }
 }
@@ -228,9 +242,12 @@ ModelData CreateCube(float minX, float minY, float minZ, float maxX, float maxY,
     return cubeModel;
 }
 
-
-ModelData LittleTilesTilesEntity::GenerateModel() const {
+// --- 新增辅助函数 ---
+// 根据给定的tiles和grid生成模型,不应用最终的位置偏移
+static ModelData GenerateModelFromTiles(const std::vector<LittleTilesTileEntry>& tiles, int grid) {
     ModelData model;
+    float grid_f = static_cast<float>(grid);
+
     for (const auto& tile : tiles) {
         // 获取方块类型的模板模型
         std::string fullBlockName = tile.blockName;
@@ -269,9 +286,9 @@ ModelData LittleTilesTilesEntity::GenerateModel() const {
             int maxX = boxData[9];
             int maxY = boxData[10];
             int maxZ = boxData[11];
-            
+
             // 为该 box 创建立方体模型,并传入面状态
-            ModelData cube = CreateCube(minX / 16.0f, minY / 16.0f, minZ / 16.0f, maxX / 16.0f, maxY / 16.0f, maxZ / 16.0f, templateModel, std::span<const int>(boxData.data(), 6));
+            ModelData cube = CreateCube(minX / grid_f, minY / grid_f, minZ / grid_f, maxX / grid_f, maxY / grid_f, maxZ / grid_f, templateModel, std::span<const int>(boxData.data(), 6));
 
             // 合并到最终模型中
             if (model.vertices.empty()) {
@@ -282,6 +299,37 @@ ModelData LittleTilesTilesEntity::GenerateModel() const {
             }
         }
     }
-    ApplyPositionOffset(model, x, y, z); // 最终整体偏移
     return model;
+}
+
+ModelData LittleTilesTilesEntity::GenerateModel() const {
+    // 1. 生成父结构的本地模型
+    ModelData finalModel = GenerateModelFromTiles(this->tiles, this->grid);
+
+    // 2. 遍历子结构,生成它们的模型并合并
+    for (const auto& child : this->children) {
+        // 假设子结构继承父结构的 grid 设置
+        ModelData childModel = GenerateModelFromTiles(child.tiles, this->grid);
+
+        // 应用子结构的相对坐标偏移(根据grid缩放)
+        if (child.coord.size() >= 3) {
+            float grid_f = static_cast<float>(this->grid);
+            double offsetX = static_cast<double>(child.coord[0]) / grid_f;
+            double offsetY = static_cast<double>(child.coord[1]) / grid_f;
+            double offsetZ = static_cast<double>(child.coord[2]) / grid_f;
+            ApplyDoublePositionOffset(childModel, offsetX, offsetY, offsetZ);
+        }
+
+        // 合并到最终模型中
+        if (finalModel.vertices.empty()) {
+            finalModel = childModel;
+        }
+        else {
+            MergeModelsDirectly(finalModel, childModel);
+        }
+    }
+
+    // 3. 对最终合并的模型应用实体自身的绝对坐标偏移
+    ApplyPositionOffset(finalModel, x, y, z);
+    return finalModel;
 }

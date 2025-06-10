@@ -252,6 +252,88 @@ void ClearSectionCacheForChunk(int chunkX, int chunkZ) {
     }
 }
 
+// --- 新增辅助函数 ---
+// 解析 littletiles 的 tiles 复合标签,返回一个包含所有 tile 条目的向量
+static std::vector<LittleTilesTileEntry> ParseLittleTilesTiles(const NbtTagPtr& tilesTag) {
+    std::vector<LittleTilesTileEntry> tileEntries;
+    if (!tilesTag || tilesTag->type != TagType::COMPOUND) {
+        return tileEntries;
+    }
+
+    // 遍历 tiles 复合标签中的每个键,例如 "minecraft:granite"、"minecraft:stone"
+    for (const auto& tileGroupTag : tilesTag->children) {
+        // 确保子标签类型为 ListTag
+        if (tileGroupTag->type != TagType::LIST)
+            continue;
+
+        // 使用子标签的 name 作为默认的 blockName
+        std::string blockName = tileGroupTag->name;
+        // 新建一个 tile 条目
+        LittleTilesTileEntry tileEntry;
+        tileEntry.blockName = blockName;
+
+        // 标记:第一个 IntArrayTag 作为颜色,其余均作为 box
+        bool isFirstArray = true;
+        // 遍历 ListTag 下的每个子节点,均为 IntArrayTag
+        for (const auto& intArrayTag : tileGroupTag->children) {
+            if (intArrayTag->type != TagType::INT_ARRAY)
+                continue;
+
+            // 解析 payload 为 int 数组
+            std::vector<int> values = readIntArray(intArrayTag->payload);
+            if (isFirstArray) {
+                // 第一个数组作为颜色数据
+                tileEntry.color = values;
+                isFirstArray = false;
+            }
+            else {
+                // 其他数组作为 box 数据
+                // 预期每个 box 应至少为 7 个 int,多余的暂时忽略
+                if (values.size() >= 7) {
+                    // 辅助:把一个字节拆成 [高半字节, 低半字节]
+                    auto splitNibble = [](unsigned char b) {
+                        return std::vector<int>{ (b >> 4) & 0x0F, b & 0x0F };
+                        };
+
+                    // 在 box 处理逻辑里,拿到 intArrayTag->payload
+                    const auto& pl = intArrayTag->payload;
+
+                    unsigned char b0 = pl[3];
+                    unsigned char b1 = pl[2];
+                    unsigned char b2 = pl[1];
+
+                    // 拆半字节
+                    auto d0 = splitNibble(b0);   // 对应你要的 0x16 → [1,6]
+                    auto d1 = splitNibble(b1);   // 对应 0x13 → [1,3]
+                    auto d2 = splitNibble(b2);   // 对应 0x63 → [6,3]
+
+                    // 把它们拼进去
+                    std::vector<int> transformed;
+                    transformed.insert(transformed.end(), d0.begin(), d0.end());
+                    transformed.insert(transformed.end(), d1.begin(), d1.end());
+                    transformed.insert(transformed.end(), d2.begin(), d2.end());
+
+
+                    // 接着追加后面 6 个 int(从索引1到6),忽略其他
+                    for (size_t i = 1; i < 7; ++i) {
+                        transformed.push_back(values[i]);
+                    }
+
+                    // 现在 transformed 应该包含 12 个数字
+                    tileEntry.boxDataList.push_back(transformed);
+                }
+                else {
+                    // 如果数据不是 7 个 int,则直接保存原始数据,或根据需求做额外处理
+                    tileEntry.boxDataList.push_back(values);
+                }
+            }
+        }
+        // 将解析得到的 tileEntry 添加到实体中
+        tileEntries.push_back(tileEntry);
+    }
+    return tileEntries;
+}
+
 void ProcessEntityBlocks(int chunkX, int chunkZ, const NbtTagPtr& blockEntitiesTag) {
     std::vector<std::shared_ptr<EntityBlock>> entityBlocks;
 
@@ -383,84 +465,38 @@ void ProcessEntityBlocks(int chunkX, int chunkZ, const NbtTagPtr& blockEntitiesT
             littleTilesEntity->x = x;
             littleTilesEntity->y = y;
             littleTilesEntity->z = z;
+            // 解析 grid 值(如果存在)
+            auto gridTag = getChildByName(entityTag, "grid");
 
+            if (gridTag && gridTag->type == TagType::INT) {
+                littleTilesEntity->grid = bytesToInt(gridTag->payload);
+            }
             // 解析 content 标签
             auto contentTag = getChildByName(entityTag, "content");
             if (contentTag && contentTag->type == TagType::COMPOUND) {
-                // 获取 tiles 标签,tiles 是一个 CompoundTag
+                // 解析顶层的 tiles
                 auto tilesTag = getChildByName(contentTag, "tiles");
-                if (tilesTag && tilesTag->type == TagType::COMPOUND) {
-                    // 遍历 tiles 复合标签中的每个键,例如 "minecraft:granite"、"minecraft:stone"
-                    for (const auto& tileGroupTag : tilesTag->children) {
-                        // 确保子标签类型为 ListTag
-                        if (tileGroupTag->type != TagType::LIST)
-                            continue;
+                littleTilesEntity->tiles = ParseLittleTilesTiles(tilesTag);
 
-                        // 使用子标签的 name 作为默认的 blockName
-                        std::string blockName = tileGroupTag->name;
-                        // 新建一个 tile 条目
-                        LittleTilesTileEntry tileEntry;
-                        tileEntry.blockName = blockName;
+                // 解析 children 列表
+                auto childrenTag = getChildByName(contentTag, "children");
+                if (childrenTag && childrenTag->type == TagType::LIST) {
+                    for (const auto& childCompoundTag : childrenTag->children) {
+                        if (childCompoundTag && childCompoundTag->type == TagType::COMPOUND) {
+                            LittleTilesChildEntry childEntry;
 
-                        // 标记:第一个 IntArrayTag 作为颜色,其余均作为 box
-                        bool isFirstArray = true;
-                        // 遍历 ListTag 下的每个子节点,均为 IntArrayTag
-                        for (const auto& intArrayTag : tileGroupTag->children) {
-                            if (intArrayTag->type != TagType::INT_ARRAY)
-                                continue;
-
-                            // 解析 payload 为 int 数组
-                            std::vector<int> values = readIntArray(intArrayTag->payload);
-                            if (isFirstArray) {
-                                // 第一个数组作为颜色数据
-                                tileEntry.color = values;
-                                isFirstArray = false;
+                            // 解析 coord
+                            auto coordTag = getChildByName(childCompoundTag, "coord");
+                            if (coordTag && coordTag->type == TagType::INT_ARRAY) {
+                                childEntry.coord = readIntArray(coordTag->payload);
                             }
-                            else {
-                               
-                                // 其他数组作为 box 数据
-                                // 预期每个 box 应为 7 个 int
-                                if (values.size() == 7) {
-                                    // 辅助:把一个字节拆成 [高半字节, 低半字节]
-                                    auto splitNibble = [](unsigned char b) {
-                                        return std::vector<int>{ (b >> 4) & 0x0F, b & 0x0F };
-                                        };
 
-                                    // 在 box 处理逻辑里,拿到 intArrayTag->payload
-                                    const auto& pl = intArrayTag->payload;
+                            // 解析 tiles
+                            auto childTilesTag = getChildByName(childCompoundTag, "tiles");
+                            childEntry.tiles = ParseLittleTilesTiles(childTilesTag);
 
-                                    unsigned char b0 = pl[3];
-                                    unsigned char b1 = pl[2];
-                                    unsigned char b2 = pl[1];
-
-                                    // 拆半字节
-                                    auto d0 = splitNibble(b0);   // 对应你要的 0x16 → [1,6]
-                                    auto d1 = splitNibble(b1);   // 对应 0x13 → [1,3]
-                                    auto d2 = splitNibble(b2);   // 对应 0x63 → [6,3]
-
-                                    // 把它们拼进去
-                                    std::vector<int> transformed;
-                                    transformed.insert(transformed.end(), d0.begin(), d0.end());
-                                    transformed.insert(transformed.end(), d1.begin(), d1.end());
-                                    transformed.insert(transformed.end(), d2.begin(), d2.end());
-
-
-                                    // 接着追加后面 6 个 int(原始顺序不变)
-                                    for (size_t i = 1; i < values.size(); ++i) {
-                                        transformed.push_back(values[i]);
-                                    }
-
-                                    // 现在 transformed 应该包含 12 个数字
-                                    tileEntry.boxDataList.push_back(transformed);
-                                }
-                                else {
-                                    // 如果数据不是 7 个 int,则直接保存原始数据,或根据需求做额外处理
-                                    tileEntry.boxDataList.push_back(values);
-                                }
-                            }
+                            littleTilesEntity->children.push_back(childEntry);
                         }
-                        // 将解析得到的 tileEntry 添加到实体中
-                        littleTilesEntity->tiles.push_back(tileEntry);
                     }
                 }
             }
