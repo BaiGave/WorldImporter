@@ -225,16 +225,16 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
     model.faces[5].faceDirection = EAST;
     model.faces[5].materialIndex = 1; // flow材质
 
-    float v_nw = 1 - (h_nw);
-    float v_ne = 1 - (h_ne);
-    float v_se = 1 - (h_se);
-    float v_sw = 1 - (h_sw);
+    float v_nw = 1 - (h_nw) / 32.0f;
+    float v_ne = 1 - (h_ne) / 32.0f;
+    float v_se = 1 - (h_se) / 32.0f;
+    float v_sw = 1 - (h_sw) / 32.0f;
 
     model.uvCoordinates = {
         // 下面
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f , 0.0f, 0.0f,
+        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 31.0/ 32.0f , 0.0f, 31.0 / 32.0f,
         // 上面
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f , 0.0f, 0.0f,
+        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 31.0 / 32.0f , 0.0f, 31.0 / 32.0f,
         // 北面
         0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_ne, 0.0f, v_nw,
         // 南面
@@ -248,9 +248,9 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
     if (currentLevel == 0 || currentLevel == 8) {
         model.uvCoordinates = {
             // 下面
-            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f , 0.0f, 0.0f,
+            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 31.0 / 32.0f , 0.0f, 31.0 / 32.0f,
             // 上面
-            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f , 0.0f, 0.0f,
+            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 31.0 / 32.0f , 0.0f, 31.0 / 32.0f,
             // 北面
             0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_ne, 0.0f, v_nw,
             // 南面
@@ -267,95 +267,77 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
         }
     }
     else {
-        // 基于四个顶点高度计算梯度
-        // 计算X方向梯度 (东西方向)
-        float gradientX_north = h_ne - h_nw; // 北边的东西梯度
-        float gradientX_south = h_se - h_sw; // 南边的东西梯度
-        float gradientX = (gradientX_north + gradientX_south) * 0.5f; // 平均值
+        // 使用和MC一致的流向计算方法
+        // 计算X方向和Z方向梯度
+        float gradientX = (h_ne + h_se - h_nw - h_sw) * 0.5f;
+        float gradientZ = (h_sw + h_se - h_nw - h_ne) * 0.5f;
 
-        // 计算Z方向梯度 (南北方向)
-        float gradientZ_west = h_sw - h_nw;  // 西边的南北梯度
-        float gradientZ_east = h_se - h_ne;  // 东边的南北梯度
-        float gradientZ = (gradientZ_west + gradientZ_east) * 0.5f; // 平均值
-
-        // 计算流向角度
-        float angle = 0.0f;
-        if (gradientX != 0.0f || gradientZ != 0.0f) {
-            // 计算流体流向角度 (水从高处流向低处，所以取反)
-            angle = atan2(-gradientZ, -gradientX);
-            
-            // 将弧度转换为角度
-            angle = angle * (180.0f / M_PI);
-            
-            // 添加90度偏移以匹配MC纹理方向
-            angle += 90.0f;
-            
-            // 将角度归一化到 [0, 360) 范围
-            angle = fmod(angle + 360.0f, 360.0f);
-            
-            // 将角度量化为45度的倍数 (Minecraft使用8个方向)
-            angle = round(angle / 45.0f) * 45.0f;
-        }
-
-        // 将角度转换为弧度
-        float angleRad = angle * (M_PI / 180.0f);
-
-        // 计算旋转矩阵
-        float cosTheta = cos(angleRad);
-        float sinTheta = sin(angleRad);
-
-        // 旋转中心点
-        constexpr float centerX = 0.5f;
-        constexpr float centerY = 0.5f;
-
+        // 计算流向角度 (使用和MC类似的方法)
+        float angle = atan2(gradientZ, gradientX) - (M_PI / 2.0f); // 注意这里减去PI/2
+        
+        // 计算UV旋转偏移
+        float sinAngle = sin(angle) * 0.25f;
+        float cosAngle = cos(angle) * 0.25f;
+        
+        // 中心点
+        constexpr float centerU = 0.5f;
+        constexpr float centerV = 0.5f;
+        // 定义v坐标的最大值 (1/32)
+        constexpr float maxV = 1.0f / 32.0f;
+        // 定义v坐标起点（最上面一帧的起始位置）
+        constexpr float startV = 1.0f - maxV;
+        
         // 遍历 UV 坐标数组
         for (size_t i = 0; i < model.uvCoordinates.size(); i += 8) {
             // 仅对上顶面的 UV 坐标进行旋转
             if (i >= 8 && i < 16) { // 上顶面对应的 UV 坐标范围
-                // 提取 4 个 UV 顶点
-                float u0 = model.uvCoordinates[i];
-                float v0 = model.uvCoordinates[i + 1];
-                float u1 = model.uvCoordinates[i + 2];
-                float v1 = model.uvCoordinates[i + 3];
-                float u2 = model.uvCoordinates[i + 4];
-                float v2 = model.uvCoordinates[i + 5];
-                float u3 = model.uvCoordinates[i + 6];
-                float v3 = model.uvCoordinates[i + 7];
+                // 纹理坐标计算 - 基于MC的方式
+                // 左上角 (西北)
+                model.uvCoordinates[i] = centerU + (-cosAngle - sinAngle);
+                model.uvCoordinates[i + 1] = startV + (centerV + (-cosAngle + sinAngle)) * maxV;
+                
+                // 右上角 (东北)
+                model.uvCoordinates[i + 2] = centerU + (cosAngle - sinAngle);
+                model.uvCoordinates[i + 3] = startV + (centerV + (-cosAngle - sinAngle)) * maxV;
+                
+                // 右下角 (东南)
+                model.uvCoordinates[i + 4] = centerU + (cosAngle + sinAngle);
+                model.uvCoordinates[i + 5] = startV + (centerV + (cosAngle - sinAngle)) * maxV;
+                
+                // 左下角 (西南)
+                model.uvCoordinates[i + 6] = centerU + (-cosAngle + sinAngle);
+                model.uvCoordinates[i + 7] = startV + (centerV + (cosAngle + sinAngle)) * maxV;
+            }
+        }
+        
+        // 计算侧面的UV纹理映射
+        float v_nw = 1.0f - h_nw;
+        float v_ne = 1.0f - h_ne;
+        float v_se = 1.0f - h_se;
+        float v_sw = 1.0f - h_sw;
 
-                // 旋转 UV 坐标
-                auto rotateUV = [&](float& u, float& v) {
-                    const float relU = u - centerX;
-                    const float relV = v - centerY;
-                    const float newU = relU * cosTheta - relV * sinTheta + centerX;
-                    const float newV = relU * sinTheta + relV * cosTheta + centerY;
-                    u = newU;
-                    v = newV;
-                    };
-
-                rotateUV(u0, v0);
-                rotateUV(u1, v1);
-                rotateUV(u2, v2);
-                rotateUV(u3, v3);
-
-                // 将 x 值从 [1 到 0] 缩放到 [1 到 31/32]
-                // auto scaleU = [](float u) {
-                //     return 1.0f - (1.0f - 31.0f / 32.0f) * u;
-                //     };
-
-                // v0 = scaleU(v0);
-                // v1 = scaleU(v1);
-                // v2 = scaleU(v2);
-                // v3 = scaleU(v3);
-
-                // 更新 UV 坐标
-                model.uvCoordinates[i] = u0;
-                model.uvCoordinates[i + 1] = v0;
-                model.uvCoordinates[i + 2] = u1;
-                model.uvCoordinates[i + 3] = v1;
-                model.uvCoordinates[i + 4] = u2;
-                model.uvCoordinates[i + 5] = v2;
-                model.uvCoordinates[i + 6] = u3;
-                model.uvCoordinates[i + 7] = v3;
+        // 调整UV坐标以适应32长度的精灵图
+        for (size_t i = 16; i < model.uvCoordinates.size(); i += 8) {
+            if (i >= 16) { // 侧面UV
+                // 保持U坐标不变
+                // 调整V坐标以适应动态精灵图
+                model.uvCoordinates[i + 1] = 1.0f; // 顶部对应精灵图的顶部边缘
+                model.uvCoordinates[i + 3] = 1.0f; // 顶部对应精灵图的顶部边缘
+                
+                // 根据不同面使用相应的高度值
+                if (i == 16) { // 北面
+                    model.uvCoordinates[i + 5] = startV + v_ne * maxV;
+                    model.uvCoordinates[i + 7] = startV + v_nw * maxV;
+                } else if (i == 24) { // 南面
+                    model.uvCoordinates[i + 5] = startV + v_se * maxV;
+                    model.uvCoordinates[i + 7] = startV + v_sw * maxV;
+                } else if (i == 32) { // 西面
+                    model.uvCoordinates[i + 5] = startV + v_sw * maxV;
+                    model.uvCoordinates[i + 7] = startV + v_nw * maxV;
+                } else if (i == 40) { // 东面
+                    model.uvCoordinates[i + 5] = startV + v_se * maxV;
+                    model.uvCoordinates[i + 7] = startV + v_ne * maxV;
+                }
             }
         }
         
