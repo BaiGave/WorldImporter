@@ -225,10 +225,10 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
     model.faces[5].faceDirection = EAST;
     model.faces[5].materialIndex = 1; // flow材质
 
-    float v_nw = 1 - (h_nw) / 32.0f;
-    float v_ne = 1 - (h_ne) / 32.0f;
-    float v_se = 1 - (h_se) / 32.0f;
-    float v_sw = 1 - (h_sw) / 32.0f;
+    float v_nw = 1 - (h_nw);
+    float v_ne = 1 - (h_ne);
+    float v_se = 1 - (h_se);
+    float v_sw = 1 - (h_sw);
 
     model.uvCoordinates = {
         // 下面
@@ -267,41 +267,34 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
         }
     }
     else {
-        // 计算梯度和旋转角度
-        float gradientX0 = h_ne - h_nw;
-        if (h_nw < 0.0f) gradientX0 = 0.0f;
+        // 基于四个顶点高度计算梯度
+        // 计算X方向梯度 (东西方向)
+        float gradientX_north = h_ne - h_nw; // 北边的东西梯度
+        float gradientX_south = h_se - h_sw; // 南边的东西梯度
+        float gradientX = (gradientX_north + gradientX_south) * 0.5f; // 平均值
 
-        float gradientX1 = h_se - h_sw;
-        if (h_sw < 0.0f) gradientX1 = 0.0f;
+        // 计算Z方向梯度 (南北方向)
+        float gradientZ_west = h_sw - h_nw;  // 西边的南北梯度
+        float gradientZ_east = h_se - h_ne;  // 东边的南北梯度
+        float gradientZ = (gradientZ_west + gradientZ_east) * 0.5f; // 平均值
 
-        float gradientZ0 = h_nw - h_sw;
-        if (h_sw < 0.0f) gradientZ0 = 0.0f;
-
-        float gradientZ1 = h_ne - h_se;
-        if (h_se < 0.0f) gradientZ1 = 0.0f;
-
-        float gradientX = (gradientX0 + gradientX1) * 16;
-        float gradientZ = (gradientZ0 + gradientZ1) * 16;
-
-        float gradientLength = static_cast<float>(sqrt(gradientX * gradientX + gradientZ * gradientZ));
+        // 计算流向角度
         float angle = 0.0f;
-
-        if (gradientLength > 0.0f) {
-            gradientX /= gradientLength;
-            gradientZ /= gradientLength;
-            angle = static_cast<float>(atan2(gradientX, -gradientZ));
+        if (gradientX != 0.0f || gradientZ != 0.0f) {
+            // 计算流体流向角度 (水从高处流向低处，所以取反)
+            angle = atan2(-gradientZ, -gradientX);
+            
             // 将弧度转换为角度
-            angle = static_cast<float>(angle * (180.0f / M_PI));
-
-            // 确保角度在 [-180, 180] 范围内
-            if (angle < -180.0f) angle += 360.0f;
-            if (angle > 180.0f) angle -= 360.0f;
-
-            // 将角度归一化到 [0, 360] 范围内
+            angle = angle * (180.0f / M_PI);
+            
+            // 添加90度偏移以匹配MC纹理方向
+            angle += 90.0f;
+            
+            // 将角度归一化到 [0, 360) 范围
             angle = fmod(angle + 360.0f, 360.0f);
-
-            // 将角度量化为 22.5 度的倍数
-            angle = static_cast<float>(floor(angle / 22.5f + 0.5f) * 22.5f);
+            
+            // 将角度量化为45度的倍数 (Minecraft使用8个方向)
+            angle = round(angle / 45.0f) * 45.0f;
         }
 
         // 将角度转换为弧度
@@ -345,14 +338,14 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
                 rotateUV(u3, v3);
 
                 // 将 x 值从 [1 到 0] 缩放到 [1 到 31/32]
-                auto scaleU = [](float u) {
-                    return 1.0f - (1.0f - 31.0f / 32.0f) * u;
-                    };
+                // auto scaleU = [](float u) {
+                //     return 1.0f - (1.0f - 31.0f / 32.0f) * u;
+                //     };
 
-                v0 = scaleU(v0);
-                v1 = scaleU(v1);
-                v2 = scaleU(v2);
-                v3 = scaleU(v3);
+                // v0 = scaleU(v0);
+                // v1 = scaleU(v1);
+                // v2 = scaleU(v2);
+                // v3 = scaleU(v3);
 
                 // 更新 UV 坐标
                 model.uvCoordinates[i] = u0;
