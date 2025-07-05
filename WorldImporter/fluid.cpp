@@ -232,7 +232,7 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
 
     model.uvCoordinates = {
         // 下面
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 31.0 / 32.0f , 0.0f, 31.0 / 32.0f,
+        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f , 0.0f, 0.0f,
         // 上面
         0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f , 0.0f, 0.0f,
         // 北面
@@ -248,9 +248,9 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
     if (currentLevel == 0 || currentLevel == 8) {
         model.uvCoordinates = {
             // 下面
-            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 31.0 / 32.0f , 0.0f, 31.0 / 32.0f,
+            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f , 0.0f, 0.0f,
             // 上面
-            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 31.0 / 32.0f , 0.0f, 31.0 / 32.0f,
+            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f , 0.0f, 0.0f,
             // 北面
             0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_ne, 0.0f, v_nw,
             // 南面
