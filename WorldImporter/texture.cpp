@@ -220,7 +220,7 @@ void RegisterTexture(const std::string& namespaceName, const std::string& pathPa
     texturePathCache[cacheKey] = savePath;
 }
 
-// 解析.mcmeta文件并确定材质类型
+// 简化ParseMcmetaFile函数，直接使用图片宽高比
 bool ParseMcmetaFile(const std::string& cacheKey, MaterialType& outType, float& outAspectRatio) {
     // 默认为普通材质，默认长宽比为1.0
     outType = NORMAL;
@@ -231,12 +231,25 @@ bool ParseMcmetaFile(const std::string& cacheKey, MaterialType& outType, float& 
         std::lock_guard<std::mutex> lock(textureDimensionMutex);
         auto dimIt = textureDimensionCache.find(cacheKey);
         if (dimIt != textureDimensionCache.end()) {
-            // 先用图片实际尺寸初始化长宽比
-            outAspectRatio = dimIt->second.aspectRatio;
+            // 直接使用图片的高宽比作为UV缩放因子
+            int width = dimIt->second.width;
+            int height = dimIt->second.height;
+            
+            if (width > 0 && height > 0) {
+                // 如果高度是宽度的整数倍，可能是垂直排列的动画帧
+                if (height > width && height % width == 0) {
+                    // 直接计算帧数
+                    int frames = height / width;
+                    outAspectRatio = static_cast<float>(frames);
+                } else {
+                    // 非标准动画纹理，使用实际高宽比
+                    outAspectRatio = static_cast<float>(height) / width;
+                }
+            }
         }
     }
     
-    // 然后检查mcmeta数据
+    // 然后检查mcmeta数据以确定材质类型
     auto mcmetaIt = GlobalCache::mcmetaCache.find(cacheKey);
     if (mcmetaIt == GlobalCache::mcmetaCache.end() || mcmetaIt->second.empty()) {
         // 没有找到.mcmeta数据,视为普通材质
@@ -248,32 +261,7 @@ bool ParseMcmetaFile(const std::string& cacheKey, MaterialType& outType, float& 
     // 检查是否为动态材质
     if (mcmetaData.contains("animation")) {
         outType = ANIMATED;
-        
-        // 计算动态材质帧数
-        int frameCount = 1;
-        
-        // 优先从frames数组计算帧数
-        if (mcmetaData["animation"].contains("frames") && mcmetaData["animation"]["frames"].is_array()) {
-            frameCount = mcmetaData["animation"]["frames"].size();
-        } 
-        // 如果没有明确的frames数组，但图片尺寸已知且为垂直条带，则使用高/宽比估算帧数
-        else {
-            std::lock_guard<std::mutex> lock(textureDimensionMutex);
-            auto dimIt = textureDimensionCache.find(cacheKey);
-            if (dimIt != textureDimensionCache.end() && dimIt->second.width > 0) {
-                const TextureDimension& dim = dimIt->second;
-                // 如果高度明显大于宽度，可能是垂直排列的动画帧
-                if (dim.height > dim.width) {
-                    // 估算帧数，假设每帧是正方形
-                    frameCount = dim.height / dim.width;
-                    if (frameCount <= 0) frameCount = 1; // 安全检查
-                }
-            }
-        }
-        
-        // 计算最终的长宽比（实际是帧数）
-        outAspectRatio = static_cast<float>(frameCount);
-        
+        // 注意：我们已经从图片尺寸计算了帧数/比例，不需要再从mcmeta中提取
         return true;
     }
     

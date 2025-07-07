@@ -1137,14 +1137,10 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                             
                             // 只缩放v坐标
                             for (auto& uv : uvCoords) {
-                                // 转换v坐标使范围为[0,1]
-                                float v = 1.0f - uv[1]; // 因为v是倒置的，先转回来
-                                
-                                // 应用长宽比缩放，确保v坐标在对应的帧范围内
-                                v = v / aspectRatio;
-                                
-                                // 转回去
-                                uv[1] = 1.0f - v;
+                                // 转换v坐标，确保每个动画帧只显示一帧的内容
+                                float v = 1.0f - uv[1]; // v是倒置的，先转回来
+                                v = v / aspectRatio;    // 缩放到对应帧的范围
+                                uv[1] = 1.0f - v;       // 转回UV坐标系
                             }
                         }
                         
