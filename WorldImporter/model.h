@@ -37,13 +37,16 @@ struct Material {
     std::string texturePath;// 纹理路径
     int8_t  tintIndex;      // tint 索引
     MaterialType type;      // 材质类型
+    float aspectRatio;      // 动态材质长宽比（高/宽）
     
     // 构造函数,默认为普通材质
-    Material() : name(""), texturePath(""), tintIndex(-1), type(NORMAL) {}
+    Material() : name(""), texturePath(""), tintIndex(-1), type(NORMAL), aspectRatio(1.0f) {}
     Material(const std::string& name, const std::string& path, int8_t tint) 
-        : name(name), texturePath(path), tintIndex(tint), type(NORMAL) {}
+        : name(name), texturePath(path), tintIndex(tint), type(NORMAL), aspectRatio(1.0f) {}
     Material(const std::string& name, const std::string& path, int8_t tint, MaterialType materialType)
-        : name(name), texturePath(path), tintIndex(tint), type(materialType) {}
+        : name(name), texturePath(path), tintIndex(tint), type(materialType), aspectRatio(1.0f) {}
+    Material(const std::string& name, const std::string& path, int8_t tint, MaterialType materialType, float ratio)
+        : name(name), texturePath(path), tintIndex(tint), type(materialType), aspectRatio(ratio) {}
 };
 
 //---------------- 数据类型定义 ----------------

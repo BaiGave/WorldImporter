@@ -648,6 +648,7 @@ void processTextures(const nlohmann::json& modelJson, ModelData& data,
                     newMaterial.texturePath = ""; // 空路径表示缺失纹理
                     newMaterial.tintIndex = -1;
                     newMaterial.type = NORMAL;
+                    newMaterial.aspectRatio = 1.0f;
                     
                     int materialIndex = data.materials.size();
                     data.materials.push_back(newMaterial);
@@ -691,8 +692,10 @@ void processTextures(const nlohmann::json& modelJson, ModelData& data,
                 newMaterial.texturePath = textureSavePath;
                 newMaterial.tintIndex = -1;  // 默认值
                 
-                // 检测材质类型(是否为动态材质或CTM)
-                newMaterial.type = DetectMaterialType(namespaceName, pathPart);
+                // 检测材质类型和长宽比(如果为动态材质)
+                float aspectRatio = 1.0f;
+                newMaterial.type = DetectMaterialType(namespaceName, pathPart, aspectRatio);
+                newMaterial.aspectRatio = aspectRatio;
                 
                 int materialIndex = data.materials.size();
                 data.materials.push_back(newMaterial);
@@ -1125,6 +1128,25 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                             {uvRegion[0] / 16.0f, 1 - uvRegion[3] / 16.0f}
                         };
 
+                        // 检查材质类型，如果是动态材质，应用长宽比缩放V坐标
+                        if (data.faces.back().materialIndex >= 0 && 
+                            data.faces.back().materialIndex < data.materials.size() && 
+                            data.materials[data.faces.back().materialIndex].type == ANIMATED) {
+                            
+                            float aspectRatio = data.materials[data.faces.back().materialIndex].aspectRatio;
+                            
+                            // 只缩放v坐标
+                            for (auto& uv : uvCoords) {
+                                // 转换v坐标使范围为[0,1]
+                                float v = 1.0f - uv[1]; // 因为v是倒置的，先转回来
+                                
+                                // 应用长宽比缩放，确保v坐标在对应的帧范围内
+                                v = v / aspectRatio;
+                                
+                                // 转回去
+                                uv[1] = 1.0f - v;
+                            }
+                        }
                         
                         // 应用镜像翻转(如果需要)
                         if (flipX) {
