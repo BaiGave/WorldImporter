@@ -90,10 +90,31 @@ void ChunkGenerator::ProcessBlockForModel(ModelData& chunkModel, int x, int y, i
             liquidModel = GenerateFluidModel(fluidLevels);
             AssignFluidMaterials(liquidModel, currentBlock.name);
 
-            // 将所有面的方向设置为不剔除
+            // 只对有流体方向的面设置为不剔除
             for (auto& face : blockModel.faces)
             {
-                face.faceDirection = FaceType::DO_NOT_CULL;
+                FaceType dir = face.faceDirection;
+                if (dir != FaceType::DO_NOT_CULL) {
+                    auto it = neighborIndexMap.find(dir);
+                    if (it != neighborIndexMap.end()) {
+                        int neighborIdx = it->second;
+                        // 检查相邻方向是否有流体
+                        int nx = x, ny = y, nz = z;
+                        if (dir == FaceType::DOWN) ny--;
+                        else if (dir == FaceType::UP) ny++;
+                        else if (dir == FaceType::NORTH) nz--;
+                        else if (dir == FaceType::SOUTH) nz++;
+                        else if (dir == FaceType::WEST) nx--;
+                        else if (dir == FaceType::EAST) nx++;
+                        
+                        int neighborId = GetBlockId(nx, ny, nz);
+                        Block neighborBlock = GetBlockById(neighborId);
+                        // 如果邻居是流体或含有流体，则不剔除
+                        if (neighborBlock.level > -1) {
+                            face.faceDirection = FaceType::DO_NOT_CULL;
+                        }
+                    }
+                }
             }
 
             blockModel = MergeFluidModelData(blockModel, liquidModel);

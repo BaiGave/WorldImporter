@@ -490,7 +490,6 @@ nlohmann::json LoadParentModel(const std::string& namespaceName, const std::stri
 
     // 生成唯一缓存键
     std::string cacheKey = parentNamespace + ":" + parentModelId;
-
     // 检查缓存是否存在
     {
         std::lock_guard<std::recursive_mutex> lock(parentModelCacheMutex);
@@ -577,8 +576,18 @@ nlohmann::json MergeModelJson(const nlohmann::json& parentModelJson, const nlohm
     }
 
     // 合并 "elements"
-    if (parentModelJson.contains("elements") && !currentModelJson.contains("elements")) {
-        mergedModelJson["elements"] = parentModelJson["elements"];
+    if (parentModelJson.contains("elements")) {
+        if (currentModelJson.contains("elements")) {
+            // 两者都有elements，合并数组
+            mergedModelJson["elements"] = currentModelJson["elements"];
+            // 将父模型中的elements添加到子模型elements后面
+            for (const auto& element : parentModelJson["elements"]) {
+                mergedModelJson["elements"].push_back(element);
+            }
+        } else {
+            // 子模型没有elements，使用父模型的
+            mergedModelJson["elements"] = parentModelJson["elements"];
+        }
     }
 
     // 合并 "display"
@@ -596,12 +605,10 @@ nlohmann::json MergeModelJson(const nlohmann::json& parentModelJson, const nlohm
 
 nlohmann::json GetModelJson(const std::string& namespaceName, const std::string& modelPath) {
     std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
-
     // 按照 JAR 文件的加载顺序逐个查找
     for (size_t i = 0; i < GlobalCache::jarOrder.size(); ++i) {
         const std::string& modId = GlobalCache::jarOrder[i];
         std::string cacheKey = modId + ":" + namespaceName + ":" + modelPath;
-        
         auto it = GlobalCache::models.find(cacheKey);
         if (it != GlobalCache::models.end()) {
             return it->second;

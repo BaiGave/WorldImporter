@@ -220,7 +220,7 @@ ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::s
         BlockModelCache[namespaceName].count(blockId)) {
         return BlockModelCache[namespaceName][blockId];
     }
-
+    
     // 检查 variant 缓存
     if (VariantModelCache.count(namespaceName) &&
         VariantModelCache[namespaceName].count(blockId)) {
@@ -242,6 +242,7 @@ ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::s
                 }
             }
         }
+
     }
 
     // 检查 multipart 缓存:在 multipart 时只进行一次随机,
@@ -351,7 +352,7 @@ void ProcessBlockstate(const std::string& namespaceName, const std::vector<std::
                     if (variant.value().is_array()) {
                         std::vector<WeightedModelData> weightedModels;
                         std::string cacheKey = namespaceName + ":" + baseBlockId + ":" + variantKey;
-
+                        ModelData model;
                         int t = 0;
                         for (const auto& item : variant.value()) {
                             int rotationX = 0, rotationY = 0;
@@ -379,7 +380,7 @@ void ProcessBlockstate(const std::string& namespaceName, const std::vector<std::
                                 }
 
                                 // 生成模型数据
-                                ModelData model = ProcessModelJson(modelNamespace, modelId,
+                                model = ProcessModelJson(modelNamespace, modelId,
                                     rotationX, rotationY, uvlock, t, blockstateName);
 
                                 weightedModels.push_back({ model, weight });
@@ -387,7 +388,6 @@ void ProcessBlockstate(const std::string& namespaceName, const std::vector<std::
                             }
 
                         }
-
                         // 存入缓存
                         {
                             std::unique_lock<std::shared_mutex> lock(blockstateCachesMutex); // 使用 unique_lock 进行写操作
@@ -408,6 +408,7 @@ void ProcessBlockstate(const std::string& namespaceName, const std::vector<std::
                             }
 
                             mergedModel = ProcessModelJson(modelNamespace, modelId, rotationX, rotationY, uvlock, 0, blockstateName);
+                           
                             {
                                 std::unique_lock<std::shared_mutex> lock(blockstateCachesMutex); // 使用 unique_lock 进行写操作
                                 BlockModelCache[namespaceName][blockId] = mergedModel;

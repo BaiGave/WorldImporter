@@ -216,7 +216,8 @@ struct Block {
             std::string key = pairStr.substr(0, equalPos);
             std::transform(key.begin(), key.end(), key.begin(), ::tolower); // 转换为小写
 
-            if (key != "waterlogged" && key != "distance" && key != "persistent") {
+            // 修改这里：保留waterlogged属性，只过滤distance和persistent
+            if (key != "distance" && key != "persistent") {
                 filteredPairs.push_back(pairStr);
             }
         }
@@ -289,7 +290,8 @@ struct Block {
 
                 // 判断是否需要保留该键值对
                 bool keep = true;
-                if (key == "waterlogged" || key == "distance" || key == "persistent") {
+                // 修改这里：保留waterlogged属性，只过滤distance和persistent
+                if (key == "distance" || key == "persistent") {
                     keep = false; // 移除这些键
                 }
 
@@ -370,7 +372,8 @@ struct Block {
             std::string key = pairStr.substr(0, equalPos);
             std::transform(key.begin(), key.end(), key.begin(), ::tolower); // 转换为小写
 
-            if (key != "waterlogged" && key != "distance" && key != "persistent") {
+            // 修改这里：保留waterlogged属性，只过滤distance和persistent
+            if (key != "distance" && key != "persistent") {
                 filteredPairs.push_back(pairStr);
             }
         }
