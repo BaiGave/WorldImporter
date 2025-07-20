@@ -354,53 +354,126 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         return std::hash<long long>()(((long long)e.v1<<32) ^ (unsigned long long)e.v2);
     }};
     auto t2_fill_start = Clock::now();
-    // 并行填充所有边
-    std::vector<std::pair<EdgeKey,int>> allEdges(faceCount * 4);
+    
+    // 并行填充所有边 - 恢复原来的实现但做更好的内存管理
+    allEdges.reserve(faceCount * 4); // 预分配内存
+    
+    // 使用批次填充以减少同步成本
+    const size_t BATCH_SIZE = 1024; // 每批次处理的面数
+    std::vector<std::vector<std::pair<EdgeKey,int>>> threadBatches;
     unsigned int numThreads2 = std::thread::hardware_concurrency(); if (numThreads2 == 0) numThreads2 = 1;
+    threadBatches.resize(numThreads2);
+    
     std::vector<std::thread> fillThreads; fillThreads.reserve(numThreads2);
     size_t facesPerThread = (faceCount + numThreads2 - 1) / numThreads2;
+    
     for (unsigned int t = 0; t < numThreads2; ++t) {
         size_t startF = t * facesPerThread;
         size_t endF = std::min(startF + facesPerThread, faceCount);
-        fillThreads.emplace_back([&, startF, endF]() {
+        size_t batchSize = (endF - startF) * 4; // 每个面有4条边
+        threadBatches[t].reserve(batchSize);
+        
+        fillThreads.emplace_back([&, startF, endF, t]() {
             for (size_t i = startF; i < endF; ++i) {
                 const auto& vs = data.faces[i].vertexIndices;
                 for (int k = 0; k < 4; ++k) {
                     int a = vs[k], b = vs[(k+1)%4];
                     EdgeKey ek{ std::min(a,b), std::max(a,b) };
-                    allEdges[i * 4 + k] = {ek, (int)i};
+                    threadBatches[t].push_back({ek, static_cast<int>(i)});
                 }
             }
         });
     }
     for (auto &th : fillThreads) th.join();
+    
+    // 合并所有线程的结果
+    for (auto& batch : threadBatches) {
+        allEdges.insert(allEdges.end(), batch.begin(), batch.end());
+        // 释放内存
+        std::vector<std::pair<EdgeKey,int>>().swap(batch);
+    }
+    
+    // 清理
+    threadBatches.clear();
+    threadBatches.shrink_to_fit();
+    
     auto t2_fill_end = Clock::now();
+    
     // 排序所有边
     std::sort(allEdges.begin(), allEdges.end(), [](auto &a, auto &b) {
         if (a.first.v1 != b.first.v1) return a.first.v1 < b.first.v1;
-        return a.first.v2 < b.first.v2;
+        if (a.first.v2 != b.first.v2) return a.first.v2 < b.first.v2;
+        return a.second < b.second; // 确保稳定排序
     });
     auto t2_sort_end = Clock::now();
-    // 2.1 构建面邻接表 (并行化+排序完成后)
+    
+    // 2.1 构建面邻接表 - 使用分段并行处理
     std::vector<std::vector<int>> faceAdj(faceCount);
+    
+    // 预分配空间，减少重新分配
+    for (size_t i = 0; i < faceCount; ++i) {
+        faceAdj[i].reserve(16);  // 合理估计每个面的邻接数
+    }
+    
     auto t2_adj_start = Clock::now();
-    size_t idxEdge = 0;
-    while (idxEdge < allEdges.size()) {
-        EdgeKey ek = allEdges[idxEdge].first;
-        size_t j = idxEdge + 1;
-        while (j < allEdges.size() && allEdges[j].first == ek) ++j;
-        for (size_t p = idxEdge; p < j; ++p) {
-            int f1 = allEdges[p].second;
-            for (size_t q = idxEdge; q < j; ++q) {
-                if (p == q) continue;
-                int f2 = allEdges[q].second;
-                faceAdj[f1].push_back(f2);
+    
+    // 分段处理以并行化
+    const size_t segmentSize = (allEdges.size() + numThreads2 - 1) / numThreads2;
+    std::vector<std::thread> adjThreads;
+    adjThreads.reserve(numThreads2);
+    std::mutex adjMutex; // 用于同步边界处理
+    
+    for (unsigned int t = 0; t < numThreads2; ++t) {
+        size_t startIdx = t * segmentSize;
+        size_t endIdx = std::min(startIdx + segmentSize, allEdges.size());
+        
+        // 确保相同key的边不会被拆分到不同线程
+        if (t > 0 && startIdx < allEdges.size()) {
+            EdgeKey prevKey = allEdges[startIdx-1].first;
+            while (startIdx < allEdges.size() && allEdges[startIdx].first == prevKey) {
+                startIdx++;
             }
         }
-        idxEdge = j;
+        
+        // 确保endIdx也在边界上
+        if (t < numThreads2-1 && endIdx < allEdges.size()) {
+            EdgeKey currKey = allEdges[endIdx-1].first;
+            while (endIdx < allEdges.size() && allEdges[endIdx].first == currKey) {
+                endIdx++;
+            }
+        }
+        
+        adjThreads.emplace_back([&, startIdx, endIdx]() {
+            size_t idx = startIdx;
+            while (idx < endIdx) {
+                EdgeKey ek = allEdges[idx].first;
+                // 找到所有具有相同边的面
+                std::vector<int> edgeFaces;
+                while (idx < endIdx && allEdges[idx].first == ek) {
+                    edgeFaces.push_back(allEdges[idx].second);
+                    idx++;
+                }
+                
+                // 为每个面添加相邻面
+                for (size_t i = 0; i < edgeFaces.size(); ++i) {
+                    int f1 = edgeFaces[i];
+                    for (size_t j = 0; j < edgeFaces.size(); ++j) {
+                        if (i != j) {
+                            int f2 = edgeFaces[j];
+                            faceAdj[f1].push_back(f2);
+                        }
+                    }
+                }
+            }
+        });
     }
+    
+    for (auto& th : adjThreads) th.join();
+    
+    // 释放内存
+    std::vector<std::pair<EdgeKey,int>>().swap(allEdges);
     auto t2_adj_end = Clock::now();
-    std::cerr << "GreedyMesh Step2 adjacency: " << Ms(t2_adj_end - t2_sort_end).count() << " ms\n";
+    std::cerr << "GreedyMesh Step2 adjacency: " << Ms(t2_adj_end - t2_adj_start).count() << " ms\n";
 
     // 3. 生成顶点键索引对并排序 (并行化+排序)
     int vertCount = data.vertices.size() / 3;
@@ -606,59 +679,127 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             entries.push_back(e);
         }
 
+        // 回归使用原始但更安全的合并函数
         auto performLimitedMergePass = [&](std::vector<Entry>& current_entries_ref, bool mergeW_axis) -> bool {
+            if (current_entries_ref.size() <= 1) return false;
+            
             bool any_merge_overall = false;
             std::vector<char> processed_mask(current_entries_ref.size(), 0); 
             std::vector<Entry> next_entries_list;
+            next_entries_list.reserve(current_entries_ref.size());
+            
+            // 预处理：按旋转角度分组
+            std::vector<std::vector<size_t>> rotationGroups(4); // 0, 90, 180, 270度
+            for (size_t i = 0; i < current_entries_ref.size(); ++i) {
+                int rot = current_entries_ref[i].rotation;
+                int idx = rot / 90;
+                if (idx >= 0 && idx < 4) {
+                    rotationGroups[idx].push_back(i);
+                }
+            }
+            
             for (size_t i_pass = 0; i_pass < current_entries_ref.size(); ++i_pass) {
                 if (processed_mask[i_pass] != 0) continue; 
+                
                 Entry cur_pass = current_entries_ref[i_pass];
-                processed_mask[i_pass] = 1; 
-                for (size_t j_pass = 0; j_pass < current_entries_ref.size(); ++j_pass) {
-                    if (i_pass == j_pass || processed_mask[j_pass] != 0) continue; 
+                processed_mask[i_pass] = 1;
+                
+                // 仅在同一旋转组内查找匹配项
+                int rotGroup = cur_pass.rotation / 90;
+                if (rotGroup < 0 || rotGroup >= 4) rotGroup = 0;
+                
+                bool found_match = false;
+                for (size_t idx : rotationGroups[rotGroup]) {
+                    size_t j_pass = idx;
+                    
+                    if (i_pass == j_pass || processed_mask[j_pass] != 0) continue;
                     if (current_entries_ref[j_pass].rotation != cur_pass.rotation) continue;
+                    
+                    Entry& other_entry = current_entries_ref[j_pass];
                     bool merged_now = false;
-                    Entry other_entry_copy_pass = current_entries_ref[j_pass]; 
+                    
                     if (mergeW_axis) {
-                        if (std::fabs(cur_pass.maxW - other_entry_copy_pass.minW) < eps && std::fabs(cur_pass.minH - other_entry_copy_pass.minH) < eps && std::fabs(cur_pass.maxH - other_entry_copy_pass.maxH) < eps) {
-                            float deltaU = other_entry_copy_pass.uMax - other_entry_copy_pass.uMin;
-                            float deltaV = other_entry_copy_pass.vMax - other_entry_copy_pass.vMin;
-                            if (cur_pass.rotation == 90 || cur_pass.rotation == 270) cur_pass.vMax += deltaV; else cur_pass.uMax += deltaU;
-                            cur_pass.maxW = other_entry_copy_pass.maxW;
+                        // 检查两个面是否在W轴方向相邻
+                        if (std::fabs(cur_pass.maxW - other_entry.minW) < eps && 
+                            std::fabs(cur_pass.minH - other_entry.minH) < eps && 
+                            std::fabs(cur_pass.maxH - other_entry.maxH) < eps) {
+                            
+                            float deltaU = other_entry.uMax - other_entry.uMin;
+                            float deltaV = other_entry.vMax - other_entry.vMin;
+                            if (cur_pass.rotation == 90 || cur_pass.rotation == 270) 
+                                cur_pass.vMax += deltaV; 
+                            else 
+                                cur_pass.uMax += deltaU;
+                                
+                            cur_pass.maxW = other_entry.maxW;
                             merged_now = true;
-                        } else if (std::fabs(cur_pass.minW - other_entry_copy_pass.maxW) < eps && std::fabs(cur_pass.minH - other_entry_copy_pass.minH) < eps && std::fabs(cur_pass.maxH - other_entry_copy_pass.maxH) < eps) {
-                            float deltaU = other_entry_copy_pass.uMax - other_entry_copy_pass.uMin;
-                            float deltaV = other_entry_copy_pass.vMax - other_entry_copy_pass.vMin;
-                            if (cur_pass.rotation == 90 || cur_pass.rotation == 270) cur_pass.vMin -= deltaV; else cur_pass.uMin -= deltaU;
-                            cur_pass.minW = other_entry_copy_pass.minW;
+                        } 
+                        // 检查另一个方向是否相邻
+                        else if (std::fabs(cur_pass.minW - other_entry.maxW) < eps && 
+                                 std::fabs(cur_pass.minH - other_entry.minH) < eps && 
+                                 std::fabs(cur_pass.maxH - other_entry.maxH) < eps) {
+                            
+                            float deltaU = other_entry.uMax - other_entry.uMin;
+                            float deltaV = other_entry.vMax - other_entry.vMin;
+                            if (cur_pass.rotation == 90 || cur_pass.rotation == 270) 
+                                cur_pass.vMin -= deltaV; 
+                            else 
+                                cur_pass.uMin -= deltaU;
+                            
+                            cur_pass.minW = other_entry.minW;
                             merged_now = true;
                         }
-                    } else { 
-                        if (std::fabs(cur_pass.maxH - other_entry_copy_pass.minH) < eps && std::fabs(cur_pass.minW - other_entry_copy_pass.minW) < eps && std::fabs(cur_pass.maxW - other_entry_copy_pass.maxW) < eps) {
-                            float deltaU = other_entry_copy_pass.uMax - other_entry_copy_pass.uMin;
-                            float deltaV = other_entry_copy_pass.vMax - other_entry_copy_pass.vMin;
-                            if (cur_pass.rotation == 90 || cur_pass.rotation == 270) cur_pass.uMax += deltaU; else cur_pass.vMax += deltaV;
-                            cur_pass.maxH = other_entry_copy_pass.maxH;
+                    } else {
+                        // 检查两个面是否在H轴方向相邻
+                        if (std::fabs(cur_pass.maxH - other_entry.minH) < eps && 
+                            std::fabs(cur_pass.minW - other_entry.minW) < eps && 
+                            std::fabs(cur_pass.maxW - other_entry.maxW) < eps) {
+                            
+                            float deltaU = other_entry.uMax - other_entry.uMin;
+                            float deltaV = other_entry.vMax - other_entry.vMin;
+                            if (cur_pass.rotation == 90 || cur_pass.rotation == 270) 
+                                cur_pass.uMax += deltaU; 
+                            else 
+                                cur_pass.vMax += deltaV;
+                            
+                            cur_pass.maxH = other_entry.maxH;
                             merged_now = true;
-                        } else if (std::fabs(cur_pass.minH - other_entry_copy_pass.maxH) < eps && std::fabs(cur_pass.minW - other_entry_copy_pass.minW) < eps && std::fabs(cur_pass.maxW - other_entry_copy_pass.maxW) < eps) {
-                            float deltaU = other_entry_copy_pass.uMax - other_entry_copy_pass.uMin;
-                            float deltaV = other_entry_copy_pass.vMax - other_entry_copy_pass.vMin;
-                            if (cur_pass.rotation == 90 || cur_pass.rotation == 270) cur_pass.uMin -= deltaU; else cur_pass.vMin -= deltaV;
-                            cur_pass.minH = other_entry_copy_pass.minH;
+                        } 
+                        // 检查另一个方向是否相邻
+                        else if (std::fabs(cur_pass.minH - other_entry.maxH) < eps && 
+                                 std::fabs(cur_pass.minW - other_entry.minW) < eps && 
+                                 std::fabs(cur_pass.maxW - other_entry.maxW) < eps) {
+                            
+                            float deltaU = other_entry.uMax - other_entry.uMin;
+                            float deltaV = other_entry.vMax - other_entry.vMin;
+                            if (cur_pass.rotation == 90 || cur_pass.rotation == 270) 
+                                cur_pass.uMin -= deltaU; 
+                            else 
+                                cur_pass.vMin -= deltaV;
+                            
+                            cur_pass.minH = other_entry.minH;
                             merged_now = true;
                         }
                     }
+                    
                     if (merged_now) {
-                        processed_mask[j_pass] = 2; 
+                        processed_mask[j_pass] = 2;
                         any_merge_overall = true;
-                        break; 
+                        found_match = true;
+                        break;
                     }
                 }
-                next_entries_list.push_back(cur_pass); 
+                
+                next_entries_list.push_back(cur_pass);
             }
-            for(size_t k_pass=0; k_pass < current_entries_ref.size(); ++k_pass) {
-                if(processed_mask[k_pass] == 0) next_entries_list.push_back(current_entries_ref[k_pass]);
+            
+            // 添加未处理的条目
+            for (size_t k_pass = 0; k_pass < current_entries_ref.size(); ++k_pass) {
+                if (processed_mask[k_pass] == 0) {
+                    next_entries_list.push_back(current_entries_ref[k_pass]);
+                }
             }
+            
             current_entries_ref.swap(next_entries_list);
             return any_merge_overall;
         };
@@ -715,47 +856,53 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         return res;
     };
 
-    // 7. 并行处理各可合并组，并收集结果（即时整合以降低峰值内存）
+    // 7. 串行处理所有组，保证正确性
     auto t7_start = Clock::now();
     {
+        // 注意：不再按组大小排序，保持原顺序
+        
+        // 分配足够的空间
         std::vector<Face> final_model_faces;
-        final_model_faces.reserve(faceCount);
+        final_model_faces.reserve(faceCount); // 保守估计：不会比原始面数多
+        
         size_t next_new_uv_start_index = data.uvCoordinates.size() / 2;
-        data.uvCoordinates.reserve(data.uvCoordinates.size() + faceCount * 8);
-        std::mutex resultMutex;
-        std::atomic<size_t> nextGroupIdx(0);
-        unsigned int numThreads = std::thread::hardware_concurrency();
-        if (numThreads == 0) numThreads = 1;
-        std::vector<std::thread> workers;
-        workers.reserve(numThreads);
-        for (unsigned int t = 0; t < numThreads; ++t) {
-            workers.emplace_back([&]() {
-                size_t idx;
-                while ((idx = nextGroupIdx.fetch_add(1)) < groups.size()) {
-                    const auto &grp = groups[idx];
-                    if (grp.size() > 1) {
-                        MergedResult mr = processGroup(grp);
-                        std::lock_guard<std::mutex> lock(resultMutex);
-                        for (size_t i = 0; i < mr.faces.size(); ++i) {
-                            Face processed_face = mr.faces[i];
-                            for (int k = 0; k < 4; ++k) {
-                                processed_face.uvIndices[k] = next_new_uv_start_index + i * 4 + k;
-                            }
-                            final_model_faces.push_back(processed_face);
-                        }
-                        data.uvCoordinates.insert(
-                            data.uvCoordinates.end(),
-                            std::make_move_iterator(mr.uvCoords.begin()),
-                            std::make_move_iterator(mr.uvCoords.end()));
-                        next_new_uv_start_index += mr.uvCoords.size() / 2;
-                    } else {
-                        std::lock_guard<std::mutex> lock(resultMutex);
-                        final_model_faces.push_back(data.faces[grp[0]]);
+        data.uvCoordinates.reserve(data.uvCoordinates.size() + faceCount * 8); // 为每个面准备充足UV空间
+        
+        // 逐个处理每个组
+        for (const auto& grp : groups) {
+            if (grp.size() > 1) {
+                // 处理需要合并的组
+                MergedResult mr = processGroup(grp);
+                
+                // 给所有新生成的面设置UV索引
+                for (size_t i = 0; i < mr.faces.size(); ++i) {
+                    Face processed_face = mr.faces[i];
+                    for (int k = 0; k < 4; ++k) {
+                        processed_face.uvIndices[k] = next_new_uv_start_index + i * 4 + k;
                     }
+                    final_model_faces.push_back(processed_face);
                 }
-            });
+                
+                // 添加UV坐标
+                data.uvCoordinates.insert(
+                    data.uvCoordinates.end(),
+                    std::make_move_iterator(mr.uvCoords.begin()),
+                    std::make_move_iterator(mr.uvCoords.end()));
+                    
+                next_new_uv_start_index += mr.uvCoords.size() / 2;
+            } else if (!grp.empty()) {
+                // 直接添加单个面，保留原始面的所有属性
+                final_model_faces.push_back(data.faces[grp[0]]);
+            }
         }
-        for (auto &w : workers) w.join();
+        
+        // 记录处理后的面数和UV数量
+        std::cerr << "GreedyMesh: 原始面数 " << faceCount 
+                  << ", 处理后面数 " << final_model_faces.size()
+                  << ", UV坐标数 " << data.uvCoordinates.size() / 2
+                  << std::endl;
+        
+        // 替换原始面数组
         data.faces.swap(final_model_faces);
     }
     auto t7_end = Clock::now();
