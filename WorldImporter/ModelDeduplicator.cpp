@@ -356,6 +356,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     auto t2_fill_start = Clock::now();
     
     // 并行填充所有边 - 恢复原来的实现但做更好的内存管理
+    std::vector<std::pair<EdgeKey,int>> allEdges;
     allEdges.reserve(faceCount * 4); // 预分配内存
     
     // 使用批次填充以减少同步成本
