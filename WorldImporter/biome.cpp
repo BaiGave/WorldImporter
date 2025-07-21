@@ -8,22 +8,69 @@
 #include "locutil.h"
 #include <iostream>
 #include <stdexcept>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include "hashutils.h"
 
-// 初始化静态成员
-std::unordered_map<std::string, BiomeInfo> Biome::biomeRegistry;
-std::shared_mutex Biome::registryMutex;
+#ifdef _WIN32
+#include <windows.h>
+#elif defined(__unix__) || defined(__APPLE__)
+#include <unistd.h>
+#include <errno.h>
+#include <limits.h>
+#endif
+
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+
+// 跨平台获取可执行文件目录的实现
+static std::string getExecutableDir() {
+    namespace fs = std::filesystem;
+    fs::path exePath;
+
+    try {
+        // 获取可执行文件路径
+#ifdef _WIN32
+        // Windows平台
+        char buffer[MAX_PATH] = { 0 };
+        if (GetModuleFileNameA(nullptr, buffer, MAX_PATH) == 0) {
+        }
+        exePath = fs::path(buffer);
+#elif defined(__APPLE__)
+        // macOS平台
+        char buffer[PATH_MAX];
+        uint32_t size = sizeof(buffer);
+        if (_NSGetExecutablePath(buffer, &size) != 0) {
+            throw std::runtime_error("无法获取可执行文件路径");
+        }
+        exePath = fs::canonical(fs::path(buffer));
+#else
+        // Linux平台
+        char buffer[PATH_MAX];
+        ssize_t len = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
+        if (len == -1) {
+            throw std::runtime_error("无法获取可执行文件路径");
+        }
+        buffer[len] = '\0';
+        exePath = fs::path(buffer);
+#endif
+        // 获取父目录
+        return exePath.parent_path().string() + "/";
+    }
+    catch (const std::exception& e) {
+        std::cerr << "获取可执行文件目录失败: " << e.what() << std::endl;
+        return fs::current_path().string() + "/"; // 失败时返回当前目录
+    }
+}
 
 bool SaveColormapToFile(const std::vector<unsigned char>& pixelData,const std::string& namespaceName,const std::string& colormapName,std::string& savePath) {
     // 检查是否找到了纹理数据
     if (!pixelData.empty()) {
 
         // 获取当前工作目录(即 exe 所在的目录)
-        char buffer[MAX_PATH];
-        GetModuleFileNameA(NULL, buffer, MAX_PATH);
-        std::string exePath = std::string(buffer);
+        std::string exePath = getExecutableDir();
 
         // 获取 exe 所在目录
         size_t pos = exePath.find_last_of("\\/");
@@ -38,9 +85,9 @@ bool SaveColormapToFile(const std::vector<unsigned char>& pixelData,const std::s
         }
 
         // 创建保存目录(如果不存在)
-        if (GetFileAttributesA(savePath.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        if (!std::filesystem::exists(savePath)) {
             // 文件夹不存在,创建它
-            if (!CreateDirectoryA(savePath.c_str(), NULL)) {
+            if (!std::filesystem::create_directories(savePath)) {
                 std::cerr << "Failed to create directory: " << savePath << std::endl;
                 return false;
             }
@@ -69,6 +116,7 @@ bool SaveColormapToFile(const std::vector<unsigned char>& pixelData,const std::s
         std::cerr << "Failed to retrieve texture for " << colormapName << std::endl;
         return false;
     }
+    return true;
 }
 
 int GetBiomeId(int blockX, int blockY, int blockZ) {
@@ -100,6 +148,10 @@ int GetBiomeId(int blockX, int blockY, int blockZ) {
     // 获取并返回群系ID
     return (index < biomeData.size()) ? biomeData[index] : 0;
 }
+
+// 初始化静态成员
+std::unordered_map<std::string, BiomeInfo> Biome::biomeRegistry;
+std::shared_mutex Biome::registryMutex;
 
 nlohmann::json Biome::GetBiomeJson(const std::string& namespaceName, const std::string& biomeId) {
     std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
@@ -181,10 +233,10 @@ BiomeColors Biome::ParseBiomeColors(const nlohmann::json& biomeJson) {
         colors.sky = effects.value("sky_color", 0x84ECFF);
         colors.water = effects.value("water_color", 0x3F76E4);
         colors.waterFog = effects.value("water_fog_color", 0x050533);
-        
+
         // 统一处理植物颜色
         colors.foliage = ParseColorWithFallback("foliage_color", "foliage");
-        
+
         // 干旱植物颜色处理 - 优先检查是否有直接颜色值
         int directDryFoliageColor = effects.value("dry_foliage_color", -1);
         if (directDryFoliageColor != -1) {
@@ -203,7 +255,7 @@ BiomeColors Biome::ParseBiomeColors(const nlohmann::json& biomeJson) {
                 colors.dryFoliage = ParseColorWithFallback("dry_foliage_color", "foliage", 1.2f, 0.8f);
             }
         }
-        
+
         colors.grass = ParseColorWithFallback("grass_color", "grass");
     }
 
@@ -407,28 +459,28 @@ int Biome::CalculateColorFromColormap(const std::string& filePath,float adjTempe
     // 温度和降水值钳位到0.0~1.0范围
     adjTemperature = BiomeUtils::clamp(adjTemperature, 0.0f, 1.0f);
     adjDownfall = BiomeUtils::clamp(adjDownfall, 0.0f, 1.0f);
-    
+
     // 将降水值乘以温度值,确保在下三角形区域内
     adjDownfall = adjDownfall * adjTemperature;
-    
+
     // 计算在颜色图中的坐标
     // 颜色图以右下角为原点:温度从右往左递增(1->0),降水从下往上递增(1->0)
     // 但图片坐标系以左上角为原点:x从左往右递增(0->255),y从上往下递增(0->255)
-    
+
     // 温度映射:温度1.0对应x=0,温度0.0对应x=255
     int tempCoord = static_cast<int>((1.0f - adjTemperature) * 255.0f);
-    
+
     // 降水映射:降水1.0对应y=0,降水0.0对应y=255
     int downfallCoord = static_cast<int>((1.0f - adjDownfall) * 255.0f);
-    
+
     // 确保坐标在有效范围内
     tempCoord = BiomeUtils::clamp(tempCoord, 0, 255);
     downfallCoord = BiomeUtils::clamp(downfallCoord, 0, 255);
-    
+
     // 在图片坐标系中,我们需要转换坐标
     // x:直接使用温度映射(已经是从左往右的递增)
     int x = tempCoord;
-    
+
     // y:直接使用降水映射(已经是从上往下的递增)
     int y = downfallCoord;
 
@@ -481,7 +533,7 @@ void Biome::GenerateBiomeMap(int minX, int minZ, int maxX, int maxZ) {
                 int biomeId = GetBiomeId(x, currentY, z);
                 // 将生物群系ID写入全局地图的对应位置
                 g_biomeMap[mapZ][mapX] = biomeId;
-            } 
+            }
         }
     }
 }
@@ -535,9 +587,7 @@ bool Biome::ExportToPNG(const std::string& filename, BiomeColorType colorType)
             imageData[index + 2] = std::get<2>(color);  // B
         }
     }
-    char buffer[MAX_PATH];
-    GetModuleFileNameA(NULL, buffer, MAX_PATH);
-    std::string exePath(buffer);
+    std::string exePath = getExecutableDir();
     size_t pos = exePath.find_last_of("\\/");
     std::string exeDir = exePath.substr(0, pos);
     // 定义导出文件夹名称
@@ -547,10 +597,11 @@ bool Biome::ExportToPNG(const std::string& filename, BiomeColorType colorType)
     std::string folderPath = exeDir + "\\" + exportFolderName;
 
     // 创建文件夹(如果不存在)
-    BOOL folderCreated = CreateDirectoryA(folderPath.c_str(), NULL);
-    if (!folderCreated && GetLastError() != ERROR_ALREADY_EXISTS) {
-        std::cerr << "Error: Failed to create directory " << folderPath << std::endl;
-        return false;
+    if (!std::filesystem::exists(folderPath)) {
+        if (!std::filesystem::create_directory(folderPath)) {
+            std::cerr << "Error: Failed to create directory " << folderPath << std::endl;
+            return false;
+        }
     }
 
     // 创建完整的文件路径
