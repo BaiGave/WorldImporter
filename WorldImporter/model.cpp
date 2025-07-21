@@ -14,21 +14,6 @@
 
 using namespace std::chrono;  
 
-//============== 辅助函数模块 ==============//
-//---------------- 路径处理 ----------------
-std::string getExecutableDir() {
-    // 获取可执行文件路径
-    char exePath[MAX_PATH];
-    GetModuleFileNameA(NULL, exePath, MAX_PATH);
-
-    // 提取目录路径
-    std::string exeDir(exePath);
-    size_t lastSlash = exeDir.find_last_of("\\/");
-    if (lastSlash != std::string::npos) {
-        exeDir = exeDir.substr(0, lastSlash + 1);  // 包括最后的斜杠
-    }
-    return exeDir;
-}
 
 //---------------- 几何变换 ----------------
 // 应用缩放(以0.5,0.5,0.5为中心)

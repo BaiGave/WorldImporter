@@ -29,8 +29,13 @@
 #include <atomic>
 #include "include/json.hpp"
 #include <fstream>
+#include <locale>
+
 #ifdef _WIN32
-#include <windows.h>
+extern "C" {
+    __declspec(dllimport) int __stdcall SetConsoleOutputCP(unsigned int wCodePageID);
+}
+#define CP_UTF8 65001
 #endif
 
 // 全局变量定义
@@ -116,9 +121,17 @@ std::string GetModIdFromJar(std::wstring jarPath){
  * 使用std::call_once确保只初始化一次
  */
 void InitializeAllCaches() {
-    // 设置控制台输出编码为UTF-8
+    // 设置控制台输出编码为UTF-8（跨平台方式）
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
+#else
+    // 在类Unix系统中，通常通过LANG环境变量设置UTF-8
+    try {
+        std::locale::global(std::locale("en_US.UTF-8"));
+    } catch (const std::exception&) {
+        // 如果失败，可能系统不支持此locale
+        setlocale(LC_ALL, "en_US.UTF-8");
+    }
 #endif
 
     std::call_once(GlobalCache::initFlag, []() {
@@ -148,13 +161,12 @@ void InitializeAllCaches() {
             if (config.modsPath != "None"){
                 if (!config.modsPath.empty()) {
                     std::wstring modsPathW = string_to_wstring(config.modsPath);
-                    WIN32_FIND_DATAW fdFile;
-                    HANDLE hFind = FindFirstFileW(modsPathW.c_str(), &fdFile);
-                    if (hFind != INVALID_HANDLE_VALUE && (fdFile.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-                        // 目录存在,处理mod文件
-                        FindClose(hFind);
-                        
-                        for (const auto& entry : std::filesystem::directory_iterator(modsPathW)) {
+                    namespace fs = std::filesystem;
+                    
+                    // 使用filesystem检查目录是否存在
+                    if (fs::exists(modsPathW) && fs::is_directory(modsPathW)) {
+                        // 目录存在，处理mod文件
+                        for (const auto& entry : fs::directory_iterator(modsPathW)) {
                             if (entry.is_regular_file()) {
                                 std::wstring modPath = entry.path().wstring();
                                 std::string modStr = wstring_to_string(entry.path().filename().wstring());
@@ -171,9 +183,6 @@ void InitializeAllCaches() {
                             }
                         }
                     } else {
-                        if (hFind != INVALID_HANDLE_VALUE) {
-                            FindClose(hFind);
-                        }
                         std::cerr << "Warning: Mods directory not found or not accessible: " << config.modsPath << std::endl;
                     }
                 }

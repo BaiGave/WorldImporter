@@ -14,6 +14,21 @@
 #include <chrono>
 #include <iostream>
 #include <shared_mutex>
+#include <filesystem>
+
+#ifdef _WIN32
+// Windows平台需要的定义和函数声明
+extern "C" {
+    __declspec(dllimport) unsigned long __stdcall GetModuleFileNameA(void* hModule, char* lpFilename, unsigned long nSize);
+}
+#define MAX_PATH 260
+#elif defined(__unix__) || defined(__APPLE__)
+#include <limits.h>
+#define MAX_PATH PATH_MAX
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+#endif
 
 using namespace std;
 using namespace std::chrono;
@@ -27,6 +42,45 @@ std::shared_mutex g_chunkSectionInfoMapMutex;
 std::unordered_map<std::string, std::string> blockColorCache;
 
 std::mutex blockColorCacheMutex;
+
+// 获取可执行文件路径的辅助函数
+std::string getExecutablePathForTexture() {
+    std::filesystem::path exePath;
+    
+    try {
+        #ifdef _WIN32
+        // Windows平台
+        char buffer[MAX_PATH] = { 0 };
+        if (GetModuleFileNameA(NULL, buffer, MAX_PATH) != 0) {
+            exePath = std::filesystem::path(buffer);
+        } else {
+            throw std::runtime_error("no exe");
+        }
+        #elif defined(__APPLE__)
+        // macOS平台
+        char buffer[MAX_PATH];
+        uint32_t size = sizeof(buffer);
+        if (_NSGetExecutablePath(buffer, &size) != 0) {
+            throw std::runtime_error("无法获取可执行文件路径");
+        }
+        exePath = std::filesystem::canonical(std::filesystem::path(buffer));
+        #else
+        // Linux平台
+        char buffer[MAX_PATH];
+        ssize_t len = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
+        if (len == -1) {
+            throw std::runtime_error("无法获取可执行文件路径");
+        }
+        buffer[len] = '\0';
+        exePath = std::filesystem::path(buffer);
+        #endif
+        
+        return exePath.string();
+    } catch (const std::exception& e) {
+        std::cerr << "获取可执行文件路径失败: " << e.what() << std::endl;
+        return std::filesystem::current_path().string(); // 失败时返回当前目录
+    }
+}
 
 std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, int z, const std::string& faceDirection, float gamma = 2.0) {
 
@@ -87,11 +141,9 @@ std::string GetBlockAverageColor(int blockId, Block currentBlock, int x, int y, 
 
         float r = 0.5f, g = 0.5f, b = 0.5f;
         if (!texturePath.empty()) {
-            char buffer[MAX_PATH];
-            GetModuleFileNameA(NULL, buffer, MAX_PATH);
-            std::string exePath(buffer);
-            size_t pos = exePath.find_last_of("\\/");
-            std::string exeDir = exePath.substr(0, pos);
+            // 使用跨平台方式获取可执行文件路径
+            std::string exePath = getExecutablePathForTexture();
+            std::string exeDir = std::filesystem::path(exePath).parent_path().string();
             texturePath = exeDir + "//" + texturePath;
 
             int width, height, channels;

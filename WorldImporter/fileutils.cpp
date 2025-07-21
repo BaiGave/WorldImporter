@@ -1,11 +1,28 @@
 ﻿#include <fstream>
 #include "block.h"  
 #include "fileutils.h"
-#include <filesystem> // 新增
-#include <windows.h>  // 为了 GetModuleFileName, MAX_PATH
+#include <filesystem> 
 #include <locale>     // 为了 std::setlocale
-#include <codecvt>    // 为了 wstring_convert (如果决定用它替代API)
+#include <codecvt>    // 为了 wstring_convert
 #include <regex>      // 为了 DeleteFiles 中的模式匹配
+#include <iostream>
+
+// 定义Windows特定函数和常量（仅在Windows平台使用）
+#ifdef _WIN32
+extern "C" {
+    __declspec(dllimport) int __stdcall WideCharToMultiByte(unsigned int CodePage, unsigned long dwFlags, 
+        const wchar_t* lpWideCharStr, int cchWideChar, char* lpMultiByteStr, 
+        int cbMultiByte, const char* lpDefaultChar, int* lpUsedDefaultChar);
+    __declspec(dllimport) int __stdcall MultiByteToWideChar(unsigned int CodePage, unsigned long dwFlags, 
+        const char* lpMultiByteStr, int cbMultiByte, wchar_t* lpWideCharStr, int cchWideChar);
+    __declspec(dllimport) unsigned long __stdcall GetLastError();
+    __declspec(dllimport) unsigned long __stdcall GetModuleFileNameA(void* hModule, char* lpFilename, unsigned long nSize);
+}
+// 定义Windows平台特定常量
+#define CP_UTF8 65001
+#define MAX_PATH 260
+#endif
+
 using namespace std;
 
 
@@ -140,6 +157,8 @@ void RegisterFluidTextures() {
 std::string wstring_to_string(const std::wstring& wstr) {
     if (wstr.empty()) return "";
     
+    #ifdef _WIN32
+    // Windows平台使用Windows API
     // 计算所需的缓冲区大小
     int buffer_size = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
     if (buffer_size <= 0) {
@@ -158,6 +177,16 @@ std::string wstring_to_string(const std::wstring& wstr) {
     if (!str.empty() && str.back() == 0) {
         str.pop_back();
     }
+    #else
+    // 非Windows平台使用标准C++
+    try {
+        std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+        return converter.to_bytes(wstr);
+    } catch(const std::exception& e) {
+        std::cerr << "Error converting wstring to string: " << e.what() << std::endl;
+        return "";
+    }
+    #endif
     
     return str;
 }
@@ -165,6 +194,8 @@ std::string wstring_to_string(const std::wstring& wstr) {
 std::wstring string_to_wstring(const std::string& str) {
     if (str.empty()) return L"";
     
+    #ifdef _WIN32
+    // Windows平台使用Windows API
     // 计算所需的缓冲区大小
     int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), nullptr, 0);
     if (size_needed <= 0) return L"";
@@ -174,6 +205,16 @@ std::wstring string_to_wstring(const std::string& str) {
     
     // 执行转换
     MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), &result[0], size_needed);
+    #else
+    // 非Windows平台使用标准C++
+    std::wstring result;
+    try {
+        std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+        result = converter.from_bytes(str);
+    } catch(const std::exception& e) {
+        std::cerr << "Error converting string to wstring: " << e.what() << std::endl;
+    }
+    #endif
     
     return result;
 }
@@ -181,26 +222,40 @@ std::wstring string_to_wstring(const std::string& str) {
 void DeleteTexturesFolder() {
     namespace fs = std::filesystem;
 
-    wchar_t cwd[MAX_PATH];
-    if (GetModuleFileNameW(NULL, cwd, MAX_PATH) == 0) { // 使用 GetModuleFileNameW
-        // 错误处理
+    // 获取当前执行文件路径
+    fs::path exePath;
+    
+    try {
+        // 尝试获取可执行文件路径（跨平台方式）
+        exePath = fs::current_path();
+        
+        // 在某些平台，可能需要特殊处理来获取可执行文件路径
+        #ifdef _WIN32
+        char exePathBuffer[MAX_PATH];
+        if (GetModuleFileNameA(NULL, exePathBuffer, MAX_PATH) != 0) {
+            exePath = fs::path(exePathBuffer).parent_path();
+        }
+        #endif
+    } catch (const fs::filesystem_error& e) {
+        std::cerr << "Error getting executable path: " << e.what() << std::endl;
         return;
     }
 
-    fs::path exePath(cwd);
-    fs::path exeDir = exePath.parent_path();
-
-    fs::path texturesPath = exeDir / L"textures";
-    fs::path biomeTexPath = exeDir / L"biomeTex";
+    fs::path texturesPath = exePath / "textures";
+    fs::path biomeTexPath = exePath / "biomeTex";
 
     std::error_code ec;
     if (fs::exists(texturesPath)) {
         fs::remove_all(texturesPath, ec);
-        // 可选: if (ec) { /* 错误处理 */ }
+        if (ec) {
+            std::cerr << "Error removing textures folder: " << ec.message() << std::endl;
+        }
     }
 
     if (fs::exists(biomeTexPath)) {
         fs::remove_all(biomeTexPath, ec);
-        // 可选: if (ec) { /* 错误处理 */ }
+        if (ec) {
+            std::cerr << "Error removing biomeTex folder: " << ec.message() << std::endl;
+        }
     }
 }

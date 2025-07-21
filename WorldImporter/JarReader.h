@@ -6,9 +6,6 @@
 #include <vector>
 #include "fileutils.h"
 #include "include/json.hpp"
-#ifdef _WIN32
-#include <windows.h>
-#endif
 
 class JarReader {
 public:

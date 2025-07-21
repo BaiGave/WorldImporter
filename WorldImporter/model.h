@@ -188,8 +188,6 @@ void ProcessVertices(std::span<T> vertices, auto process_function) {
     }
 }
 
-// exe路径获取
-std::string getExecutableDir();
 
 //---------------- JSON处理 ----------------
 nlohmann::json GetModelJson(const std::string& namespaceName,

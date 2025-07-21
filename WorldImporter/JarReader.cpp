@@ -1,3 +1,11 @@
+#ifdef _WIN32
+// 声明需要的Windows API函数
+extern "C" {
+    __declspec(dllimport) unsigned long __stdcall GetLastError();
+}
+#define MAX_PATH 260
+#endif
+
 #include "JarReader.h"
 #include <iostream>
 #include <zip.h>

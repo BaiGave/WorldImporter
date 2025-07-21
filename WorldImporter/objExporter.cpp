@@ -3,8 +3,74 @@
 #include <fstream>
 #include <sstream>
 #include <locale>
+#include <filesystem>
+#include <system_error>
+
+#ifdef _WIN32
+// 仅在Windows平台需要这些函数声明
+extern "C" {
+    __declspec(dllimport) unsigned long __stdcall GetLastError();
+    __declspec(dllimport) unsigned long __stdcall GetModuleFileNameA(void* hModule, char* lpFilename, unsigned long nSize);
+}
+#define MAX_PATH 260
+// Windows平台使用sprintf_s
+#define safe_sprintf sprintf_s
+#elif defined(__unix__) || defined(__APPLE__)
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+#include <limits.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+// 非Windows平台使用snprintf
+#define safe_sprintf(dst, size, ...) snprintf(dst, size, __VA_ARGS__)
+#endif
 
 using namespace std::chrono;
+
+
+// 跨平台获取可执行文件目录的实现
+std::string getExecutableDir() {
+    namespace fs = std::filesystem;
+    fs::path exePath;
+    
+    try {
+        // 获取可执行文件路径
+#ifdef _WIN32
+        // Windows平台
+        char buffer[MAX_PATH] = { 0 };
+        if (GetModuleFileNameA(nullptr, buffer, MAX_PATH) == 0) {
+        }
+        exePath = fs::path(buffer);
+#elif defined(__APPLE__)
+        // macOS平台
+        char buffer[PATH_MAX];
+        uint32_t size = sizeof(buffer);
+        if (_NSGetExecutablePath(buffer, &size) != 0) {
+            throw std::runtime_error("无法获取可执行文件路径");
+        }
+        exePath = fs::canonical(fs::path(buffer));
+#else
+        // Linux平台
+        char buffer[PATH_MAX];
+        ssize_t len = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
+        if (len == -1) {
+            throw std::runtime_error("无法获取可执行文件路径");
+        }
+        buffer[len] = '\0';
+        exePath = fs::path(buffer);
+#endif
+        // 获取父目录
+        return exePath.parent_path().string() + "/";
+    }
+    catch (const std::exception& e) {
+        std::cerr << "获取可执行文件目录失败: " << e.what() << std::endl;
+        return fs::current_path().string() + "/"; // 失败时返回当前目录
+    }
+}
 
 // 辅助函数:计算数值转换为字符串后的长度
 template <typename T>
@@ -216,9 +282,9 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
     char* ptr = buffer.data();
 
     // 开始填充缓冲区
-    ptr += sprintf_s(ptr, buffer.size() - (ptr - buffer.data()), "mtllib %s\n", mtlFilePath.c_str());
-    ptr += sprintf_s(ptr, buffer.size() - (ptr - buffer.data()), "o %s\n\n", modelName.c_str());
-    ptr += sprintf_s(ptr, buffer.size() - (ptr - buffer.data()), "# Vertices (%zu)\n", data.vertices.size() / 3);
+    ptr += snprintf(ptr, buffer.size() - (ptr - buffer.data()), "mtllib %s\n", mtlFilePath.c_str());
+    ptr += snprintf(ptr, buffer.size() - (ptr - buffer.data()), "o %s\n\n", modelName.c_str());
+    ptr += snprintf(ptr, buffer.size() - (ptr - buffer.data()), "# Vertices (%zu)\n", data.vertices.size() / 3);
     for (size_t i = 0; i < data.vertices.size(); i += 3) {
         memcpy(ptr, "v ", 2);
         ptr += 2;
@@ -230,7 +296,7 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         *ptr++ = '\n';
     }
 
-    ptr += sprintf_s(ptr, buffer.size() - (ptr - buffer.data()), "\n# UVs (%zu)\n", data.uvCoordinates.size() / 2);
+    ptr += snprintf(ptr, buffer.size() - (ptr - buffer.data()), "\n# UVs (%zu)\n", data.uvCoordinates.size() / 2);
     for (size_t i = 0; i < data.uvCoordinates.size(); i += 2) {
         memcpy(ptr, "vt ", 3);
         ptr += 3;
@@ -240,11 +306,11 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         *ptr++ = '\n';
     }
 
-    ptr += sprintf_s(ptr, buffer.size() - (ptr - buffer.data()), "\n# Faces (%zu)\n", totalFaces);
+    ptr += snprintf(ptr, buffer.size() - (ptr - buffer.data()), "\n# Faces (%zu)\n", totalFaces);
     for (size_t matIndex = 0; matIndex < materialGroups.size(); ++matIndex) {
         const auto& faces = materialGroups[matIndex];
         if (faces.empty()) continue;
-        ptr += sprintf_s(ptr, buffer.size() - (ptr - buffer.data()), "usemtl %s\n", data.materials[matIndex].name.c_str());
+        ptr += snprintf(ptr, buffer.size() - (ptr - buffer.data()), "usemtl %s\n", data.materials[matIndex].name.c_str());
         for (const size_t faceIdx : faces) {
             memcpy(ptr, "f ", 2);
             ptr += 2;
@@ -263,53 +329,60 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         }
     }
 
-    // 后续的内存映射写入逻辑不变…
-    HANDLE hFile = CreateFileA(
-        objFilePath.c_str(),
-        GENERIC_READ | GENERIC_WRITE,
-        FILE_SHARE_READ,
-        nullptr,
-        CREATE_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL,
-        nullptr
-    );
-    if (hFile == INVALID_HANDLE_VALUE) {
-        throw std::system_error(GetLastError(), std::system_category(), "CreateFile failed");
+    // 使用跨平台方式写入文件
+    try {
+#ifdef _WIN32
+        // Windows平台使用内存映射文件
+        std::ofstream file(objFilePath, std::ios::binary | std::ios::trunc);
+        if (!file) {
+            throw std::runtime_error("无法创建文件: " + objFilePath);
+        }
+
+        // 一次性写入全部数据
+        file.write(buffer.data(), totalSize);
+        file.close();
+#elif defined(__unix__) || defined(__APPLE__)
+        // Unix/Linux/macOS平台
+        int fd = open(objFilePath.c_str(), O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+        if (fd == -1) {
+            throw std::runtime_error("无法创建文件: " + objFilePath + ", 错误: " + std::to_string(errno));
+        }
+        
+        // 设置文件大小
+        if (ftruncate(fd, totalSize) == -1) {
+            close(fd);
+            throw std::runtime_error("无法设置文件大小: " + objFilePath);
+        }
+        
+        // 映射文件到内存
+        void* mappedData = mmap(NULL, totalSize, PROT_WRITE, MAP_SHARED, fd, 0);
+        if (mappedData == MAP_FAILED) {
+            close(fd);
+            throw std::runtime_error("无法映射文件: " + objFilePath);
+        }
+        
+        // 拷贝数据到映射内存
+        memcpy(mappedData, buffer.data(), totalSize);
+        
+        // 同步并释放资源
+        msync(mappedData, totalSize, MS_SYNC);
+        munmap(mappedData, totalSize);
+        close(fd);
+#else
+        // 其他平台回退到标准文件IO
+        std::ofstream file(objFilePath, std::ios::binary | std::ios::trunc);
+        if (!file) {
+            throw std::runtime_error("无法创建文件: " + objFilePath);
+        }
+        
+        // 一次性写入全部数据
+        file.write(buffer.data(), totalSize);
+        file.close();
+#endif
     }
-    LARGE_INTEGER fileSize;
-    fileSize.QuadPart = totalSize;
-    if (!SetFilePointerEx(hFile, fileSize, nullptr, FILE_BEGIN) || !SetEndOfFile(hFile)) {
-        CloseHandle(hFile);
-        throw std::system_error(GetLastError(), std::system_category(), "SetFileSize failed");
+    catch (const std::exception& e) {
+        std::cerr << "写入OBJ文件时出错: " << e.what() << std::endl;
     }
-    HANDLE hMapping = CreateFileMapping(
-        hFile,
-        nullptr,
-        PAGE_READWRITE,
-        fileSize.HighPart,
-        fileSize.LowPart,
-        nullptr
-    );
-    if (!hMapping) {
-        CloseHandle(hFile);
-        throw std::system_error(GetLastError(), std::system_category(), "CreateFileMapping failed");
-    }
-    char* mappedData = static_cast<char*>(MapViewOfFile(
-        hMapping,
-        FILE_MAP_WRITE,
-        0,
-        0,
-        totalSize
-    ));
-    if (!mappedData) {
-        CloseHandle(hMapping);
-        CloseHandle(hFile);
-        throw std::system_error(GetLastError(), std::system_category(), "MapViewOfFile failed");
-    }
-    memcpy(mappedData, buffer.data(), totalSize);
-    UnmapViewOfFile(mappedData);
-    CloseHandle(hMapping);
-    CloseHandle(hFile);
 }
 
 // 创建 .obj 文件并写入内容
