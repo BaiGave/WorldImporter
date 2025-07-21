@@ -188,9 +188,6 @@
     <ClInclude Include="EntityBlock.h">
       <Filter>头文件\Blocks</Filter>
     </ClInclude>
-    <ClInclude Include="Fluid.h">
-      <Filter>头文件\Blocks</Filter>
-    </ClInclude>
     <ClInclude Include="texture.h">
       <Filter>头文件\Core\Model</Filter>
     </ClInclude>
@@ -266,10 +263,8 @@
     <ClInclude Include="TaskMonitor.h">
       <Filter>头文件\Tools</Filter>
     </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="config\mappings\biomes_mapping.json">
-      <Filter>资源文件</Filter>
-    </None>
+    <ClInclude Include="Fluid.h">
+      <Filter>头文件\Blocks</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

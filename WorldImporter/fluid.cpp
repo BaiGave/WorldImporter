@@ -99,7 +99,7 @@ float getCornerHeight(float currentHeight, float NWHeight, float NHeight, float 
     return (totalWeight == 0.0f) ? 0.0f : res / totalWeight;
 }
 
-ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
+ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels, const std::string& fluidId) {
     ModelData model;
 
     // 获取当前方块的液位和周围液位的高度
@@ -118,6 +118,8 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
     for (int level : fluidLevels) {
         key = (key << 3) ^ (level + (level << 5));
     }
+    // 结合流体ID，确保不同流体类型有不同的缓存键值
+    key = key ^ std::hash<std::string>{}(fluidId);
 
     // Lock the mutex to safely access the cache
     std::lock_guard<std::mutex> lock(fluidModelCacheMutex);
@@ -225,20 +227,64 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
     model.faces[5].faceDirection = EAST;
     model.faces[5].materialIndex = 1; // flow材质
 
-    float v_nw = 1 - (h_nw) / 32.0f;
-    float v_ne = 1 - (h_ne) / 32.0f;
-    float v_se = 1 - (h_se) / 32.0f;
-    float v_sw = 1 - (h_sw) / 32.0f;
+    // 提取流体ID的命名空间和基础名
+    std::string namespace_name = "minecraft";
+    std::string base_id = fluidId;
+    
+    size_t colonPos = fluidId.find(':');
+    if (colonPos != std::string::npos) {
+        namespace_name = fluidId.substr(0, colonPos);
+        base_id = fluidId.substr(colonPos + 1);
+    }
+    
+    size_t bracketPos = base_id.find('[');
+    if (bracketPos != std::string::npos) {
+        base_id = base_id.substr(0, bracketPos);
+    }
+    
+    // 寻找流体定义
+    std::string stillTexturePath = "block/" + base_id + "_still";
+    std::string flowTexturePath = "block/" + base_id + "_flow";
+    
+    // 如果有对应的流体定义，使用其中的路径
+    auto fluidIt = fluidDefinitions.find(namespace_name + ":" + base_id);
+    if (fluidIt != fluidDefinitions.end()) {
+        const FluidInfo& info = fluidIt->second;
+        stillTexturePath = info.folder + "/" + base_id + info.still_texture;
+        flowTexturePath = info.folder + "/" + base_id + info.flow_texture;
+    }
+    
+    // 获取流体纹理的长宽比
+    float stillAspectRatio = 1.0f;
+    float flowAspectRatio = 1.0f;
+
+    // 获取材质的长宽比
+    MaterialType stillType = DetectMaterialType(namespace_name, stillTexturePath, stillAspectRatio);
+    MaterialType flowType = DetectMaterialType(namespace_name, flowTexturePath, flowAspectRatio);
+
+    // 使用流动水材质的长宽比作为计算UV的依据
+    float aspectRatio = flowAspectRatio;
+    
+    // 确保长宽比至少为1，避免除以0的错误
+    if (aspectRatio < 1.0f) {
+        aspectRatio = 1.0f;
+    }
+
+    // 计算V坐标的缩放因子，将高度值除以材质长宽比而不是固定的32
+    float v_nw = 1 - h_nw / aspectRatio;
+    float v_ne = 1 - h_ne / aspectRatio;
+    float v_se = 1 - h_se / aspectRatio;
+    float v_sw = 1 - h_sw / aspectRatio;
 
     model.uvCoordinates = {
         // 下面
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 31.0/ 32.0f , 0.0f, 31.0 / 32.0f,
+        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, (aspectRatio - 1) / aspectRatio, 0.0f, (aspectRatio - 1) / aspectRatio,
         // 上面
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 31.0 / 32.0f , 0.0f, 31.0 / 32.0f,
+        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, (aspectRatio - 1) / aspectRatio, 0.0f, (aspectRatio - 1) / aspectRatio,
         // 北面
         0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_ne, 0.0f, v_nw,
         // 南面
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_se, 0.0f, v_sw ,
+        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_se, 0.0f, v_sw,
         // 西面
         0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_sw, 0.0f, v_nw,
         // 东面
@@ -248,17 +294,17 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
     if (currentLevel == 0 || currentLevel == 8) {
         model.uvCoordinates = {
             // 下面
-            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 31.0 / 32.0f , 0.0f, 31.0 / 32.0f,
+            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, (aspectRatio - 1) / aspectRatio, 0.0f, (aspectRatio - 1) / aspectRatio,
             // 上面
-            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 31.0 / 32.0f , 0.0f, 31.0 / 32.0f,
+            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, (aspectRatio - 1) / aspectRatio, 0.0f, (aspectRatio - 1) / aspectRatio,
             // 北面
             0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_ne, 0.0f, v_nw,
             // 南面
-            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_se, 0.0f, v_sw ,
+            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_se, 0.0f, v_sw,
             // 西面
             0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_sw, 0.0f, v_nw,
             // 东面
-            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_se , 0.0f, v_ne
+            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_se, 0.0f, v_ne
         };
         
         // 设置材质索引
@@ -282,10 +328,10 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
         // 中心点
         constexpr float centerU = 0.5f;
         constexpr float centerV = 0.5f;
-        // 定义v坐标的最大值 (1/32)
-        constexpr float maxV = 1.0f / 32.0f;
+        // 定义v坐标的最大值，根据材质长宽比计算
+        float maxV = 1.0f / aspectRatio;
         // 定义v坐标起点（最上面一帧的起始位置）
-        constexpr float startV = 1.0f - maxV;
+        float startV = 1.0f - maxV;
         
         // 遍历 UV 坐标数组
         for (size_t i = 0; i < model.uvCoordinates.size(); i += 8) {
@@ -310,13 +356,13 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
             }
         }
         
-        // 计算侧面的UV纹理映射
+        // 计算侧面的UV纹理映射，使用实际材质长宽比
         float v_nw = 1.0f - h_nw;
         float v_ne = 1.0f - h_ne;
         float v_se = 1.0f - h_se;
         float v_sw = 1.0f - h_sw;
 
-        // 调整UV坐标以适应32长度的精灵图
+        // 调整UV坐标以适应动态精灵图的实际长宽比
         for (size_t i = 16; i < model.uvCoordinates.size(); i += 8) {
             if (i >= 16) { // 侧面UV
                 // 保持U坐标不变
@@ -349,19 +395,21 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels) {
     }
 
     // 添加材质
-    // 静止水材质(still)- 用于顶部和底部
+    // 静止流体材质(still)- 用于顶部和底部
     Material stillMaterial;
-    stillMaterial.name = "water_still";
-    stillMaterial.texturePath = "textures/minecraft/block/water_still.png";
-    stillMaterial.tintIndex = 2; // 水的色调索引
-    stillMaterial.type = DetectMaterialType("minecraft", "block/water_still");
+    stillMaterial.name = base_id + "_still";
+    stillMaterial.texturePath = "textures/" + namespace_name + "/" + stillTexturePath + ".png";
+    stillMaterial.tintIndex = (base_id.find("water") != string::npos) ? 2 : -1; // 只对水使用色调索引2
+    stillMaterial.type = stillType;
+    stillMaterial.aspectRatio = stillAspectRatio; // 设置材质长宽比
 
-    // 流动水材质(flow)- 用于侧面
+    // 流动流体材质(flow)- 用于侧面
     Material flowMaterial;
-    flowMaterial.name = "water_flow"; 
-    flowMaterial.texturePath = "textures/minecraft/block/water_flow.png";
-    flowMaterial.tintIndex = 2; // 水的色调索引
-    flowMaterial.type = DetectMaterialType("minecraft", "block/water_flow");
+    flowMaterial.name = base_id + "_flow"; 
+    flowMaterial.texturePath = "textures/" + namespace_name + "/" + flowTexturePath + ".png";
+    flowMaterial.tintIndex = (base_id.find("water") != string::npos) ? 2 : -1; // 只对水使用色调索引2
+    flowMaterial.type = flowType;
+    flowMaterial.aspectRatio = flowAspectRatio; // 设置材质长宽比
 
     model.materials = { stillMaterial, flowMaterial };
 
@@ -446,19 +494,25 @@ void AssignFluidMaterials(ModelData& model, const std::string& fluidId) {
     std::string ns = (colonPosDef != std::string::npos) ? fluidName.substr(0, colonPosDef) : "";
     std::string pureName = (colonPosDef != std::string::npos) ? fluidName.substr(colonPosDef + 1) : fluidName;
     
+    // 获取材质长宽比
+    float stillAspectRatio = 1.0f;
+    float flowAspectRatio = 1.0f;
+    
     // 创建静止流体材质
     Material stillFluid;
     stillFluid.name = fluidInfo.folder + "/" + pureName + fluidInfo.still_texture;
     stillFluid.texturePath = "textures/" + ns + "/" + fluidInfo.folder + "/" + pureName + fluidInfo.still_texture + ".png";
     stillFluid.tintIndex = (pureName.find("water") != std::string::npos) ? 2 : -1;
-    stillFluid.type = DetectMaterialType(ns, fluidInfo.folder + "/" + pureName + fluidInfo.still_texture);
+    stillFluid.type = DetectMaterialType(ns, fluidInfo.folder + "/" + pureName + fluidInfo.still_texture, stillAspectRatio);
+    stillFluid.aspectRatio = stillAspectRatio;
     
     // 创建流动流体材质
     Material flowFluid;
     flowFluid.name = fluidInfo.folder + "/" + pureName + fluidInfo.flow_texture;
     flowFluid.texturePath = "textures/" + ns + "/" + fluidInfo.folder + "/" + pureName + fluidInfo.flow_texture + ".png";
     flowFluid.tintIndex = (pureName.find("water") != std::string::npos) ? 2 : -1;
-    flowFluid.type = DetectMaterialType(ns, fluidInfo.folder + "/" + pureName + fluidInfo.flow_texture);
+    flowFluid.type = DetectMaterialType(ns, fluidInfo.folder + "/" + pureName + fluidInfo.flow_texture, flowAspectRatio);
+    flowFluid.aspectRatio = flowAspectRatio;
     
     model.materials = { stillFluid, flowFluid };
 }

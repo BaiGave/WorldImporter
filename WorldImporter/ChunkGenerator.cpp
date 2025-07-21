@@ -81,13 +81,13 @@ void ChunkGenerator::ProcessBlockForModel(ModelData& chunkModel, int x, int y, i
         blockModel = GetRandomModelFromCache(ns, blockName);
 
         if (blockModel.vertices.empty()) {
-            liquidModel = GenerateFluidModel(fluidLevels);
+            liquidModel = GenerateFluidModel(fluidLevels, currentBlock.name);
             AssignFluidMaterials(liquidModel, currentBlock.name);
             blockModel = liquidModel;
         }
         else
         {
-            liquidModel = GenerateFluidModel(fluidLevels);
+            liquidModel = GenerateFluidModel(fluidLevels, currentBlock.name);
             AssignFluidMaterials(liquidModel, currentBlock.name);
 
             // 只对有流体方向的面设置为不剔除

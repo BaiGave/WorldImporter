@@ -180,6 +180,7 @@
     <ClInclude Include="ChunkGroupAllocator.h" />
     <ClInclude Include="ChunkLoader.h" />
     <ClInclude Include="config.h" />
+    <ClInclude Include="Fluid.h" />
     <ClInclude Include="init.h" />
     <ClInclude Include="locutil.h" />
     <ClInclude Include="decompressor.h" />
@@ -189,7 +190,6 @@
     <ClInclude Include="RegionCache.h" />
     <ClInclude Include="SpecialBlock.h" />
     <ClInclude Include="fileutils.h" />
-    <ClInclude Include="Fluid.h" />
     <ClInclude Include="GlobalCache.h" />
     <ClInclude Include="JarReader.h" />
     <ClInclude Include="LODManager.h" />
