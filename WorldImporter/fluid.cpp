@@ -262,26 +262,29 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels, const std::
     MaterialType stillType = DetectMaterialType(namespace_name, stillTexturePath, stillAspectRatio);
     MaterialType flowType = DetectMaterialType(namespace_name, flowTexturePath, flowAspectRatio);
 
-    // 使用流动水材质的长宽比作为计算UV的依据
-    float aspectRatio = flowAspectRatio;
-    
     // 确保长宽比至少为1，避免除以0的错误
-    if (aspectRatio < 1.0f) {
-        aspectRatio = 1.0f;
+    if (stillAspectRatio < 1.0f) {
+        stillAspectRatio = 1.0f;
+    }
+    if (flowAspectRatio < 1.0f) {
+        flowAspectRatio = 1.0f;
     }
 
-    // 计算V坐标的缩放因子，将高度值除以材质长宽比而不是固定的32
-    float v_nw = 1 - h_nw / aspectRatio;
-    float v_ne = 1 - h_ne / aspectRatio;
-    float v_se = 1 - h_se / aspectRatio;
-    float v_sw = 1 - h_sw / aspectRatio;
+    // 计算流动贴图的V坐标缩放因子
+    float v_nw = 1.0f - h_nw / flowAspectRatio;
+    float v_ne = 1.0f - h_ne / flowAspectRatio;
+    float v_se = 1.0f - h_se / flowAspectRatio;
+    float v_sw = 1.0f - h_sw / flowAspectRatio;
+
+    // 单独计算静止贴图的UV坐标
+    float still_bottom_v = (stillAspectRatio - 1.0f) / stillAspectRatio;
 
     model.uvCoordinates = {
-        // 下面
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, (aspectRatio - 1) / aspectRatio, 0.0f, (aspectRatio - 1) / aspectRatio,
-        // 上面
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, (aspectRatio - 1) / aspectRatio, 0.0f, (aspectRatio - 1) / aspectRatio,
-        // 北面
+        // 下面(使用静止贴图的长宽比)
+        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, still_bottom_v, 0.0f, still_bottom_v,
+        // 上面(使用静止贴图的长宽比)
+        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, still_bottom_v, 0.0f, still_bottom_v,
+        // 北面(使用流动贴图的长宽比)
         0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_ne, 0.0f, v_nw,
         // 南面
         0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_se, 0.0f, v_sw,
@@ -293,11 +296,11 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels, const std::
 
     if (currentLevel == 0 || currentLevel == 8) {
         model.uvCoordinates = {
-            // 下面
-            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, (aspectRatio - 1) / aspectRatio, 0.0f, (aspectRatio - 1) / aspectRatio,
-            // 上面
-            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, (aspectRatio - 1) / aspectRatio, 0.0f, (aspectRatio - 1) / aspectRatio,
-            // 北面
+            // 下面(使用静止贴图的长宽比)
+            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, still_bottom_v, 0.0f, still_bottom_v,
+            // 上面(使用静止贴图的长宽比)
+            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, still_bottom_v, 0.0f, still_bottom_v,
+            // 北面(使用流动贴图的长宽比)
             0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_ne, 0.0f, v_nw,
             // 南面
             0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_se, 0.0f, v_sw,
@@ -329,7 +332,7 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels, const std::
         constexpr float centerU = 0.5f;
         constexpr float centerV = 0.5f;
         // 定义v坐标的最大值，根据材质长宽比计算
-        float maxV = 1.0f / aspectRatio;
+        float maxV = 1.0f / flowAspectRatio;
         // 定义v坐标起点（最上面一帧的起始位置）
         float startV = 1.0f - maxV;
         

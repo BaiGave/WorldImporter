@@ -646,11 +646,12 @@ void CreateModelFiles(const ModelData& data, const std::string& filename) {
     }
     if (data.vertices.size()>8000)
     {
-        // 创建OBJ文件
+        // 创建OBJ文件(内存映射)
         createObjFileViaMemoryMapped(data, filename);
     }
     else
     {
+        // 创建OBJ文件
         createObjFile(data, filename);
     }
     
