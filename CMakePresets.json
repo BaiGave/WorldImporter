@@ -1,0 +1,42 @@
+{
+    "version": 9,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 30,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_INTERPROCEDURAL_OPTIMIZATION": true
+            }
+        },
+        {
+            "name": "debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "vcpkg",
+            "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        },
+        {
+            "name": "debug-vcpkg",
+            "inherits": "vcpkg",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "release-vcpkg",
+            "inherits": "vcpkg",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_INTERPROCEDURAL_OPTIMIZATION": true
+            }
+        }
+    ]
+}

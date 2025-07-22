@@ -6,6 +6,8 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <cstdint>
+#include <cstring>
+#include <vector>
 #include <type_traits>  // 用于 std::is_integral
 
 // NBT Tag Types 枚举,表示不同的NBT标签类型
