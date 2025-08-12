@@ -87,8 +87,8 @@ void ChunkGenerator::ProcessBlockForModel(ModelData& chunkModel, int x, int y, i
         }
         else
         {
-            liquidModel = GenerateFluidModel(fluidLevels, currentBlock.name);
-            AssignFluidMaterials(liquidModel, currentBlock.name);
+            liquidModel = GenerateFluidModel(fluidLevels, "minecraft:water[level:0]");
+            AssignFluidMaterials(liquidModel, "minecraft:water[level:0]");
 
             // 只对有流体方向的面设置为不剔除
             for (auto& face : blockModel.faces)

@@ -269,13 +269,13 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels, const std::
     if (flowAspectRatio < 1.0f) {
         flowAspectRatio = 1.0f;
     }
-
+    float temp_offset = (1.0 / flowAspectRatio) * (flowAspectRatio - 1);
     // 计算流动贴图的V坐标缩放因子
-    float v_nw = 1.0f - h_nw / flowAspectRatio;
-    float v_ne = 1.0f - h_ne / flowAspectRatio;
-    float v_se = 1.0f - h_se / flowAspectRatio;
-    float v_sw = 1.0f - h_sw / flowAspectRatio;
-
+    float v_nw = h_nw / flowAspectRatio + temp_offset;
+    float v_ne = h_ne / flowAspectRatio + temp_offset;
+    float v_se = h_se / flowAspectRatio + temp_offset;
+    float v_sw = h_sw / flowAspectRatio + temp_offset;
+    
     // 单独计算静止贴图的UV坐标
     float still_bottom_v = (stillAspectRatio - 1.0f) / stillAspectRatio;
 
@@ -285,13 +285,13 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels, const std::
         // 上面(使用静止贴图的长宽比)
         0.0f, 1.0f, 1.0f, 1.0f, 1.0f, still_bottom_v, 0.0f, still_bottom_v,
         // 北面(使用流动贴图的长宽比)
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_ne, 0.0f, v_nw,
+        0.0f, 0.0f + temp_offset, 1.0f, 0.0f + temp_offset, 1.0f, v_ne, 0.0f, v_nw,
         // 南面
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_se, 0.0f, v_sw,
+        0.0f, 0.0f + temp_offset, 1.0f, 0.0f + temp_offset, 1.0f, v_se, 0.0f, v_sw,
         // 西面
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_sw, 0.0f, v_nw,
+        0.0f, 0.0f + temp_offset, 1.0f, 0.0f + temp_offset, 1.0f, v_sw, 0.0f, v_nw,
         // 东面
-        0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_se, 0.0f, v_ne
+        0.0f, 0.0f + temp_offset, 1.0f, 0.0f + temp_offset, 1.0f, v_se, 0.0f, v_ne
     };
 
     if (currentLevel == 0 || currentLevel == 8) {
@@ -301,14 +301,33 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels, const std::
             // 上面(使用静止贴图的长宽比)
             0.0f, 1.0f, 1.0f, 1.0f, 1.0f, still_bottom_v, 0.0f, still_bottom_v,
             // 北面(使用流动贴图的长宽比)
-            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_ne, 0.0f, v_nw,
+            0.0f, 0.0f + temp_offset, 1.0f, 0.0f + temp_offset, 1.0f, v_ne, 0.0f, v_nw,
             // 南面
-            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_se, 0.0f, v_sw,
+            0.0f, 0.0f + temp_offset, 1.0f, 0.0f + temp_offset, 1.0f, v_se, 0.0f, v_sw,
             // 西面
-            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_sw, 0.0f, v_nw,
+            0.0f, 0.0f + temp_offset, 1.0f, 0.0f + temp_offset, 1.0f, v_sw, 0.0f, v_nw,
             // 东面
-            0.0f, 1.0f, 1.0f, 1.0f, 1.0f, v_se, 0.0f, v_ne
+            0.0f, 0.0f + temp_offset, 1.0f, 0.0f + temp_offset, 1.0f, v_se, 0.0f, v_ne
         };
+        
+        // 侧面UV缩放：与流动顶面一致，将U围绕0.5缩放，将V围绕当前帧中心缩放
+        {
+            const float centerU = 0.5f;
+            const float maxV = 1.0f / flowAspectRatio;
+            const float startV = 1.0f - maxV;
+            const float vCenter = startV + maxV * 0.5f;
+            const float uvScale = 0.5f; // 与顶面的0.25振幅等效
+            for (size_t idx = 16; idx <= 40; idx += 8) { // 四个侧面：北、南、西、东
+                model.uvCoordinates[idx + 0] = centerU + (model.uvCoordinates[idx + 0] - centerU) * uvScale;
+                model.uvCoordinates[idx + 1] = vCenter + (model.uvCoordinates[idx + 1] - vCenter) * uvScale;
+                model.uvCoordinates[idx + 2] = centerU + (model.uvCoordinates[idx + 2] - centerU) * uvScale;
+                model.uvCoordinates[idx + 3] = vCenter + (model.uvCoordinates[idx + 3] - vCenter) * uvScale;
+                model.uvCoordinates[idx + 4] = centerU + (model.uvCoordinates[idx + 4] - centerU) * uvScale;
+                model.uvCoordinates[idx + 5] = vCenter + (model.uvCoordinates[idx + 5] - vCenter) * uvScale;
+                model.uvCoordinates[idx + 6] = centerU + (model.uvCoordinates[idx + 6] - centerU) * uvScale;
+                model.uvCoordinates[idx + 7] = vCenter + (model.uvCoordinates[idx + 7] - vCenter) * uvScale;
+            }
+        }
         
         // 设置材质索引
         for (int i = 0; i < 6; i++) {
@@ -359,36 +378,22 @@ ModelData GenerateFluidModel(const std::array<int, 10>& fluidLevels, const std::
             }
         }
         
-        // 计算侧面的UV纹理映射，使用实际材质长宽比
-        float v_nw = 1.0f - h_nw;
-        float v_ne = 1.0f - h_ne;
-        float v_se = 1.0f - h_se;
-        float v_sw = 1.0f - h_sw;
-
-        // 调整UV坐标以适应动态精灵图的实际长宽比
-        for (size_t i = 16; i < model.uvCoordinates.size(); i += 8) {
-            if (i >= 16) { // 侧面UV
-                // 保持U坐标不变
-                // 调整V坐标以适应动态精灵图
-                model.uvCoordinates[i + 1] = 1.0f; // 顶部对应精灵图的顶部边缘
-                model.uvCoordinates[i + 3] = 1.0f; // 顶部对应精灵图的顶部边缘
-                
-                // 根据不同面使用相应的高度值
-                if (i == 16) { // 北面
-                    model.uvCoordinates[i + 5] = startV + v_ne * maxV;
-                    model.uvCoordinates[i + 7] = startV + v_nw * maxV;
-                } else if (i == 24) { // 南面
-                    model.uvCoordinates[i + 5] = startV + v_se * maxV;
-                    model.uvCoordinates[i + 7] = startV + v_sw * maxV;
-                } else if (i == 32) { // 西面
-                    model.uvCoordinates[i + 5] = startV + v_sw * maxV;
-                    model.uvCoordinates[i + 7] = startV + v_nw * maxV;
-                } else if (i == 40) { // 东面
-                    model.uvCoordinates[i + 5] = startV + v_se * maxV;
-                    model.uvCoordinates[i + 7] = startV + v_ne * maxV;
-                }
+        // 侧面UV缩放：与流动顶面一致，将U围绕0.5缩放，将V围绕当前帧中心缩放
+        {
+            const float vCenter = startV + maxV * 0.5f;
+            const float uvScale = 0.5f; // 与顶面的0.25振幅等效
+            for (size_t idx = 16; idx <= 40; idx += 8) { // 四个侧面：北、南、西、东
+                model.uvCoordinates[idx + 0] = centerU + (model.uvCoordinates[idx + 0] - centerU) * uvScale;
+                model.uvCoordinates[idx + 1] = vCenter + (model.uvCoordinates[idx + 1] - vCenter) * uvScale;
+                model.uvCoordinates[idx + 2] = centerU + (model.uvCoordinates[idx + 2] - centerU) * uvScale;
+                model.uvCoordinates[idx + 3] = vCenter + (model.uvCoordinates[idx + 3] - vCenter) * uvScale;
+                model.uvCoordinates[idx + 4] = centerU + (model.uvCoordinates[idx + 4] - centerU) * uvScale;
+                model.uvCoordinates[idx + 5] = vCenter + (model.uvCoordinates[idx + 5] - vCenter) * uvScale;
+                model.uvCoordinates[idx + 6] = centerU + (model.uvCoordinates[idx + 6] - centerU) * uvScale;
+                model.uvCoordinates[idx + 7] = vCenter + (model.uvCoordinates[idx + 7] - vCenter) * uvScale;
             }
         }
+        
         
         // 设置材质索引
         model.faces[0].materialIndex = 0; // 底面使用still材质
