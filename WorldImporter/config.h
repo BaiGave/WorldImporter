@@ -59,7 +59,7 @@ struct Config {
     bool activeLOD3; // 是否启用LOD3
     bool activeLOD4; // 是否启用LOD4
     bool useBiomeColors; // 是否启用群系颜色叠加
-    
+    bool useRandomBlockModels; // 是否使用随机方块模型
 
     bool exportFullModel;  // 是否完整导入
     int partitionSize; //分割大小
@@ -104,6 +104,7 @@ struct Config {
         activeLOD4(true),
         lod1Blocks({}),
         useBiomeColors(true),
+        useRandomBlockModels(true),
         
 
         exportFullModel(false),

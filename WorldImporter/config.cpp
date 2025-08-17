@@ -58,6 +58,7 @@ Config LoadConfig(const std::string& configFile) {
     config.activeLOD3 = j.value("activeLOD3", config.activeLOD3);
     config.activeLOD4 = j.value("activeLOD4", config.activeLOD4);
     config.useBiomeColors = j.value("useBiomeColors", config.useBiomeColors);
+    config.useRandomBlockModels = j.value("useRandomBlockModels", config.useRandomBlockModels);
     
     // 读取LOD1级别使用原始模型的方块列表
     /*格式：

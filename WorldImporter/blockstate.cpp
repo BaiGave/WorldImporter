@@ -231,18 +231,22 @@ ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::s
         }
 
         if (totalWeight > 0) {
-            thread_local static std::mt19937 gen(std::random_device{}()); // 使用 thread_local 随机数生成器
-            std::uniform_int_distribution<> dis(1, totalWeight);
-            int randomWeight = dis(gen);
-            int cumulative = 0;
-            for (const auto& wm : models) {
-                cumulative += wm.weight;
-                if (randomWeight <= cumulative) {
-                    return wm.model;
+            if (config.useRandomBlockModels) {
+                thread_local static std::mt19937 gen(std::random_device{}()); // 使用 thread_local 随机数生成器
+                std::uniform_int_distribution<> dis(1, totalWeight);
+                int randomWeight = dis(gen);
+                int cumulative = 0;
+                for (const auto& wm : models) {
+                    cumulative += wm.weight;
+                    if (randomWeight <= cumulative) {
+                        return wm.model;
+                    }
                 }
+            } else {
+                // 当禁用随机时，总是返回第一个模型
+                return models[0].model;
             }
         }
-
     }
 
     // 检查 multipart 缓存:在 multipart 时只进行一次随机,
@@ -262,13 +266,16 @@ ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::s
             return ModelData();
         }
 
-        thread_local static std::mt19937 gen_multi(std::random_device{}()); // 为 multipart 使用单独的 thread_local 生成器
-        std::uniform_int_distribution<> dis(0, maxCount - 1);
-        int randomIndex = dis(gen_multi);
+        int selectedIndex = 0;
+        if (config.useRandomBlockModels) {
+            thread_local static std::mt19937 gen_multi(std::random_device{}()); // 为 multipart 使用单独的 thread_local 生成器
+            std::uniform_int_distribution<> dis(0, maxCount - 1);
+            selectedIndex = dis(gen_multi);
+        }
 
         ModelData merged;
         for (auto& parts : partList) {
-            int index = randomIndex;
+            int index = selectedIndex;
             if (index >= parts.size()) {
                 index = 0; // 如果当前组中没有该位置的模型,则默认选第一个
             }
