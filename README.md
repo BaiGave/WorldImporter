@@ -1,3 +1,4 @@
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/BaiGave/WorldImporter)
 # WorldImporter
  C++软件，可以导入MC地图
 
