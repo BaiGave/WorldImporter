@@ -8,7 +8,7 @@
 #include <vector>
 #include <sstream>
 #include <unordered_map>
-#include <omp.h>
+// #include <omp.h>
 #include <chrono>
 #include <span>
 
@@ -260,7 +260,7 @@ void ApplyRotationToUV(ModelData& modelData, int rotationX, int rotationY) {
     };
 
     // OpenMP并行处理
-#pragma omp parallel for
+// #pragma omp parallel for
     for (int i = 0; i < static_cast<int>(faceTypes.size()); ++i) {
         const FaceType face = faceTypes[i];
         int angle = 0;
@@ -1103,10 +1103,11 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                         // 检测UV区域是否有镜像翻转
                         bool flipX = uvRegion[0] > uvRegion[2]; // X方向镜像
                         bool flipY = uvRegion[1] > uvRegion[3]; // Y方向镜像
-                        
+
+                        // [DEBUG] 强制统一门的两面UV — 忽略X镜像
                         // 确保UV坐标范围正确(起点小于终点)
                         if (flipX) {
-                            std::swap(uvRegion[0], uvRegion[2]);
+                            std::swap(uvRegion[0], uvRegion[2]); // 只标准化不翻转
                         }
                         if (flipY) {
                             std::swap(uvRegion[1], uvRegion[3]);
@@ -1136,16 +1137,15 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                             }
                         }
                         
-                        // 应用镜像翻转(如果需要)
+                        // [DEBUG] 跳过X镜像，门两面统一
                         if (flipX) {
-                            // 水平镜像:交换左右顶点
-                            std::swap(uvCoords[0], uvCoords[3]); // 交换左下和右下
-                            std::swap(uvCoords[1], uvCoords[2]); // 交换左上和右上
+                            // 注释掉X镜像纠正
+                            // std::swap(uvCoords[0], uvCoords[3]);
+                            // std::swap(uvCoords[1], uvCoords[2]);
                         }
                         if (flipY) {
-                            // 垂直镜像:交换上下顶点
-                            std::swap(uvCoords[0], uvCoords[1]); // 交换左下和左上
-                            std::swap(uvCoords[3], uvCoords[2]); // 交换右下和右上
+                            std::swap(uvCoords[0], uvCoords[1]);
+                            std::swap(uvCoords[3], uvCoords[2]);
                         }
 
                         // 获取旋转值
@@ -1237,8 +1237,11 @@ ModelData ProcessModelJson(const std::string& namespaceName, const std::string& 
 
     // 在访问缓存前加锁
     std::lock_guard<std::mutex> lock(cacheMutex);
-    // 检查缓存是否存在
+    // 检查缓存是否存在(同时查扩展key,SpecialBlock方块如床)
     auto cacheIt = modelCache.find(cacheKey);
+    if (cacheIt == modelCache.end() && !blockstateName.empty()) {
+        cacheIt = modelCache.find(cacheKey + "@" + blockstateName);
+    }
     if (cacheIt != modelCache.end()) {
         // 从缓存中获取原始模型数据
         ModelData cachedModel = cacheIt->second;
@@ -1269,7 +1272,12 @@ ModelData ProcessModelJson(const std::string& namespaceName, const std::string& 
 
 
     // 将原始数据存入缓存(不包含旋转)
-    modelCache[cacheKey] = modelData;
+    // SpecialBlock 方块(床等)用 blockstateName 区分缓存，避免不同颜色共用
+    std::string storeKey = cacheKey;
+    if (!modelJson.contains("elements") && !blockstateName.empty()) {
+        storeKey = cacheKey + "@" + blockstateName;
+    }
+    modelCache[storeKey] = modelData;
 
     if (rotationX != 0 || rotationY != 0) {
         // 如果指定了旋转,则应用旋转

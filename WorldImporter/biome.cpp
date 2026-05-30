@@ -33,11 +33,21 @@ static std::string getExecutableDir() {
     try {
         // 获取可执行文件路径
 #ifdef _WIN32
-        // Windows平台
-        char buffer[MAX_PATH] = { 0 };
-        if (GetModuleFileNameA(nullptr, buffer, MAX_PATH) == 0) {
+        // Windows平台（用 W 版 + 手动转换，避 fs::path 的编码问题）
+        wchar_t buffer[MAX_PATH] = { 0 };
+        if (GetModuleFileNameW(nullptr, buffer, MAX_PATH) == 0) {
         }
-        exePath = fs::path(buffer);
+        std::wstring ws(buffer);
+        size_t p = ws.find_last_of(L"\\/");
+        if (p != std::wstring::npos) ws.resize(p + 1); else ws.clear();
+        int len = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        if (len > 0) {
+            std::string ret(len, 0);
+            WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, &ret[0], len, nullptr, nullptr);
+            ret.resize(len - 1);
+            return ret;
+        }
+        return ".";
 #elif defined(__APPLE__)
         // macOS平台
         char buffer[PATH_MAX];
@@ -197,11 +207,18 @@ std::string Biome::GetColormapData(const std::string& namespaceName, const std::
 BiomeColors Biome::ParseBiomeColors(const nlohmann::json& biomeJson) {
     BiomeColors colors;
 
+    auto safeIntVal = [](const nlohmann::json& j, const std::string& k, int def) -> int {
+        if (!j.contains(k)) return def;
+        const auto& v = j[k];
+        if (v.is_number()) return v.get<int>();
+        if (v.is_string()) { try { return (int)std::stoul(v.get<std::string>(), nullptr, 0); } catch(...) {} }
+        return def;
+    };
     auto ParseColorWithFallback = [&](const std::string& key,
         const std::string& colormapType,
         float tempMod = 1.0f,
         float downfallMod = 1.0f) {
-            int directColor = biomeJson["effects"].value(key, -1);
+            int directColor = safeIntVal(biomeJson["effects"], key, -1);
             if (directColor != -1) return directColor;
 
             auto colormap = GetColormapData("minecraft", colormapType);
@@ -211,8 +228,13 @@ BiomeColors Biome::ParseBiomeColors(const nlohmann::json& biomeJson) {
 
     // 检查 "temperature" 和 "downfall" 是否存在
     if (biomeJson.contains("temperature") && biomeJson.contains("downfall")) {
-        const float temp = biomeJson["temperature"].get<float>();
-        const float downfall = biomeJson["downfall"].get<float>();
+        auto safeFloat = [](const nlohmann::json& j, float def) {
+            if (j.is_number()) return j.get<float>();
+            if (j.is_string()) { try { return std::stof(j.get<std::string>()); } catch(...) {} }
+            return def;
+        };
+        const float temp = safeFloat(biomeJson["temperature"], 0.5f);
+        const float downfall = safeFloat(biomeJson["downfall"], 0.5f);
 
         // 需要色图计算的参数准备
         colors.adjTemperature = BiomeUtils::clamp(temp, 0.0f, 1.0f);
@@ -224,21 +246,34 @@ BiomeColors Biome::ParseBiomeColors(const nlohmann::json& biomeJson) {
         colors.adjDownfall = 0.5f;
     }
 
+    // 当 JSON 没有 effects 时，用 colormap + 默认温降计算基础颜色
+    if (!biomeJson.contains("effects") || biomeJson["effects"].empty()) {
+        auto calcDefault = [&](const std::string& cmap, int defColor) -> int {
+            auto data = GetColormapData("minecraft", cmap);
+            if (!data.empty()) {
+                return CalculateColorFromColormap(data, colors.adjTemperature, colors.adjDownfall);
+            }
+            return defColor;
+        };
+        colors.foliage = calcDefault("foliage", -1);
+        colors.grass = calcDefault("grass", -1);
+        colors.dryFoliage = calcDefault("foliage", -1);
+    }
     // 检查 "effects" 是否存在
     if (biomeJson.contains("effects")) {
         const nlohmann::json& effects = biomeJson["effects"];
 
         // 解析直接颜色值
-        colors.fog = effects.value("fog_color", 0xFFFFFF);
-        colors.sky = effects.value("sky_color", 0x84ECFF);
-        colors.water = effects.value("water_color", 0x3F76E4);
-        colors.waterFog = effects.value("water_fog_color", 0x050533);
+        colors.fog = safeIntVal(effects, "fog_color", 0xFFFFFF);
+        colors.sky = safeIntVal(effects, "sky_color", 0x84ECFF);
+        colors.water = safeIntVal(effects, "water_color", 0x3F76E4);
+        colors.waterFog = safeIntVal(effects, "water_fog_color", 0x050533);
 
         // 统一处理植物颜色
         colors.foliage = ParseColorWithFallback("foliage_color", "foliage");
 
         // 干旱植物颜色处理 - 优先检查是否有直接颜色值
-        int directDryFoliageColor = effects.value("dry_foliage_color", -1);
+        int directDryFoliageColor = safeIntVal(effects, "dry_foliage_color", -1);
         if (directDryFoliageColor != -1) {
             // 如果有直接颜色值,直接使用
             colors.dryFoliage = directDryFoliageColor;

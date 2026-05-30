@@ -11,30 +11,41 @@ using namespace chrono;
 
 
 int main() {
-    init();
+    try {
+        init();
 
-    // 启动内存监控
-    // 需要确保 block.cpp 中定义的缓存和互斥锁能够通过 extern 声明被访问
-    //MemoryMonitor::StartMonitoring(
-    //    sectionCache, sectionCacheMutex, 
-    //    EntityBlockCache, entityBlockCacheMutex, 
-    //    heightMapCache, heightMapCacheMutex
-    //);
+        // 启动内存监控
+        // 需要确保 block.cpp 中定义的缓存和互斥锁能够通过 extern 声明被访问
+        //MemoryMonitor::StartMonitoring(
+        //    sectionCache, sectionCacheMutex,
+        //    EntityBlockCache, entityBlockCacheMutex,
+        //    heightMapCache, heightMapCacheMutex
+        //);
 
-    // 初始化任务监控器
-    //auto& monitor = GetTaskMonitor();
-    
-    auto start_time = high_resolution_clock::now();
-    if (config.status == 1) {
-        // 如果是 1,导出区域内所有方块模型
-        RegionModelExporter::ExportModels("region_models");
+        // 初始化任务监控器
+        //auto& monitor = GetTaskMonitor();
+
+        auto start_time = high_resolution_clock::now();
+        if (config.status == 1) {
+            // 如果是 1,导出区域内所有方块模型
+            RegionModelExporter::ExportModels("region_models");
+        }
+        auto end_time = high_resolution_clock::now();
+        auto duration = duration_cast<milliseconds>(end_time - start_time);
+        cout << "Total time: " << duration.count() << " milliseconds" << endl;
+
+        // 停止内存监控
+        //MemoryMonitor::StopMonitoring();
+
+        return 0;
+    } catch (const nlohmann::json::exception& e) {
+        cerr << "JSON error: " << e.what() << endl;
+        return 1;
+    } catch (const std::exception& e) {
+        cerr << "Standard exception: " << e.what() << endl;
+        return 1;
+    } catch (...) {
+        cerr << "Unknown exception occurred" << endl;
+        return 1;
     }
-    auto end_time = high_resolution_clock::now();
-    auto duration = duration_cast<milliseconds>(end_time - start_time);
-    cout << "Total time: " << duration.count() << " milliseconds" << endl;
-
-    // 停止内存监控
-    //MemoryMonitor::StopMonitoring();
-
-    return 0;
 }

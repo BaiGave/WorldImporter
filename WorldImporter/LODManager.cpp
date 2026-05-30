@@ -17,10 +17,8 @@
 #include <filesystem>
 
 #ifdef _WIN32
-// Windows平台需要的定义和函数声明
-extern "C" {
-    __declspec(dllimport) unsigned long __stdcall GetModuleFileNameA(void* hModule, char* lpFilename, unsigned long nSize);
-}
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 #define MAX_PATH 260
 #elif defined(__unix__) || defined(__APPLE__)
 #include <limits.h>
@@ -50,15 +48,21 @@ std::string getExecutablePathForTexture() {
     try {
         #ifdef _WIN32
         // Windows平台
-        char buffer[MAX_PATH] = { 0 };
-        if (GetModuleFileNameA(NULL, buffer, MAX_PATH) != 0) {
-            exePath = std::filesystem::path(buffer);
+        wchar_t buffer[MAX_PATH] = { 0 };
+        if (GetModuleFileNameW(nullptr, buffer, MAX_PATH) != 0) {
+            std::wstring ws(buffer);
+            int len = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, nullptr, 0, nullptr, nullptr);
+            if (len > 0) {
+                std::string s(len, 0);
+                WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, &s[0], len, nullptr, nullptr);
+                exePath = std::filesystem::path(s);
+            }
         } else {
             throw std::runtime_error("no exe");
         }
         #elif defined(__APPLE__)
         // macOS平台
-        char buffer[MAX_PATH];
+        char buffer[PATH_MAX];
         uint32_t size = sizeof(buffer);
         if (_NSGetExecutablePath(buffer, &size) != 0) {
             throw std::runtime_error("无法获取可执行文件路径");
@@ -66,7 +70,7 @@ std::string getExecutablePathForTexture() {
         exePath = std::filesystem::canonical(std::filesystem::path(buffer));
         #else
         // Linux平台
-        char buffer[MAX_PATH];
+        char buffer[PATH_MAX];
         ssize_t len = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
         if (len == -1) {
             throw std::runtime_error("无法获取可执行文件路径");
