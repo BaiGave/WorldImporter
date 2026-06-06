@@ -37,25 +37,25 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
     nlohmann::json mcmetaData;
     int width = 0, height = 0;
     bool isDynamic = false;
+    std::string foundCacheKey;
 
     {
-        std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
-        // 按照 JAR 文件的加载顺序逐个查找主纹理数据
-        for (size_t i = 0; i < GlobalCache::jarOrder.size(); ++i) {
-            const std::string& modId = GlobalCache::jarOrder[i];
-            std::string cacheKey = modId + ":" + namespaceName + ":" + blockId;
+        std::shared_lock<std::shared_mutex> lock(GlobalCache::cacheMutex);
+        // 使用快速查找索引(O(1))
+        std::string indexKey = std::string("textures:") + namespaceName + ":" + blockId;
+        auto idxIt = GlobalCache::textureIndex.find(indexKey);
+        if (idxIt != GlobalCache::textureIndex.end()) {
+            const std::string& cacheKey = idxIt->second;
             auto textureIt = GlobalCache::textures.find(cacheKey);
             if (textureIt != GlobalCache::textures.end()) {
                 textureData = textureIt->second;
-                
-                // 读取PNG尺寸
+                foundCacheKey = cacheKey;
+
                 if (GetPNGDimensions(textureData, width, height)) {
-                    // 保存到尺寸缓存
                     std::lock_guard<std::mutex> dimLock(textureDimensionMutex);
                     textureDimensionCache[cacheKey] = TextureDimension(width, height);
                 }
 
-                // 获取动态材质数据(如果存在)
                 auto mcmetaIt = GlobalCache::mcmetaCache.find(cacheKey);
                 if (mcmetaIt != GlobalCache::mcmetaCache.end()) {
                     mcmetaData = mcmetaIt->second;
@@ -63,7 +63,33 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
                         isDynamic = true;
                     }
                 }
-                break;
+            }
+        }
+
+        if (textureData.empty()) {
+            // 回退: 线性扫描
+            for (size_t i = 0; i < GlobalCache::jarOrder.size(); ++i) {
+                const std::string& modId = GlobalCache::jarOrder[i];
+                std::string cacheKey = modId + ":" + namespaceName + ":" + blockId;
+                auto textureIt = GlobalCache::textures.find(cacheKey);
+                if (textureIt != GlobalCache::textures.end()) {
+                    textureData = textureIt->second;
+                    foundCacheKey = cacheKey;
+
+                    if (GetPNGDimensions(textureData, width, height)) {
+                        std::lock_guard<std::mutex> dimLock(textureDimensionMutex);
+                        textureDimensionCache[cacheKey] = TextureDimension(width, height);
+                    }
+
+                    auto mcmetaIt = GlobalCache::mcmetaCache.find(cacheKey);
+                    if (mcmetaIt != GlobalCache::mcmetaCache.end()) {
+                        mcmetaData = mcmetaIt->second;
+                        if (mcmetaData.contains("animation")) {
+                            isDynamic = true;
+                        }
+                    }
+                    break;
+                }
             }
         }
 
@@ -147,29 +173,48 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
             nlohmann::json pbrMcmetaData;
             int pbrWidth = 0, pbrHeight = 0;
 
-            // 按照 GlobalCache::jarOrder 顺序查找 PBR 贴图数据
+            // 使用快速查找索引 + 回退线性扫描
             {
-                std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
-                for (size_t i = 0; i < GlobalCache::jarOrder.size(); ++i) {
-                    const std::string& modId = GlobalCache::jarOrder[i];
-                    std::string pbrCacheKey = modId + ":" + namespaceName + ":" + blockId + suffix;
+                std::shared_lock<std::shared_mutex> lock(GlobalCache::cacheMutex);
+                std::string pbrIndexKey = std::string("textures:") + namespaceName + ":" + blockId + suffix;
+                auto pbrIdxIt = GlobalCache::textureIndex.find(pbrIndexKey);
+                if (pbrIdxIt != GlobalCache::textureIndex.end()) {
+                    const std::string& pbrCacheKey = pbrIdxIt->second;
                     auto pbrTextureIt = GlobalCache::textures.find(pbrCacheKey);
                     if (pbrTextureIt != GlobalCache::textures.end()) {
                         pbrTextureData = pbrTextureIt->second;
-                        
-                        // 读取PBR贴图的尺寸
+
                         if (GetPNGDimensions(pbrTextureData, pbrWidth, pbrHeight)) {
-                            // 保存到尺寸缓存
                             std::lock_guard<std::mutex> dimLock(textureDimensionMutex);
                             textureDimensionCache[pbrCacheKey] = TextureDimension(pbrWidth, pbrHeight);
                         }
 
-                        // 获取 PBR 贴图的 .mcmeta 数据(如果存在)
                         auto pbrMcmetaIt = GlobalCache::mcmetaCache.find(pbrCacheKey);
                         if (pbrMcmetaIt != GlobalCache::mcmetaCache.end()) {
                             pbrMcmetaData = pbrMcmetaIt->second;
                         }
-                        break;
+                    }
+                }
+
+                if (pbrTextureData.empty()) {
+                    for (size_t i = 0; i < GlobalCache::jarOrder.size(); ++i) {
+                        const std::string& modId = GlobalCache::jarOrder[i];
+                        std::string pbrCacheKey = modId + ":" + namespaceName + ":" + blockId + suffix;
+                        auto pbrTextureIt = GlobalCache::textures.find(pbrCacheKey);
+                        if (pbrTextureIt != GlobalCache::textures.end()) {
+                            pbrTextureData = pbrTextureIt->second;
+
+                            if (GetPNGDimensions(pbrTextureData, pbrWidth, pbrHeight)) {
+                                std::lock_guard<std::mutex> dimLock(textureDimensionMutex);
+                                textureDimensionCache[pbrCacheKey] = TextureDimension(pbrWidth, pbrHeight);
+                            }
+
+                            auto pbrMcmetaIt = GlobalCache::mcmetaCache.find(pbrCacheKey);
+                            if (pbrMcmetaIt != GlobalCache::mcmetaCache.end()) {
+                                pbrMcmetaData = pbrMcmetaIt->second;
+                            }
+                            break;
+                        }
                     }
                 }
             }
@@ -290,16 +335,24 @@ MaterialType DetectMaterialType(const std::string& namespaceName, const std::str
     MaterialType type = NORMAL;
     outAspectRatio = 1.0f;
     
-    std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
-    
-    // 按照JAR文件的加载顺序逐个查找
-    for (size_t i = 0; i < GlobalCache::jarOrder.size(); ++i) {
-        const std::string& modId = GlobalCache::jarOrder[i];
-        std::string cacheKey = modId + ":" + namespaceName + ":" + texturePath;
-        
-        // 检查.mcmeta文件是否存在，同时获取长宽比
-        if (ParseMcmetaFile(cacheKey, type, outAspectRatio)) {
-            break;
+    {
+        std::shared_lock<std::shared_mutex> lock(GlobalCache::cacheMutex);
+        // 使用快速查找索引(O(1))
+        std::string indexKey = std::string("mcmetas:") + namespaceName + ":" + texturePath;
+        auto it = GlobalCache::mcmetaIndex.find(indexKey);
+        if (it != GlobalCache::mcmetaIndex.end()) {
+            if (ParseMcmetaFile(it->second, type, outAspectRatio)) {
+                return type;
+            }
+        }
+
+        // 回退: 线性扫描
+        for (size_t i = 0; i < GlobalCache::jarOrder.size(); ++i) {
+            const std::string& modId = GlobalCache::jarOrder[i];
+            std::string cacheKey = modId + ":" + namespaceName + ":" + texturePath;
+            if (ParseMcmetaFile(cacheKey, type, outAspectRatio)) {
+                break;
+            }
         }
     }
     

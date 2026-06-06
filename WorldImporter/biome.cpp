@@ -164,15 +164,25 @@ std::unordered_map<std::string, BiomeInfo> Biome::biomeRegistry;
 std::shared_mutex Biome::registryMutex;
 
 nlohmann::json Biome::GetBiomeJson(const std::string& namespaceName, const std::string& biomeId) {
-    std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
+    std::shared_lock<std::shared_mutex> lock(GlobalCache::cacheMutex);
 
-    // 按照 JAR 文件的加载顺序逐个查找
+    // 使用快速查找索引(O(1))
+    std::string indexKey = std::string("biomes:") + namespaceName + ":" + biomeId;
+    auto it = GlobalCache::biomeIndex.find(indexKey);
+    if (it != GlobalCache::biomeIndex.end()) {
+        auto cacheIt = GlobalCache::biomes.find(it->second);
+        if (cacheIt != GlobalCache::biomes.end()) {
+            return cacheIt->second;
+        }
+    }
+
+    // 回退: 线性扫描
     for (size_t i = 0; i < GlobalCache::jarOrder.size(); ++i) {
         const std::string& modId = GlobalCache::jarOrder[i];
         std::string cacheKey = modId + ":" + namespaceName + ":" + biomeId;
-        auto it = GlobalCache::biomes.find(cacheKey);
-        if (it != GlobalCache::biomes.end()) {
-            return it->second;
+        auto fallbackIt = GlobalCache::biomes.find(cacheKey);
+        if (fallbackIt != GlobalCache::biomes.end()) {
+            return fallbackIt->second;
         }
     }
 
@@ -181,9 +191,26 @@ nlohmann::json Biome::GetBiomeJson(const std::string& namespaceName, const std::
 }
 
 std::string Biome::GetColormapData(const std::string& namespaceName, const std::string& colormapName) {
-    std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
+    std::shared_lock<std::shared_mutex> lock(GlobalCache::cacheMutex);
 
-    // 按照 JAR 文件的加载顺序逐个查找
+    // 使用快速查找索引(O(1))
+    std::string indexKey = std::string("colormaps:") + namespaceName + ":" + colormapName;
+    auto idxIt = GlobalCache::colormapIndex.find(indexKey);
+    if (idxIt != GlobalCache::colormapIndex.end()) {
+        auto it = GlobalCache::colormaps.find(idxIt->second);
+        if (it != GlobalCache::colormaps.end()) {
+            std::string filePath;
+            if (SaveColormapToFile(it->second, namespaceName, colormapName, filePath)) {
+                return filePath;
+            }
+            else {
+                std::cerr << "Failed to save colormap: " << idxIt->second << std::endl;
+                return "";
+            }
+        }
+    }
+
+    // 回退: 线性扫描
     for (size_t i = 0; i < GlobalCache::jarOrder.size(); ++i) {
         const std::string& modId = GlobalCache::jarOrder[i];
         std::string cacheKey = modId + ":" + namespaceName + ":" + colormapName;

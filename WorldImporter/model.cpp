@@ -589,8 +589,21 @@ nlohmann::json MergeModelJson(const nlohmann::json& parentModelJson, const nlohm
 }
 
 nlohmann::json GetModelJson(const std::string& namespaceName, const std::string& modelPath) {
-    std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
-    // 按照 JAR 文件的加载顺序逐个查找
+    // 使用快速查找索引(O(1)), 回退到线性扫描(O(N))
+    {
+        std::shared_lock<std::shared_mutex> lock(GlobalCache::cacheMutex);
+        std::string indexKey = std::string("models:") + namespaceName + ":" + modelPath;
+        auto it = GlobalCache::modelIndex.find(indexKey);
+        if (it != GlobalCache::modelIndex.end()) {
+            auto cacheIt = GlobalCache::models.find(it->second);
+            if (cacheIt != GlobalCache::models.end()) {
+                return cacheIt->second;
+            }
+        }
+    }
+
+    // 回退: 线性扫描
+    std::shared_lock<std::shared_mutex> lock(GlobalCache::cacheMutex);
     for (size_t i = 0; i < GlobalCache::jarOrder.size(); ++i) {
         const std::string& modId = GlobalCache::jarOrder[i];
         std::string cacheKey = modId + ":" + namespaceName + ":" + modelPath;
