@@ -10,8 +10,10 @@
 // 仅在Windows平台需要这些函数声明
 extern "C" {
     __declspec(dllimport) unsigned long __stdcall GetLastError();
-    __declspec(dllimport) unsigned long __stdcall GetModuleFileNameA(void* hModule, char* lpFilename, unsigned long nSize);
+    __declspec(dllimport) int __stdcall WideCharToMultiByte(unsigned int, unsigned long, const wchar_t*, int, char*, int, const char*, int*);
+    __declspec(dllimport) unsigned long __stdcall GetModuleFileNameW(void* hModule, wchar_t* lpFilename, unsigned long nSize);
 }
+#define CP_UTF8 65001
 #define MAX_PATH 260
 // Windows平台使用sprintf_s
 #define safe_sprintf sprintf_s
@@ -41,10 +43,19 @@ std::string getExecutableDir() {
         // 获取可执行文件路径
 #ifdef _WIN32
         // Windows平台
-        char buffer[MAX_PATH] = { 0 };
-        if (GetModuleFileNameA(nullptr, buffer, MAX_PATH) == 0) {
+        wchar_t buffer[MAX_PATH] = { 0 };
+        if (GetModuleFileNameW(nullptr, buffer, MAX_PATH) == 0) {
         }
-        exePath = fs::path(buffer);
+        std::wstring ws(buffer);
+        size_t pos = ws.find_last_of(L"\\/");
+        if (pos != std::wstring::npos) ws.resize(pos + 1);
+        int len = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        if (len > 0) {
+            std::string ret(len, 0);
+            WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, &ret[0], len, nullptr, nullptr);
+            return ret.substr(0, len - 1);
+        }
+        return ".";
 #elif defined(__APPLE__)
         // macOS平台
         char buffer[PATH_MAX];

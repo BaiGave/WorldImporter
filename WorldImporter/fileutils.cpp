@@ -9,6 +9,7 @@
 
 // 定义Windows特定函数和常量（仅在Windows平台使用）
 #ifdef _WIN32
+#include <windows.h>
 extern "C" {
     __declspec(dllimport) int __stdcall WideCharToMultiByte(unsigned int CodePage, unsigned long dwFlags, 
         const wchar_t* lpWideCharStr, int cchWideChar, char* lpMultiByteStr, 
@@ -16,7 +17,6 @@ extern "C" {
     __declspec(dllimport) int __stdcall MultiByteToWideChar(unsigned int CodePage, unsigned long dwFlags, 
         const char* lpMultiByteStr, int cbMultiByte, wchar_t* lpWideCharStr, int cchWideChar);
     __declspec(dllimport) unsigned long __stdcall GetLastError();
-    __declspec(dllimport) unsigned long __stdcall GetModuleFileNameA(void* hModule, char* lpFilename, unsigned long nSize);
 }
 // 定义Windows平台特定常量
 #define CP_UTF8 65001
@@ -158,6 +158,7 @@ std::string wstring_to_string(const std::wstring& wstr) {
     if (wstr.empty()) return "";
     
     #ifdef _WIN32
+#include <windows.h>
     // Windows平台使用Windows API
     // 计算所需的缓冲区大小
     int buffer_size = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
@@ -195,6 +196,7 @@ std::wstring string_to_wstring(const std::string& str) {
     if (str.empty()) return L"";
     
     #ifdef _WIN32
+#include <windows.h>
     // Windows平台使用Windows API
     // 计算所需的缓冲区大小
     int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), nullptr, 0);
@@ -231,9 +233,17 @@ void DeleteTexturesFolder() {
         
         // 在某些平台，可能需要特殊处理来获取可执行文件路径
         #ifdef _WIN32
-        char exePathBuffer[MAX_PATH];
-        if (GetModuleFileNameA(NULL, exePathBuffer, MAX_PATH) != 0) {
-            exePath = fs::path(exePathBuffer).parent_path();
+        wchar_t exePathBuffer[MAX_PATH];
+        if (GetModuleFileNameW(nullptr, exePathBuffer, MAX_PATH) != 0) {
+            std::wstring ws(exePathBuffer);
+            size_t p = ws.find_last_of(L"\\/");
+            if (p != std::wstring::npos) ws.resize(p);
+            int len = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, nullptr, 0, nullptr, nullptr);
+            if (len > 0) {
+                std::string s(len, 0);
+                WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, &s[0], len, nullptr, nullptr);
+                exePath = fs::path(s.substr(0, len - 1));
+            }
         }
         #endif
     } catch (const fs::filesystem_error& e) {

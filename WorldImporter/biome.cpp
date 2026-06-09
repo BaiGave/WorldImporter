@@ -33,11 +33,21 @@ static std::string getExecutableDir() {
     try {
         // 获取可执行文件路径
 #ifdef _WIN32
-        // Windows平台
-        char buffer[MAX_PATH] = { 0 };
-        if (GetModuleFileNameA(nullptr, buffer, MAX_PATH) == 0) {
+        // Windows平台（用 W 版 + 手动转换，避 fs::path 的编码问题）
+        wchar_t buffer[MAX_PATH] = { 0 };
+        if (GetModuleFileNameW(nullptr, buffer, MAX_PATH) == 0) {
         }
-        exePath = fs::path(buffer);
+        std::wstring ws(buffer);
+        size_t p = ws.find_last_of(L"\\/");
+        if (p != std::wstring::npos) ws.resize(p + 1); else ws.clear();
+        int len = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        if (len > 0) {
+            std::string ret(len, 0);
+            WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, &ret[0], len, nullptr, nullptr);
+            ret.resize(len - 1);
+            return ret;
+        }
+        return ".";
 #elif defined(__APPLE__)
         // macOS平台
         char buffer[PATH_MAX];
@@ -154,15 +164,25 @@ std::unordered_map<std::string, BiomeInfo> Biome::biomeRegistry;
 std::shared_mutex Biome::registryMutex;
 
 nlohmann::json Biome::GetBiomeJson(const std::string& namespaceName, const std::string& biomeId) {
-    std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
+    std::shared_lock<std::shared_mutex> lock(GlobalCache::cacheMutex);
 
-    // 按照 JAR 文件的加载顺序逐个查找
+    // 使用快速查找索引(O(1))
+    std::string indexKey = std::string("biomes:") + namespaceName + ":" + biomeId;
+    auto it = GlobalCache::biomeIndex.find(indexKey);
+    if (it != GlobalCache::biomeIndex.end()) {
+        auto cacheIt = GlobalCache::biomes.find(it->second);
+        if (cacheIt != GlobalCache::biomes.end()) {
+            return cacheIt->second;
+        }
+    }
+
+    // 回退: 线性扫描
     for (size_t i = 0; i < GlobalCache::jarOrder.size(); ++i) {
         const std::string& modId = GlobalCache::jarOrder[i];
         std::string cacheKey = modId + ":" + namespaceName + ":" + biomeId;
-        auto it = GlobalCache::biomes.find(cacheKey);
-        if (it != GlobalCache::biomes.end()) {
-            return it->second;
+        auto fallbackIt = GlobalCache::biomes.find(cacheKey);
+        if (fallbackIt != GlobalCache::biomes.end()) {
+            return fallbackIt->second;
         }
     }
 
@@ -171,9 +191,26 @@ nlohmann::json Biome::GetBiomeJson(const std::string& namespaceName, const std::
 }
 
 std::string Biome::GetColormapData(const std::string& namespaceName, const std::string& colormapName) {
-    std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
+    std::shared_lock<std::shared_mutex> lock(GlobalCache::cacheMutex);
 
-    // 按照 JAR 文件的加载顺序逐个查找
+    // 使用快速查找索引(O(1))
+    std::string indexKey = std::string("colormaps:") + namespaceName + ":" + colormapName;
+    auto idxIt = GlobalCache::colormapIndex.find(indexKey);
+    if (idxIt != GlobalCache::colormapIndex.end()) {
+        auto it = GlobalCache::colormaps.find(idxIt->second);
+        if (it != GlobalCache::colormaps.end()) {
+            std::string filePath;
+            if (SaveColormapToFile(it->second, namespaceName, colormapName, filePath)) {
+                return filePath;
+            }
+            else {
+                std::cerr << "Failed to save colormap: " << idxIt->second << std::endl;
+                return "";
+            }
+        }
+    }
+
+    // 回退: 线性扫描
     for (size_t i = 0; i < GlobalCache::jarOrder.size(); ++i) {
         const std::string& modId = GlobalCache::jarOrder[i];
         std::string cacheKey = modId + ":" + namespaceName + ":" + colormapName;
@@ -197,11 +234,18 @@ std::string Biome::GetColormapData(const std::string& namespaceName, const std::
 BiomeColors Biome::ParseBiomeColors(const nlohmann::json& biomeJson) {
     BiomeColors colors;
 
+    auto safeIntVal = [](const nlohmann::json& j, const std::string& k, int def) -> int {
+        if (!j.contains(k)) return def;
+        const auto& v = j[k];
+        if (v.is_number()) return v.get<int>();
+        if (v.is_string()) { try { return (int)std::stoul(v.get<std::string>(), nullptr, 0); } catch(...) {} }
+        return def;
+    };
     auto ParseColorWithFallback = [&](const std::string& key,
         const std::string& colormapType,
         float tempMod = 1.0f,
         float downfallMod = 1.0f) {
-            int directColor = biomeJson["effects"].value(key, -1);
+            int directColor = safeIntVal(biomeJson["effects"], key, -1);
             if (directColor != -1) return directColor;
 
             auto colormap = GetColormapData("minecraft", colormapType);
@@ -211,8 +255,13 @@ BiomeColors Biome::ParseBiomeColors(const nlohmann::json& biomeJson) {
 
     // 检查 "temperature" 和 "downfall" 是否存在
     if (biomeJson.contains("temperature") && biomeJson.contains("downfall")) {
-        const float temp = biomeJson["temperature"].get<float>();
-        const float downfall = biomeJson["downfall"].get<float>();
+        auto safeFloat = [](const nlohmann::json& j, float def) {
+            if (j.is_number()) return j.get<float>();
+            if (j.is_string()) { try { return std::stof(j.get<std::string>()); } catch(...) {} }
+            return def;
+        };
+        const float temp = safeFloat(biomeJson["temperature"], 0.5f);
+        const float downfall = safeFloat(biomeJson["downfall"], 0.5f);
 
         // 需要色图计算的参数准备
         colors.adjTemperature = BiomeUtils::clamp(temp, 0.0f, 1.0f);
@@ -224,21 +273,34 @@ BiomeColors Biome::ParseBiomeColors(const nlohmann::json& biomeJson) {
         colors.adjDownfall = 0.5f;
     }
 
+    // 当 JSON 没有 effects 时，用 colormap + 默认温降计算基础颜色
+    if (!biomeJson.contains("effects") || biomeJson["effects"].empty()) {
+        auto calcDefault = [&](const std::string& cmap, int defColor) -> int {
+            auto data = GetColormapData("minecraft", cmap);
+            if (!data.empty()) {
+                return CalculateColorFromColormap(data, colors.adjTemperature, colors.adjDownfall);
+            }
+            return defColor;
+        };
+        colors.foliage = calcDefault("foliage", -1);
+        colors.grass = calcDefault("grass", -1);
+        colors.dryFoliage = calcDefault("foliage", -1);
+    }
     // 检查 "effects" 是否存在
     if (biomeJson.contains("effects")) {
         const nlohmann::json& effects = biomeJson["effects"];
 
         // 解析直接颜色值
-        colors.fog = effects.value("fog_color", 0xFFFFFF);
-        colors.sky = effects.value("sky_color", 0x84ECFF);
-        colors.water = effects.value("water_color", 0x3F76E4);
-        colors.waterFog = effects.value("water_fog_color", 0x050533);
+        colors.fog = safeIntVal(effects, "fog_color", 0xFFFFFF);
+        colors.sky = safeIntVal(effects, "sky_color", 0x84ECFF);
+        colors.water = safeIntVal(effects, "water_color", 0x3F76E4);
+        colors.waterFog = safeIntVal(effects, "water_fog_color", 0x050533);
 
         // 统一处理植物颜色
         colors.foliage = ParseColorWithFallback("foliage_color", "foliage");
 
         // 干旱植物颜色处理 - 优先检查是否有直接颜色值
-        int directDryFoliageColor = effects.value("dry_foliage_color", -1);
+        int directDryFoliageColor = safeIntVal(effects, "dry_foliage_color", -1);
         if (directDryFoliageColor != -1) {
             // 如果有直接颜色值,直接使用
             colors.dryFoliage = directDryFoliageColor;

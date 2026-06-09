@@ -52,9 +52,17 @@ namespace GlobalCache {
     std::unordered_map<std::string, nlohmann::json> biomes;                  // 生物群系缓存
     std::unordered_map<std::string, std::vector<unsigned char>> colormaps;   // 颜色映射缓存
 
+    // 快速查找索引: "resourceType:namespace:resourcePath" -> 完整缓存键
+    std::unordered_map<std::string, std::string> blockstateIndex;
+    std::unordered_map<std::string, std::string> modelIndex;
+    std::unordered_map<std::string, std::string> textureIndex;
+    std::unordered_map<std::string, std::string> mcmetaIndex;
+    std::unordered_map<std::string, std::string> biomeIndex;
+    std::unordered_map<std::string, std::string> colormapIndex;
+
     // 同步原语
     std::once_flag initFlag;       // 确保初始化只执行一次
-    std::mutex cacheMutex;         // 保护缓存数据的互斥锁
+    std::shared_mutex cacheMutex;  // 读写锁,支持并发读
     std::mutex queueMutex;         // 保护任务队列的互斥锁
 
     // 线程控制
@@ -266,54 +274,82 @@ void InitializeAllCaches() {
         // 按照加载顺序(优先级)合并资源到全局缓存
         // 后加载的资源优先级更高(minecraft原版资源优先级最高)
         {
-            std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
+            std::lock_guard<std::shared_mutex> lock(GlobalCache::cacheMutex);
             for (size_t i = 0; i < taskCount; ++i) {
                 std::string currentModId = GlobalCache::jarOrder[i];
                 TaskResult& result = taskResults[i];
 
-                // 合并各类资源，为每个资源添加命名空间前缀
-                // 例如: "block/stone" -> "minecraft:block/stone"
-                
                 // 合并材质
                 for (auto& pair : result.localTextures) {
                     std::string cacheKey = currentModId + ":" + pair.first;
                     if (GlobalCache::textures.find(cacheKey) == GlobalCache::textures.end()) {
-                        GlobalCache::textures.insert({ cacheKey, pair.second });
+                        GlobalCache::textures.insert({ cacheKey, std::move(pair.second) });
+                    }
+                    // 构建快速查找索引: "textures:<namespace>:<path>" -> cacheKey
+                    size_t firstColon = pair.first.find(':');
+                    if (firstColon != std::string::npos) {
+                        std::string indexKey = std::string("textures:") + pair.first;
+                        GlobalCache::textureIndex.emplace(indexKey, cacheKey);
                     }
                 }
                 // 合并方块状态
                 for (auto& pair : result.localBlockstates) {
                     std::string cacheKey = currentModId + ":" + pair.first;
                     if (GlobalCache::blockstates.find(cacheKey) == GlobalCache::blockstates.end()) {
-                        GlobalCache::blockstates.insert({ cacheKey, pair.second });
+                        GlobalCache::blockstates.insert({ cacheKey, std::move(pair.second) });
+                    }
+                    size_t firstColon = pair.first.find(':');
+                    if (firstColon != std::string::npos) {
+                        std::string indexKey = std::string("blockstates:") + pair.first;
+                        GlobalCache::blockstateIndex.emplace(indexKey, cacheKey);
                     }
                 }
                 // 合并模型
                 for (auto& pair : result.localModels) {
                     std::string cacheKey = currentModId + ":" + pair.first;
                     if (GlobalCache::models.find(cacheKey) == GlobalCache::models.end()) {
-                        GlobalCache::models.insert({ cacheKey, pair.second });
+                        GlobalCache::models.insert({ cacheKey, std::move(pair.second) });
+                    }
+                    size_t firstColon = pair.first.find(':');
+                    if (firstColon != std::string::npos) {
+                        std::string indexKey = std::string("models:") + pair.first;
+                        GlobalCache::modelIndex.emplace(indexKey, cacheKey);
                     }
                 }
                 // 合并生物群系
                 for (auto& pair : result.localBiomes) {
                     std::string cacheKey = currentModId + ":" + pair.first;
                     if (GlobalCache::biomes.find(cacheKey) == GlobalCache::biomes.end()) {
-                        GlobalCache::biomes.insert({ cacheKey, pair.second });
+                        GlobalCache::biomes.insert({ cacheKey, std::move(pair.second) });
+                    }
+                    size_t firstColon = pair.first.find(':');
+                    if (firstColon != std::string::npos) {
+                        std::string indexKey = std::string("biomes:") + pair.first;
+                        GlobalCache::biomeIndex.emplace(indexKey, cacheKey);
                     }
                 }
                 // 合并颜色映射
                 for (auto& pair : result.localColormaps) {
                     std::string cacheKey = currentModId + ":" + pair.first;
                     if (GlobalCache::colormaps.find(cacheKey) == GlobalCache::colormaps.end()) {
-                        GlobalCache::colormaps.insert({ cacheKey, pair.second });
+                        GlobalCache::colormaps.insert({ cacheKey, std::move(pair.second) });
+                    }
+                    size_t firstColon = pair.first.find(':');
+                    if (firstColon != std::string::npos) {
+                        std::string indexKey = std::string("colormaps:") + pair.first;
+                        GlobalCache::colormapIndex.emplace(indexKey, cacheKey);
                     }
                 }
                 // 合并材质元数据
                 for (auto& pair : result.localMcmetas) {
                     std::string cacheKey = currentModId + ":" + pair.first;
                     if (GlobalCache::mcmetaCache.find(cacheKey) == GlobalCache::mcmetaCache.end()) {
-                        GlobalCache::mcmetaCache.insert({ cacheKey, pair.second });
+                        GlobalCache::mcmetaCache.insert({ cacheKey, std::move(pair.second) });
+                    }
+                    size_t firstColon = pair.first.find(':');
+                    if (firstColon != std::string::npos) {
+                        std::string indexKey = std::string("mcmetas:") + pair.first;
+                        GlobalCache::mcmetaIndex.emplace(indexKey, cacheKey);
                     }
                 }
             }

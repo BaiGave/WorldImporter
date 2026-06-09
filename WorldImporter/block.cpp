@@ -108,10 +108,13 @@ void UpdateSkyLightNeighborFlags() {
 // --------------------------------------------------------------------------------
 // 新增函数:处理单个子区块
 void ProcessSection(int chunkX, int chunkZ, int sectionY, const NbtTagPtr& sectionTag) {
+    std::vector<std::string> blockPalette;
+    std::vector<int> blockData;
+    try {
     // 获取方块数据
     auto blo = getBlockStates(sectionTag);
-    std::vector<std::string> blockPalette = getBlockPalette(blo);
-    std::vector<int> blockData = getBlockStatesData(blo, blockPalette);
+    blockPalette = getBlockPalette(blo);
+    blockData = getBlockStatesData(blo, blockPalette);
 
     // 转换为全局ID并注册调色板
     std::vector<int> globalBlockData;
@@ -149,7 +152,11 @@ void ProcessSection(int chunkX, int chunkZ, int sectionY, const NbtTagPtr& secti
             // 为新添加的方块生成模型缓存
             std::vector<Block> newBlockVector;
             newBlockVector.push_back(globalBlockPalette.back()); // 获取刚添加的方块
-            ProcessBlockstateForBlocks(newBlockVector); // 调用处理函数
+            try {
+                ProcessBlockstateForBlocks(newBlockVector); // 调用处理函数
+            } catch (const std::exception& e) {
+                std::cerr << "Error in ProcessBlockstateForBlocks: " << e.what() << std::endl;
+            }
         }
     }
 
@@ -157,35 +164,56 @@ void ProcessSection(int chunkX, int chunkZ, int sectionY, const NbtTagPtr& secti
     auto bio = getBiomes(sectionTag);
     std::vector<int> biomeData;
     if (bio) {
-        std::vector<std::string> biomePalette = getBiomePalette(bio);
-        auto dataTag = getChildByName(bio, "data");
-
-        if (dataTag && dataTag->type == TagType::LONG_ARRAY) {
-            int paletteSize = biomePalette.size();
-            int bitsPerEntry = (paletteSize > 1) ? static_cast<int>(std::ceil(std::log2(paletteSize))) : 1;
-            int entriesPerLong = 64 / bitsPerEntry; // 每个long存储多少个条目
-            int mask = (1 << bitsPerEntry) - 1;
-
-            biomeData.resize(64, 0); // 固定64个生物群系单元
-            int totalProcessed = 0;
-
-            const int64_t* data = reinterpret_cast<const int64_t*>(dataTag->payload.data());
-            size_t dataSize = dataTag->payload.size() / sizeof(int64_t);
-
-            for (size_t i = 0; i < dataSize && totalProcessed < 64; ++i) {
-                int64_t value = reverseEndian(data[i]);
-                for (int pos = 0; pos < entriesPerLong && totalProcessed < 64; ++pos) {
-                    int index = (value >> (pos * bitsPerEntry)) & mask;
-                    if (index < paletteSize) {
-                        biomeData[totalProcessed] = Biome::GetId(biomePalette[index]);
-                    }
-                    totalProcessed++;
-                }
+        // 旧版格式(1.18~1.19)：biomes 是 INT_ARRAY，64 个 biome registry ID
+        if (bio->type == TagType::INT_ARRAY) {
+            const int* ids = reinterpret_cast<const int*>(bio->payload.data());
+            size_t count = bio->payload.size() / sizeof(int);
+            biomeData.resize(64, 0);
+            for (size_t i = 0; i < count && i < 64; ++i) {
+                int rawId = ids[i];
+                // 用 ID 生成占位名，确保 biome 被注册
+                std::string name = "minecraft:legacy_biome_";
+                name += std::to_string(rawId);
+                biomeData[i] = Biome::GetId(name);
             }
         }
-        else if (!biomePalette.empty()) {
-            int defaultBid = Biome::GetId(biomePalette[0]);
-            biomeData.assign(64, defaultBid);
+        // 新版格式(1.21+)：biomes 是 COMPOUND，含 palette + data
+        else {
+            try {
+                std::vector<std::string> biomePalette = getBiomePalette(bio);
+                auto dataTag = getChildByName(bio, "data");
+
+                if (dataTag && dataTag->type == TagType::LONG_ARRAY) {
+                    int paletteSize = biomePalette.size();
+                    int bitsPerEntry = (paletteSize > 1) ? static_cast<int>(std::ceil(std::log2(paletteSize))) : 1;
+                    int entriesPerLong = 64 / bitsPerEntry;
+                    int mask = (1 << bitsPerEntry) - 1;
+
+                    biomeData.resize(64, 0);
+                    int totalProcessed = 0;
+
+                    const int64_t* data = reinterpret_cast<const int64_t*>(dataTag->payload.data());
+                    size_t dataSize = dataTag->payload.size() / sizeof(int64_t);
+
+                    for (size_t i = 0; i < dataSize && totalProcessed < 64; ++i) {
+                        int64_t value = reverseEndian(data[i]);
+                        for (int pos = 0; pos < entriesPerLong && totalProcessed < 64; ++pos) {
+                            int index = (value >> (pos * bitsPerEntry)) & mask;
+                            if (index < paletteSize) {
+                                biomeData[totalProcessed] = Biome::GetId(biomePalette[index]);
+                            }
+                            totalProcessed++;
+                        }
+                    }
+                }
+                else if (!biomePalette.empty()) {
+                    int defaultBid = Biome::GetId(biomePalette[0]);
+                    biomeData.assign(64, defaultBid);
+                }
+            }
+            catch (const std::exception& e) {
+                std::cerr << "Biome palette parsing failed, using defaults: " << e.what() << std::endl;
+            }
         }
     }
 
@@ -227,6 +255,10 @@ void ProcessSection(int chunkX, int chunkZ, int sectionY, const NbtTagPtr& secti
         std::move(biomeData),         // biomeData
         std::move(blockPalette)       // blockPalette
     };
+}
+catch (const std::exception& e) {
+    std::cerr << "Error in ProcessSection (" << chunkX << ", " << chunkZ << ", " << sectionY << "): " << e.what() << std::endl;
+}
 }
 
 // 新函数：清理指定 (chunkX, chunkZ) 的所有 sectionCache 条目

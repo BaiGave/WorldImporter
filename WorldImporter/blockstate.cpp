@@ -194,9 +194,21 @@ std::string SortedVariantKey(const std::string& key) {
 // JSON 文件读取函数
 // --------------------------------------------------------------------------------
 nlohmann::json GetBlockstateJson(const std::string& namespaceName, const std::string& blockId) {
-    std::lock_guard<std::mutex> lock(GlobalCache::cacheMutex);
+    // 使用快速查找索引(O(1)), 回退到线性扫描(O(N))
+    {
+        std::shared_lock<std::shared_mutex> lock(GlobalCache::cacheMutex);
+        std::string indexKey = std::string("blockstates:") + namespaceName + ":" + blockId;
+        auto it = GlobalCache::blockstateIndex.find(indexKey);
+        if (it != GlobalCache::blockstateIndex.end()) {
+            auto cacheIt = GlobalCache::blockstates.find(it->second);
+            if (cacheIt != GlobalCache::blockstates.end()) {
+                return cacheIt->second;
+            }
+        }
+    }
 
-    // 按照 JAR 文件的加载顺序逐个查找
+    // 回退: 线性扫描(索引不应遗漏, 此处为安全保障)
+    std::shared_lock<std::shared_mutex> lock(GlobalCache::cacheMutex);
     for (size_t i = 0; i < GlobalCache::jarOrder.size(); ++i) {
         const std::string& modId = GlobalCache::jarOrder[i];
         std::string cacheKey = modId + ":" + namespaceName + ":" + blockId;
