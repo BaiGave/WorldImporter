@@ -35,6 +35,12 @@ namespace GlobalCache {
 	// 色图缓存 [modId:namespace:colormap_name -> PNG数据]
 	extern std::unordered_map<std::string, std::vector<unsigned char>> colormaps;
 
+	// CTM 资源缓存(OptiFine 连接材质)
+	// ctmProperties: [modId:namespace:propertiesPath -> properties 文本]
+	extern std::unordered_map<std::string, std::string> ctmProperties;
+	// ctmTextures: [modId:namespace:ctmPngPath -> PNG 数据]
+	extern std::unordered_map<std::string, std::vector<unsigned char>> ctmTextures;
+
 	// ========= 快速查找索引 =========
 	// 直接查找键: "blockstates:<namespace>:<resourcePath>" -> 对应完整缓存键
 	extern std::unordered_map<std::string, std::string> blockstateIndex;
@@ -43,6 +49,10 @@ namespace GlobalCache {
 	extern std::unordered_map<std::string, std::string> mcmetaIndex;
 	extern std::unordered_map<std::string, std::string> biomeIndex;
 	extern std::unordered_map<std::string, std::string> colormapIndex;
+
+	// CTM 快速查找索引
+	extern std::unordered_map<std::string, std::string> ctmPropertiesIndex;
+	extern std::unordered_map<std::string, std::string> ctmTexturesIndex;
 
 	// 同步原语
 	extern std::once_flag initFlag;

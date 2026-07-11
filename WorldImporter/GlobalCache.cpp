@@ -19,6 +19,7 @@
 #include "GlobalCache.h"
 #include "JarReader.h"
 #include "fileutils.h"
+#include "CTM.h"
 #include <iostream>
 #include <filesystem> 
 #include <chrono>
@@ -52,6 +53,10 @@ namespace GlobalCache {
     std::unordered_map<std::string, nlohmann::json> biomes;                  // 生物群系缓存
     std::unordered_map<std::string, std::vector<unsigned char>> colormaps;   // 颜色映射缓存
 
+    // CTM 资源缓存
+    std::unordered_map<std::string, std::string> ctmProperties;            // CTM properties 文本
+    std::unordered_map<std::string, std::vector<unsigned char>> ctmTextures; // CTM tile 贴图
+
     // 快速查找索引: "resourceType:namespace:resourcePath" -> 完整缓存键
     std::unordered_map<std::string, std::string> blockstateIndex;
     std::unordered_map<std::string, std::string> modelIndex;
@@ -59,6 +64,10 @@ namespace GlobalCache {
     std::unordered_map<std::string, std::string> mcmetaIndex;
     std::unordered_map<std::string, std::string> biomeIndex;
     std::unordered_map<std::string, std::string> colormapIndex;
+
+    // CTM 快速查找索引
+    std::unordered_map<std::string, std::string> ctmPropertiesIndex;
+    std::unordered_map<std::string, std::string> ctmTexturesIndex;
 
     // 同步原语
     std::once_flag initFlag;       // 确保初始化只执行一次
@@ -82,6 +91,8 @@ struct TaskResult {
     std::unordered_map<std::string, nlohmann::json> localMcmetas;                 // 本地材质元数据
     std::unordered_map<std::string, nlohmann::json> localBiomes;                  // 本地生物群系
     std::unordered_map<std::string, std::vector<unsigned char>> localColormaps;   // 本地颜色映射
+    std::unordered_map<std::string, std::string> localCtmProperties;              // 本地 CTM properties
+    std::unordered_map<std::string, std::vector<unsigned char>> localCtmTextures; // 本地 CTM 贴图
 };
 
 //========== 辅助函数 ==========
@@ -243,7 +254,9 @@ void InitializeAllCaches() {
                         taskResults[idx].localModels,
                         taskResults[idx].localMcmetas,
                         taskResults[idx].localBiomes,
-                        taskResults[idx].localColormaps
+                        taskResults[idx].localColormaps,
+                        taskResults[idx].localCtmProperties,
+                        taskResults[idx].localCtmTextures
                     );
                 } catch (const std::exception& e) {
                     std::cerr << "Error processing jar file for " << currentModId 
@@ -352,6 +365,30 @@ void InitializeAllCaches() {
                         GlobalCache::mcmetaIndex.emplace(indexKey, cacheKey);
                     }
                 }
+                // 合并 CTM properties
+                for (auto& pair : result.localCtmProperties) {
+                    std::string cacheKey = currentModId + ":" + pair.first;
+                    if (GlobalCache::ctmProperties.find(cacheKey) == GlobalCache::ctmProperties.end()) {
+                        GlobalCache::ctmProperties.insert({ cacheKey, std::move(pair.second) });
+                    }
+                    size_t firstColon = pair.first.find(':');
+                    if (firstColon != std::string::npos) {
+                        std::string indexKey = std::string("ctmproperties:") + pair.first;
+                        GlobalCache::ctmPropertiesIndex.emplace(indexKey, cacheKey);
+                    }
+                }
+                // 合并 CTM 贴图
+                for (auto& pair : result.localCtmTextures) {
+                    std::string cacheKey = currentModId + ":" + pair.first;
+                    if (GlobalCache::ctmTextures.find(cacheKey) == GlobalCache::ctmTextures.end()) {
+                        GlobalCache::ctmTextures.insert({ cacheKey, std::move(pair.second) });
+                    }
+                    size_t firstColon = pair.first.find(':');
+                    if (firstColon != std::string::npos) {
+                        std::string indexKey = std::string("ctmtextures:") + pair.first;
+                        GlobalCache::ctmTexturesIndex.emplace(indexKey, cacheKey);
+                    }
+                }
             }
         }
 
@@ -366,6 +403,11 @@ void InitializeAllCaches() {
             << " - Models: " << GlobalCache::models.size() << "\n"
             << " - Biomes: " << GlobalCache::biomes.size() << "\n"
             << " - Colormaps: " << GlobalCache::colormaps.size() << "\n"
+            << " - CTM properties: " << GlobalCache::ctmProperties.size() << "\n"
+            << " - CTM textures: " << GlobalCache::ctmTextures.size() << "\n"
             << " - Time: " << ms << "ms" << std::endl;
+
+        // 解析 CTM 规则并构建索引(在所有资源合并完成后)
+        InitializeCtmRules();
         });
 }

@@ -319,6 +319,18 @@ bool ParseMcmetaFile(const std::string& cacheKey, MaterialType& outType, float& 
         outType = CTM;
         return true;
     }
+
+    // Fusion/ConnectedTextures 风格的连接材质：
+    // {
+    //   "fusion": { "type": "connecting", "layout": "full" }
+    // }
+    if (mcmetaData.contains("fusion") && mcmetaData["fusion"].is_object()) {
+        const auto& fusionData = mcmetaData["fusion"];
+        if (fusionData.value("type", "") == "connecting") {
+            outType = CTM;
+            return true;
+        }
+    }
     
     // 其他类型的.mcmeta文件,保持为普通材质
     return true;

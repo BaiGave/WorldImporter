@@ -149,6 +149,7 @@
     <ClCompile Include="ChunkGenerator.cpp" />
     <ClCompile Include="ChunkGroupAllocator.cpp" />
     <ClCompile Include="ChunkLoader.cpp" />
+    <ClCompile Include="CTM.cpp" />
     <ClCompile Include="config.cpp" />
     <ClCompile Include="init.cpp" />
     <ClCompile Include="locutil.cpp" />
@@ -176,6 +177,7 @@
     <ClInclude Include="block.h" />
     <ClInclude Include="blockstate.h" />
     <ClInclude Include="chunk.h" />
+    <ClInclude Include="CTM.h" />
     <ClInclude Include="ChunkGenerator.h" />
     <ClInclude Include="ChunkGroupAllocator.h" />
     <ClInclude Include="ChunkLoader.h" />
@@ -183,6 +185,7 @@
     <ClInclude Include="Fluid.h" />
     <ClInclude Include="init.h" />
     <ClInclude Include="locutil.h" />
+    <ClInclude Include="logutil.h" />
     <ClInclude Include="decompressor.h" />
     <ClInclude Include="EntityBlock.h" />
     <ClInclude Include="hashutils.h" />

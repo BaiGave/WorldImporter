@@ -8,6 +8,7 @@
 #include "model.h"
 #include "Fluid.h"
 #include "LODManager.h"
+#include "CTM.h"
 #include "texture.h"
 #include <iomanip>
 #include <sstream>
@@ -128,9 +129,38 @@ void ChunkGenerator::ProcessBlockForModel(ModelData& chunkModel, int x, int y, i
 
     if (blockModel.vertices.empty()) return;
 
+    // Yuushya models already select connected geometry and fallback textures
+    // through block states, so preserve their pre-CTM import path.
+    bool useCtm = HasCtmRules() && ns != "yuushya";
+    if (useCtm) {
+        ApplyCtmToBlockModel(blockModel, ns, blockName, x, y, z);
+    }
+
     // 剔除被遮挡的面
     std::vector<int> validFaceIndices;
     validFaceIndices.reserve(blockModel.faces.size());
+
+    // CTM 连接的同类方块之间应剔除内部面(玻璃等非固体方块不在 solids 表中,
+    // 默认会被当作 air 而保留内部面,导致缝隙)
+    std::string curBaseName = ns + ":" + blockName;
+    size_t bracketPos = curBaseName.find('[');
+    if (bracketPos != std::string::npos) {
+        curBaseName = curBaseName.substr(0, bracketPos);
+    }
+    auto isCtmConnected = [&](FaceType dir) -> bool {
+        if (!useCtm) return false;
+        int nx = x, ny = y, nz = z;
+        if (dir == FaceType::DOWN) ny--;
+        else if (dir == FaceType::UP) ny++;
+        else if (dir == FaceType::NORTH) nz--;
+        else if (dir == FaceType::SOUTH) nz++;
+        else if (dir == FaceType::WEST) nx--;
+        else if (dir == FaceType::EAST) nx++;
+        else return false;
+        int nid = GetBlockId(nx, ny, nz);
+        Block nb = GetBlockById(nid);
+        return nb.GetNameAndNameSpaceWithoutState() == curBaseName;
+    };
 
     // 遍历所有面
     for (size_t faceIdx = 0; faceIdx < blockModel.faces.size(); ++faceIdx) {
@@ -149,6 +179,10 @@ void ChunkGenerator::ProcessBlockForModel(ModelData& chunkModel, int x, int y, i
             if (it != neighborIndexMap.end()) {
                 int neighborIdx = it->second;
                 if (!neighbors[neighborIdx]) { // 如果邻居存在(非空气),跳过该面
+                    continue;
+                }
+                // 邻居被当作 air,但实际是 CTM 连接的同类方块,剔除内部面
+                if (isCtmConnected(dir)) {
                     continue;
                 }
             }

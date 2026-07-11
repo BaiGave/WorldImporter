@@ -26,6 +26,23 @@ namespace {
         }
         return parts;
     }
+
+    // 资源包有时会把 assets/ 或 data/ 包在一个顶层目录里，
+    // 例如 glass_pane_culling_fix/assets/minecraft/...
+    // 这里把这种路径规范化为 assets/minecraft/...，但读取 zip 内容时仍使用原始路径。
+    std::string findLogicalRootPath(const std::string& path, const std::string& rootDir) {
+        if (path.rfind(rootDir, 0) == 0) {
+            return path;
+        }
+
+        const std::string marker = "/" + rootDir;
+        size_t markerPos = path.find(marker);
+        if (markerPos != std::string::npos) {
+            return path.substr(markerPos + 1);
+        }
+
+        return "";
+    }
 }
 
 //将换行符替换为 JSON 能够识别的转义字符
@@ -168,7 +185,9 @@ void JarReader::cacheAllResources(
     std::unordered_map<std::string, nlohmann::json>& modelCache,
     std::unordered_map<std::string, nlohmann::json>& mcmetaCache,
     std::unordered_map<std::string, nlohmann::json>& biomeCache,
-    std::unordered_map<std::string, std::vector<unsigned char>>& colormapCache)
+    std::unordered_map<std::string, std::vector<unsigned char>>& colormapCache,
+    std::unordered_map<std::string, std::string>& ctmPropertiesCache,
+    std::unordered_map<std::string, std::vector<unsigned char>>& ctmTexturesCache)
 {
     if (!zipFile) {
         std::cerr << "Zip file is not open." << std::endl;
@@ -181,7 +200,17 @@ void JarReader::cacheAllResources(
         const char* name = zip_get_name(zipFile, i, 0);
         if (!name) continue;
 
-        std::string filePath(name);
+        std::string archiveFilePath(name);
+        std::string filePath = archiveFilePath;
+
+        std::string logicalAssetsPath = findLogicalRootPath(archiveFilePath, "assets/");
+        std::string logicalDataPath = findLogicalRootPath(archiveFilePath, "data/");
+        if (!logicalAssetsPath.empty()) {
+            filePath = logicalAssetsPath;
+        }
+        else if (!logicalDataPath.empty()) {
+            filePath = logicalDataPath;
+        }
 
         // 处理 assets/ 目录下的资源
         if (filePath.find("assets/") == 0) {
@@ -206,7 +235,7 @@ void JarReader::cacheAllResources(
                          // 防止重复处理
                          if (colormapCache.find(cacheKey) == colormapCache.end()) {
                              // 读取二进制数据
-                             auto data = getBinaryFileContent(filePath);
+                             auto data = getBinaryFileContent(archiveFilePath);
                              if (!data.empty()) {
                                  colormapCache.emplace(cacheKey, std::move(data));
                              }
@@ -242,7 +271,7 @@ void JarReader::cacheAllResources(
                 std::string cacheKey = namespaceName + ":" + resourcePath;
 
                 if (blockstateCache.find(cacheKey) == blockstateCache.end()) {
-                    std::string content = this->getFileContent(filePath);
+                    std::string content = this->getFileContent(archiveFilePath);
                     if (!content.empty()) {
                         try {
                             blockstateCache.emplace(cacheKey, nlohmann::json::parse(content));
@@ -263,7 +292,7 @@ void JarReader::cacheAllResources(
                 std::string cacheKey = namespaceName + ":" + modelPath;
 
                 if (modelCache.find(cacheKey) == modelCache.end()) {
-                    std::string content = this->getFileContent(filePath);
+                    std::string content = this->getFileContent(archiveFilePath);
                     if (!content.empty()) {
                         try {
                             modelCache.emplace(cacheKey, nlohmann::json::parse(content));
@@ -288,7 +317,7 @@ void JarReader::cacheAllResources(
                     std::string cacheKey = namespaceName + ":" + metaPath;
 
                     if (mcmetaCache.find(cacheKey) == mcmetaCache.end()) {
-                        std::string content = this->getFileContent(filePath);
+                        std::string content = this->getFileContent(archiveFilePath);
                         if (!content.empty()) {
                             try {
                                 mcmetaCache.emplace(cacheKey, nlohmann::json::parse(content));
@@ -303,12 +332,76 @@ void JarReader::cacheAllResources(
                     std::string cacheKey = namespaceName + ":" + metaPath;
 
                     if (mcmetaCache.find(cacheKey) == mcmetaCache.end()) {
-                        std::string content = this->getFileContent(filePath);
+                        std::string content = this->getFileContent(archiveFilePath);
                         if (!content.empty()) {
                             try {
                                 mcmetaCache.emplace(cacheKey, nlohmann::json::parse(content));
                             } catch (const std::exception& e) {
                                 std::cerr << ".mcmeta JSON Error: " << filePath << " - " << e.what() << std::endl;
+                            }
+                        }
+                    }
+                }
+            }
+            // 处理 OptiFine CTM 资源: optifine/ctm/**/*.properties 和 *.png
+            else if (filePath.find("/optifine/ctm/") != std::string::npos)
+            {
+                // .properties 规则文件
+                if (filePath.size() > 11 &&
+                    filePath.substr(filePath.size() - 11) == ".properties")
+                {
+                    // 资源路径: 去掉 assets/<ns>/ 前缀和 .properties 后缀
+                    size_t resStart = filePath.find("/optifine/ctm/", nsEnd);
+                    std::string resourcePath = filePath.substr(resStart + 1, filePath.size() - resStart - 1 - 11);
+                    // resourcePath 形如 optifine/ctm/glass/glass/glass
+                    std::string cacheKey = namespaceName + ":" + resourcePath + ".properties";
+                    if (ctmPropertiesCache.find(cacheKey) == ctmPropertiesCache.end()) {
+                        std::string content = this->getFileContent(archiveFilePath);
+                        if (!content.empty()) {
+                            ctmPropertiesCache.emplace(cacheKey, std::move(content));
+                        }
+                    }
+                }
+                // CTM tile 贴图 png
+                else if (filePath.size() > 4 &&
+                    filePath.substr(filePath.size() - 4) == ".png")
+                {
+                    size_t resStart = filePath.find("/optifine/ctm/", nsEnd);
+                    std::string resourcePath = filePath.substr(resStart + 1, filePath.size() - resStart - 1 - 4);
+                    // resourcePath 形如 optifine/ctm/glass/glass/0
+                    std::string cacheKey = namespaceName + ":" + resourcePath;
+                    if (ctmTexturesCache.find(cacheKey) == ctmTexturesCache.end()) {
+                        zip_file_t* file = zip_fopen_index(zipFile, i, 0);
+                        if (file) {
+                            zip_stat_t fileStat;
+                            if (zip_stat_index(zipFile, i, 0, &fileStat) == 0) {
+                                std::vector<unsigned char> data(fileStat.size);
+                                if (zip_fread(file, data.data(), fileStat.size) == fileStat.size) {
+                                    ctmTexturesCache.emplace(cacheKey, std::move(data));
+                                }
+                            }
+                            zip_fclose(file);
+                        }
+                    }
+                }
+                // optifine/ctm 下的 .mcmeta (动态 CTM tile,如 sea_lantern)
+                else if (filePath.size() > 7 &&
+                    filePath.substr(filePath.size() - 7) == ".mcmeta")
+                {
+                    size_t resStart = filePath.find("/optifine/ctm/", nsEnd);
+                    std::string metaPathWithPng = filePath.substr(resStart + 1, filePath.size() - resStart - 1 - 7);
+                    // 去掉 .png 后缀
+                    size_t pngPos = metaPathWithPng.find(".png");
+                    std::string metaPath = (pngPos != std::string::npos)
+                        ? metaPathWithPng.substr(0, pngPos) : metaPathWithPng;
+                    std::string cacheKey = namespaceName + ":" + metaPath;
+                    if (mcmetaCache.find(cacheKey) == mcmetaCache.end()) {
+                        std::string content = this->getFileContent(archiveFilePath);
+                        if (!content.empty()) {
+                            try {
+                                mcmetaCache.emplace(cacheKey, nlohmann::json::parse(content));
+                            } catch (const std::exception& e) {
+                                std::cerr << "CTM .mcmeta JSON Error: " << filePath << " - " << e.what() << std::endl;
                             }
                         }
                     }
@@ -347,7 +440,7 @@ void JarReader::cacheAllResources(
 
                 if (biomeCache.find(cacheKey) == biomeCache.end()) {
                     // 读取并解析 JSON
-                    std::string content = getFileContent(filePath);
+                    std::string content = getFileContent(archiveFilePath);
                     if (!content.empty()) {
                         try {
                             biomeCache.emplace(cacheKey, nlohmann::json::parse(content));

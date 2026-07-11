@@ -25,6 +25,7 @@ SOURCES=(
     ChunkGroupAllocator.cpp
     ChunkLoader.cpp
     config.cpp
+    CTM.cpp
     decompressor.cpp
     EntityBlock.cpp
     fileutils.cpp

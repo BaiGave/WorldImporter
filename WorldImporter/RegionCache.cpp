@@ -47,7 +47,8 @@ static std::string FindLegacyDimRegion(const std::string& base) {
 }
 
 // 根据配置的选择维度和存档路径，返回对应的 region 目录路径
-// 同时支持 26.1+ 新布局(dimensions/<ns>/<name>/region)与旧布局(region/DIM-1/DIM1/DIM<number>)
+// 支持新版MC(1.21.4+)的 dimensions/<ns>/<dim>/region/ 结构,
+// 同时兼容旧版的 /region、/DIM-1/region、/DIM1/region 结构
 static std::string GetRegionDirectory() {
     const std::string& sel = config.selectedDimension;
     const std::string& base = config.worldPath;

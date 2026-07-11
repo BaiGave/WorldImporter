@@ -110,6 +110,9 @@
     <ClCompile Include="blockstate.cpp">
       <Filter>源文件\Core\Model</Filter>
     </ClCompile>
+    <ClCompile Include="CTM.cpp">
+      <Filter>源文件\Core\Model</Filter>
+    </ClCompile>
     <ClCompile Include="biome.cpp">
       <Filter>源文件\World</Filter>
     </ClCompile>
@@ -197,6 +200,9 @@
     <ClInclude Include="blockstate.h">
       <Filter>头文件\Core\Model</Filter>
     </ClInclude>
+    <ClInclude Include="CTM.h">
+      <Filter>头文件\Core\Model</Filter>
+    </ClInclude>
     <ClInclude Include="biome.h">
       <Filter>头文件\World</Filter>
     </ClInclude>
@@ -256,6 +262,9 @@
     </ClInclude>
     <ClInclude Include="init.h">
       <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="logutil.h">
+      <Filter>头文件\Utils</Filter>
     </ClInclude>
     <ClInclude Include="MemoryMonitor.h">
       <Filter>头文件\Tools</Filter>

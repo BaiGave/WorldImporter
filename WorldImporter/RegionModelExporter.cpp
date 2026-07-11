@@ -4,6 +4,7 @@
 #include "include/stb_image.h"
 #include "LODManager.h"
 #include "biome.h"
+#include "logutil.h"
 #include <regex>
 #include <tuple>
 #include <future>
@@ -25,6 +26,11 @@ using namespace std::chrono;  // 新增:方便使用 chrono
 
 
 void RegionModelExporter::ExportModels(const string& outputName) {
+    auto export_t0 = std::chrono::high_resolution_clock::now();
+    std::cout << "========== 区域模型导出开始 ==========" << std::endl;
+    std::cout << "  输出名: " << outputName << std::endl;
+    std::cout.flush();
+
     // 初始化任务监控
     auto& monitor = GetTaskMonitor();
     monitor.Reset();
@@ -34,6 +40,10 @@ void RegionModelExporter::ExportModels(const string& outputName) {
     const int xStart = config.minX, xEnd = config.maxX;
     const int yStart = config.minY, yEnd = config.maxY;
     const int zStart = config.minZ, zEnd = config.maxZ;
+    std::cout << "  区域范围 X[" << xStart << "," << xEnd << "] "
+              << "Y[" << yStart << "," << yEnd << "] "
+              << "Z[" << zStart << "," << zEnd << "]" << std::endl;
+    std::cout.flush();
 
     // 使用 Config 中存储的区块和 Section 坐标范围
     const int chunkXStart = config.chunkXStart;
@@ -57,23 +67,26 @@ void RegionModelExporter::ExportModels(const string& outputName) {
     monitor.UpdateProgress("区块LOD计算", 0, totalChunks);
 
     // 预先计算所有区块的LOD等级
+    { CrafterLog::StageTimer t("计算区块LOD等级");
     ChunkLoader::CalculateChunkLODs(expandedChunkXStart, expandedChunkXEnd, expandedChunkZStart, expandedChunkZEnd,
         sectionYStart, sectionYEnd);
-    
+    }
     monitor.UpdateProgress("区块LOD计算", totalChunks, totalChunks, "LOD计算完成");
 
     // 根据区块数量自动拆分批次(内部会先生成区块组)
     monitor.SetStatus(TaskStatus::GENERATING_CHUNK_BATCHES, "生成区块批次");
     const size_t MAX_TASKS_PER_BATCH = config.maxTasksPerBatch; // 使用配置中的值
+    { CrafterLog::StageTimer t("生成区块批次");
     ChunkGroupAllocator::GenerateChunkBatches(chunkXStart, chunkXEnd, chunkZStart, chunkZEnd,sectionYStart, sectionYEnd, MAX_TASKS_PER_BATCH);
+    }
 
     // 更新批次生成状态
     size_t totalBatches = ChunkGroupAllocator::g_chunkBatches.size();
     size_t totalChunkGroups = ChunkGroupAllocator::g_chunkGroups.size();
-    
+
     // 初始化生物群系地图尺寸
     Biome::InitializeBiomeMap(xStart, zStart, xEnd, zEnd);
-    
+
     // 定义辅助:统计当前已加载的区块(忽略 SectionY)
     auto CountLoadedChunks = []() -> size_t {
         std::shared_lock<std::shared_mutex> readLock(g_chunkSectionInfoMapMutex);
@@ -87,13 +100,14 @@ void RegionModelExporter::ExportModels(const string& outputName) {
         return chunkSet.size();
     };
 
-    // 用于跟踪已处理的区块，避免重复生成生物群系数据
+    // 用于跟踪已处理的区块,避免重复生成生物群系数据
     std::unordered_set<std::pair<int, int>, pair_hash> processedBiomeChunks;
     std::mutex biomeMutex;
 
     // 模型处理阶段
     ModelData finalMergedModel;
     std::unordered_map<string, string> uniqueMaterials;
+    std::unordered_map<string, int8_t> uniqueTints;
 
     // 计算所有批次的总任务数
     size_t totalTasksAllBatches = 0;
@@ -102,18 +116,20 @@ void RegionModelExporter::ExportModels(const string& outputName) {
             totalTasksAllBatches += group.tasks.size();
         }
     }
-    
+
     // 输出总体信息
-    std::cout << "总批次数: " << totalBatches 
-              << ", 总区块组数: " << totalChunkGroups 
+    std::cout << "总批次数: " << totalBatches
+              << ", 总区块组数: " << totalChunkGroups
               << ", 总任务数: " << totalTasksAllBatches << std::endl;
-    
+    std::cout << "========== 开始按批次处理 ==========" << std::endl;
+    std::cout.flush();
+
     // 全局进度计数器
     std::atomic<size_t> globalCompletedTasks{0};
-    
+
     // 初始化全局进度
     monitor.UpdateProgress("总体进度", 0, totalTasksAllBatches);
-    
+
     auto processModel = [](const ChunkTask& task) -> ModelData {
         // 如果 activeLOD 为 false,则始终生成完整模型
         if (!config.activeLOD) {
@@ -148,10 +164,14 @@ void RegionModelExporter::ExportModels(const string& outputName) {
         };
 
     // 线程安全的材质记录
-    auto recordMaterials = [&](const std::unordered_map<string, string>& newMaterials) {
+    auto recordMaterials = [&](const std::unordered_map<string, string>& newMaterials,
+                                const std::unordered_map<string, int8_t>& newTints) {
         std::lock_guard<std::mutex> lock(materialsMutex);
-        uniqueMaterials.insert(newMaterials.begin(), newMaterials.end());
-        };
+        for (const auto& nm : newMaterials)
+            uniqueMaterials.emplace(nm.first, nm.second);
+        for (const auto& nt : newTints)
+            if (nt.second != -1) uniqueTints.emplace(nt.first, nt.second);
+    };
 
     // 按批次处理区块组
     size_t batchId = 0;
@@ -163,11 +183,13 @@ void RegionModelExporter::ExportModels(const string& outputName) {
     for (size_t current_batch_idx = 0; current_batch_idx < ChunkGroupAllocator::g_chunkBatches.size(); ++current_batch_idx) {
         const auto& batch = ChunkGroupAllocator::g_chunkBatches[current_batch_idx];
         batchId = current_batch_idx + 1;
-        
+
         // 更新批次进度
         monitor.SetStatus(TaskStatus::PROCESSING_BATCH, "处理批次 " + to_string(batchId) + "/" + to_string(totalBatches));
         monitor.UpdateProgress("批次处理", current_batch_idx + 1, totalBatches);
-        
+        std::cout << "▶ 批次 " << batchId << "/" << totalBatches << " 开始" << std::endl;
+        std::cout.flush();
+
         // ---------- 加载当前批次(含一圈边界) ----------
         monitor.SetStatus(TaskStatus::LOADING_CHUNKS, "加载批次 " + to_string(batchId) + " 区块");
         int bExpXStart, bExpXEnd, bExpZStart, bExpZEnd;
@@ -185,13 +207,13 @@ void RegionModelExporter::ExportModels(const string& outputName) {
         // ---------- 处理当前批次 ----------
         monitor.SetStatus(TaskStatus::GENERATING_MODELS, "生成批次 " + to_string(batchId) + " 模型");
         const auto& groupsInBatch = batch.groups;
-        
+
         // 计算当前批次的任务数
         size_t tasksInCurrentBatch = 0;
         for (const auto& group : groupsInBatch) {
             tasksInCurrentBatch += group.tasks.size();
         }
-        
+
         // 重置当前批次的完成任务计数
         std::atomic<size_t> batchCompletedTasks{0};
 
@@ -211,6 +233,7 @@ void RegionModelExporter::ExportModels(const string& outputName) {
                     groupModel.faces.reserve(8192 * group.tasks.size());
                     groupModel.uvCoordinates.reserve(4096 * group.tasks.size());
                     std::unordered_map<string, string> localMaterials;
+                    std::unordered_map<string, int8_t> localTints;
 
                     // 记录当前组内需要处理的任务数
                     size_t tasksInCurrentGroup = group.tasks.size();
@@ -244,34 +267,36 @@ void RegionModelExporter::ExportModels(const string& outputName) {
                         } else {
                             MergeModelsDirectly(groupModel, chunkModel);
                         }
-                        
+
                         // 更新批次完成任务计数
                         batchCompletedTasks.fetch_add(1);
                         processedInGroup++;
-                        
+
                         // 更新全局完成任务计数
                         size_t globalCompleted = globalCompletedTasks.fetch_add(1) + 1;
-                        
+
                         // 每100个任务或组内处理完成时才更新一次全局进度
-                        if (globalCompleted % 100 == 0 || 
-                            globalCompleted == totalTasksAllBatches || 
+                        if (globalCompleted % 100 == 0 ||
+                            globalCompleted == totalTasksAllBatches ||
                             processedInGroup == tasksInCurrentGroup) {
-                            
+
                             // 使用互斥锁确保同一时间只有一个线程更新进度
                             {
                                 std::lock_guard<std::mutex> progressLock(progressMutex);
                                 // 更新全局进度
                                 monitor.UpdateProgress("总体进度", globalCompleted, totalTasksAllBatches);
-                                
+
                                 // 同时显示当前批次进度
                                 size_t batchCompleted = batchCompletedTasks.load();
-                                std::string batchInfo = "批次 " + to_string(batchId) + "/" + to_string(totalBatches) + 
+                                std::string batchInfo = "批次 " + to_string(batchId) + "/" + to_string(totalBatches) +
                                                       " (" + to_string(batchCompleted) + "/" + to_string(tasksInCurrentBatch) + ")";
                                 monitor.UpdateProgress("批次进度", batchCompleted, tasksInCurrentBatch, batchInfo);
                             }
                         }
                     }
                     if (groupModel.vertices.empty()) continue;
+                    for (const auto& mat : groupModel.materials)
+                        if (mat.tintIndex != -1) localTints[mat.name] = mat.tintIndex;
                     if (config.exportFullModel) {
                         mergeToFinalModel(std::move(groupModel));
                     } else {
@@ -279,24 +304,24 @@ void RegionModelExporter::ExportModels(const string& outputName) {
                         {
                             monitor.SetStatus(TaskStatus::DEDUPLICATING_VERTICES, "DeduplicateVertices");
                             ModelDeduplicator::DeduplicateVertices(groupModel);
-                            
+
                             monitor.SetStatus(TaskStatus::DEDUPLICATING_UV, "DeduplicateUV");
                             ModelDeduplicator::DeduplicateUV(groupModel);
-                            
+
                             monitor.SetStatus(TaskStatus::DEDUPLICATING_FACES, "DeduplicateFaces");
                             ModelDeduplicator::DeduplicateFaces(groupModel);
-                            
+
                             if (config.useGreedyMesh) {
                                 monitor.SetStatus(TaskStatus::GREEDY_MESHING, "GreedyMesh");
                                 ModelDeduplicator::GreedyMesh(groupModel);
                             }
                         }
-                        
+
                         const string groupFileName = outputName +
                             "_x" + to_string(group.startX) +
                             "_z" + to_string(group.startZ);
                         CreateMultiModelFiles(groupModel, groupFileName, localMaterials, outputName);
-                        recordMaterials(localMaterials);
+                        recordMaterials(localMaterials, localTints);
                     }
                 }
             });
@@ -325,10 +350,21 @@ void RegionModelExporter::ExportModels(const string& outputName) {
         size_t afterUnload = CountLoadedChunks();
         size_t unloadedCnt = (beforeUnload > afterUnload) ? (beforeUnload - afterUnload) : 0;
 
-        std::cout << "批次" << batchId << "完成：新加载区块 " << newlyLoaded << "," << unloadedCnt << "," << afterUnload<<std::endl;
+        std::cout << "■ 批次 " << batchId << "/" << totalBatches
+                  << " 完成:新加载区块 " << newlyLoaded
+                  << ", 卸载 " << unloadedCnt
+                  << ", 剩余 " << afterUnload << std::endl;
+        std::cout.flush();
     }
 
+    std::cout << "========== 全部批次处理完成 ==========" << std::endl;
+    std::cout << "  统计:唯一材质 " << uniqueMaterials.size()
+              << ",唯一 tint " << uniqueTints.size()
+              << ",总顶点 " << finalMergedModel.vertices.size() << std::endl;
+    std::cout.flush();
+
     // 导出不同类型的生物群系颜色图片
+    { CrafterLog::StageTimer t("导出生物群系贴图");
     monitor.SetStatus(TaskStatus::EXPORTING_MODELS, "BiomeExportToPNG");
     Biome::ExportToPNG("foliage.png", BiomeColorType::Foliage);
     Biome::ExportToPNG("dry_foliage.png", BiomeColorType::DryFoliage);
@@ -337,20 +373,30 @@ void RegionModelExporter::ExportModels(const string& outputName) {
     Biome::ExportToPNG("waterFog.png", BiomeColorType::WaterFog);
     Biome::ExportToPNG("fog.png", BiomeColorType::Fog);
     Biome::ExportToPNG("sky.png", BiomeColorType::Sky);
+    }
     // 最终导出处理
     if (config.exportFullModel && !finalMergedModel.vertices.empty()) {
+        { CrafterLog::StageTimer t("顶点去重");
         monitor.SetStatus(TaskStatus::DEDUPLICATING_VERTICES, "DeduplicateModel");
         ModelDeduplicator::DeduplicateModel(finalMergedModel);
-        
+        }
+        { CrafterLog::StageTimer t("写入模型文件");
         monitor.SetStatus(TaskStatus::EXPORTING_MODELS, "CreateModelFiles");
         CreateModelFiles(finalMergedModel, outputName);
+        }
     }
     else if (!uniqueMaterials.empty()) {
+        { CrafterLog::StageTimer t("写入共享 mtl");
         monitor.SetStatus(TaskStatus::EXPORTING_MODELS, "CreateSharedMtlFile");
-        CreateSharedMtlFile(uniqueMaterials, outputName);
+        CreateSharedMtlFile(uniqueMaterials, outputName, uniqueTints);
+        }
     }
-    
+
     monitor.SetStatus(TaskStatus::COMPLETED, "Finished");
+    auto export_t1 = std::chrono::high_resolution_clock::now();
+    auto export_ms = std::chrono::duration_cast<std::chrono::milliseconds>(export_t1 - export_t0).count();
+    std::cout << "========== 区域模型导出完成 (" << export_ms << "ms) ==========" << std::endl;
+    std::cout.flush();
 }
 
 

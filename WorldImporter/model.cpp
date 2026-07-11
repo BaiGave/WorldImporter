@@ -1117,10 +1117,9 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                         bool flipX = uvRegion[0] > uvRegion[2]; // X方向镜像
                         bool flipY = uvRegion[1] > uvRegion[3]; // Y方向镜像
 
-                        // [DEBUG] 强制统一门的两面UV — 忽略X镜像
                         // 确保UV坐标范围正确(起点小于终点)
                         if (flipX) {
-                            std::swap(uvRegion[0], uvRegion[2]); // 只标准化不翻转
+                            std::swap(uvRegion[0], uvRegion[2]);
                         }
                         if (flipY) {
                             std::swap(uvRegion[1], uvRegion[3]);
@@ -1150,11 +1149,9 @@ void processElements(const nlohmann::json& modelJson, ModelData& data,
                             }
                         }
                         
-                        // [DEBUG] 跳过X镜像，门两面统一
                         if (flipX) {
-                            // 注释掉X镜像纠正
-                            // std::swap(uvCoords[0], uvCoords[3]);
-                            // std::swap(uvCoords[1], uvCoords[2]);
+                            std::swap(uvCoords[0], uvCoords[3]);
+                            std::swap(uvCoords[1], uvCoords[2]);
                         }
                         if (flipY) {
                             std::swap(uvCoords[0], uvCoords[1]);
