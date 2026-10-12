@@ -22,6 +22,7 @@ public:
 		std::unordered_map<std::string, std::vector<unsigned char>>& textureCache,
 		std::unordered_map<std::string, nlohmann::json>& blockstateCache,
 		std::unordered_map<std::string, nlohmann::json>& modelCache,
+		std::unordered_map<std::string, std::string>& modelAssetCache,
 		std::unordered_map<std::string, nlohmann::json>& mcmetaCache,
 		std::unordered_map<std::string, nlohmann::json>& biomeCache,
 		std::unordered_map<std::string, std::vector<unsigned char>>& colormapCache,

@@ -77,7 +77,6 @@ std::string readUtf8String(const std::vector<char>& data, size_t& index) {
     index += 2;
     if (index + length > data.size()) {
         return "";
-        throw std::out_of_range("Not enough data to read string content");
     }
     std::string str(data.begin() + index, data.begin() + index + length);
     index += length;
@@ -141,7 +140,7 @@ NbtTagPtr readTagPayload(const std::vector<char>& data, size_t& index, TagType t
             (static_cast<uint8_t>(data[index + 2]) << 8) |
             static_cast<uint8_t>(data[index + 3]);
         index += 4;
-        if (index + length > data.size()) throw std::out_of_range("Not enough data for TAG_Byte_Array payload");
+        if (length < 0 || static_cast<uint64_t>(length) > data.size() - index) throw std::out_of_range("Not enough data for TAG_Byte_Array payload");
         tag->payload.insert(tag->payload.end(), data.begin() + index, data.begin() + index + length);
         index += length;
         break;
@@ -154,6 +153,7 @@ NbtTagPtr readTagPayload(const std::vector<char>& data, size_t& index, TagType t
 
     case TagType::LIST: {
         // 读取元素类型和长度
+        if (index + 5 > data.size()) throw std::out_of_range("Not enough data for TAG_List header");  // 边界校验
         TagType listType = static_cast<TagType>(data[index++]);
         int32_t length = 0;
         for (int i = 0; i < 4; ++i) {
@@ -185,7 +185,7 @@ NbtTagPtr readTagPayload(const std::vector<char>& data, size_t& index, TagType t
             (static_cast<uint8_t>(data[index + 2]) << 8) |
             static_cast<uint8_t>(data[index + 3]);
         index += 4;
-        if (index + (4 * length) > data.size()) throw std::out_of_range("Not enough data for TAG_Int_Array payload");
+        if (length < 0 || static_cast<uint64_t>(length) > (data.size() - index) / 4) throw std::out_of_range("Not enough data for TAG_Int_Array payload");
         for (int i = 0; i < length; ++i) {
             for (int j = 0; j < 4; ++j) {
                 tag->payload.push_back(data[index++]);
@@ -200,7 +200,7 @@ NbtTagPtr readTagPayload(const std::vector<char>& data, size_t& index, TagType t
             (static_cast<uint8_t>(data[index + 2]) << 8) |
             static_cast<uint8_t>(data[index + 3]);
         index += 4;
-        if (index + (8 * length) > data.size()) throw std::out_of_range("Not enough data for TAG_Long_Array payload");
+        if (length < 0 || static_cast<uint64_t>(length) > (data.size() - index) / 8) throw std::out_of_range("Not enough data for TAG_Long_Array payload");
         for (int i = 0; i < length; ++i) {
             for (int j = 0; j < 8; ++j) {
                 tag->payload.push_back(data[index++]);
@@ -231,8 +231,10 @@ NbtTagPtr readTag(const std::vector<char>& data, size_t& index) {
     }
 
     // 读取标签名称(大端序16位无符号长度)
+    if (index + 2 > data.size()) throw std::out_of_range("Not enough data for tag name length");  // 边界校验
     uint16_t nameLength = (static_cast<uint8_t>(data[index]) << 8) | static_cast<uint8_t>(data[index + 1]);
     index += 2;
+    if (index + nameLength > data.size()) throw std::out_of_range("Not enough data for tag name");  // 边界校验
     std::string name(data.begin() + index, data.begin() + index + nameLength);
     index += nameLength;
 
@@ -293,7 +295,7 @@ NbtTagPtr readTag(const std::vector<char>& data, size_t& index) {
             (static_cast<uint8_t>(data[index + 2]) << 8) |
             static_cast<uint8_t>(data[index + 3]);
         index += 4;
-        if (index + length > data.size()) throw std::out_of_range("Not enough data for TAG_Byte_Array payload");
+        if (length < 0 || static_cast<uint64_t>(length) > data.size() - index) throw std::out_of_range("Not enough data for TAG_Byte_Array payload");
         tag->payload.insert(tag->payload.end(), data.begin() + index, data.begin() + index + length);
         index += length;
         break;
@@ -306,6 +308,7 @@ NbtTagPtr readTag(const std::vector<char>& data, size_t& index) {
 
     case TagType::LIST: {
         // 读取元素类型和长度
+        if (index + 5 > data.size()) throw std::out_of_range("Not enough data for TAG_List header");  // 边界校验
         TagType listType = static_cast<TagType>(data[index++]);
         int32_t length = 0;
         for (int i = 0; i < 4; ++i) {
@@ -337,7 +340,7 @@ NbtTagPtr readTag(const std::vector<char>& data, size_t& index) {
             (static_cast<uint8_t>(data[index + 2]) << 8) |
             static_cast<uint8_t>(data[index + 3]);
         index += 4;
-        if (index + (4 * length) > data.size()) throw std::out_of_range("Not enough data for TAG_Int_Array payload");
+        if (length < 0 || static_cast<uint64_t>(length) > (data.size() - index) / 4) throw std::out_of_range("Not enough data for TAG_Int_Array payload");
         for (int i = 0; i < length; ++i) {
             for (int j = 0; j < 4; ++j) {
                 tag->payload.push_back(data[index++]);
@@ -352,7 +355,7 @@ NbtTagPtr readTag(const std::vector<char>& data, size_t& index) {
             (static_cast<uint8_t>(data[index + 2]) << 8) |
             static_cast<uint8_t>(data[index + 3]);
         index += 4;
-        if (index + (8 * length) > data.size()) throw std::out_of_range("Not enough data for TAG_Long_Array payload");
+        if (length < 0 || static_cast<uint64_t>(length) > (data.size() - index) / 8) throw std::out_of_range("Not enough data for TAG_Long_Array payload");
         for (int i = 0; i < length; ++i) {
             for (int j = 0; j < 8; ++j) {
                 tag->payload.push_back(data[index++]);
@@ -497,8 +500,11 @@ std::vector<int> readIntArray(const std::vector<char>& payload) {
         // 例如:throw std::runtime_error("Invalid payload size for int array conversion.");
     }
     for (size_t i = 0; i < payload.size(); i += 4) {
-        int value = (payload[i] << 24) | (payload[i + 1] << 16) | (payload[i + 2] << 8) | (payload[i + 3]);
-        result.push_back(value);
+        uint32_t value = (static_cast<uint32_t>(static_cast<unsigned char>(payload[i])) << 24) |
+            (static_cast<uint32_t>(static_cast<unsigned char>(payload[i + 1])) << 16) |
+            (static_cast<uint32_t>(static_cast<unsigned char>(payload[i + 2])) << 8) |
+             static_cast<uint32_t>(static_cast<unsigned char>(payload[i + 3]));
+        result.push_back(static_cast<int32_t>(value));
     }
     return result;
 }
@@ -813,7 +819,10 @@ std::vector<int> getBlockStatesData(const NbtTagPtr& blockStatesTag, const std::
 
     // 根据调色板中方块状态的数量决定每个状态占用的位数
     size_t numBlockStates = blockPalette.size();
-    int bitsPerState = (numBlockStates <= 16) ? 4 : static_cast<int>(std::ceil(std::log2(numBlockStates)));
+    int bitsPerState = (numBlockStates <= 16) ? 4 : static_cast<int>(std::ceil(std::log2(static_cast<double>(numBlockStates))));
+    // 防御异常数据:位数限制在 [1, 32],避免位移运算未定义行为
+    if (bitsPerState < 1) bitsPerState = 1;
+    if (bitsPerState > 32) bitsPerState = 32;
     int statesPerLong = 64 / bitsPerState;  // 每个 long 能存储的状态数
 
     // 将 payload 数据转换为 long 数组,并根据需要反转字节顺序

@@ -7,4 +7,7 @@
 //zlib解压方法
 bool DecompressData(const std::vector<char>& chunkData, std::vector<char>& decompressedData);
 
+//gzip解压方法
+bool DecompressGzip(const std::vector<char>& chunkData, std::vector<char>& decompressedData);
+
 #endif // DECOMPRESSOR_H

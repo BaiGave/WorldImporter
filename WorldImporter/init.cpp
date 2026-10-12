@@ -60,7 +60,6 @@ void init() {
 
     // 配置加载完成后，再初始化缓存
     { CrafterLog::StageTimer t("初始化全部缓存"); InitializeAllCaches(); }
-    { CrafterLog::StageTimer t("加载固体方块表"); LoadSolidBlocks(config.solidBlocksFile); }
     { CrafterLog::StageTimer t("加载流体方块表"); LoadFluidBlocks(config.fluidsFile); }
     { CrafterLog::StageTimer t("注册流体纹理"); RegisterFluidTextures(); }
     { CrafterLog::StageTimer t("初始化全局方块调色板"); InitializeGlobalBlockPalette(); }

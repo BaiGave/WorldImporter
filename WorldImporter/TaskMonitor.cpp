@@ -41,8 +41,16 @@ std::string GetTimeStamp() {
     auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
         now.time_since_epoch()).count() % 1000;
     
+    // std::localtime 非线程安全(该函数会被模型线程并发调用),改用可重入版本
+    std::tm timeInfo{};
+#ifdef _WIN32
+    localtime_s(&timeInfo, &nowTime);
+#else
+    localtime_r(&nowTime, &timeInfo);
+#endif
+
     std::stringstream ss;
-    ss << std::put_time(std::localtime(&nowTime), "%H:%M:%S");
+    ss << std::put_time(&timeInfo, "%H:%M:%S");
     ss << '.' << std::setfill('0') << std::setw(3) << nowMs;
     return ss.str();
 }
@@ -102,25 +110,31 @@ std::string TaskMonitor::GetStatusDescription() const {
 
 // 限制进度更新频率的函数
 bool ShouldUpdateProgress(const std::string& category, int current, int total) {
+    // 该函数会被模型线程并发调用,静态表与读写都必须加锁
+    static std::mutex progressRateMutex;
     static std::unordered_map<std::string, std::chrono::steady_clock::time_point> lastUpdateTime;
     static std::unordered_map<std::string, int> lastPercentage;
-    
-    auto now = std::chrono::steady_clock::now();
-    
+
+    const auto now = std::chrono::steady_clock::now();
+    // 总数可能为 0(未知),按 100% 处理,避免除零
+    const int currentPercentage = (total > 0)
+        ? static_cast<int>((static_cast<float>(current) / static_cast<float>(total)) * 100)
+        : 100;
+
+    std::lock_guard<std::mutex> lock(progressRateMutex);
+
+    auto it = lastUpdateTime.find(category);
     // 首次更新或最后一次更新，始终显示
-    if (lastUpdateTime.find(category) == lastUpdateTime.end() || current >= total) {
+    if (it == lastUpdateTime.end() || (total > 0 && current >= total)) {
         lastUpdateTime[category] = now;
-        lastPercentage[category] = static_cast<int>((static_cast<float>(current) / total) * 100);
+        lastPercentage[category] = currentPercentage;
         return true;
     }
-    
-    // 计算当前百分比
-    int currentPercentage = static_cast<int>((static_cast<float>(current) / total) * 100);
-    
+
     // 时间间隔检查：至少100ms一次更新
     auto timeSinceLastUpdate = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now - lastUpdateTime[category]).count();
-    
+        now - it->second).count();
+
     // 进度变化检查：百分比至少变化1%才更新
     bool percentageChanged = (currentPercentage != lastPercentage[category]);
     
@@ -176,7 +190,7 @@ void TaskMonitor::UpdateProgress(const std::string& category, int current, int t
     // 使用\r回到行首，覆盖之前的输出
     // 如果是第一次输出这个类别的进度，或者进度已完成，则输出一个完整行
     bool isFirstLine = (g_categoryPrinted.find(category) == g_categoryPrinted.end());
-    bool isCompleted = (current >= total);
+    bool isCompleted = (total > 0 && current >= total);
     
     if (isFirstLine) {
         g_categoryPrinted[category] = true;

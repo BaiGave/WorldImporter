@@ -183,6 +183,7 @@ void JarReader::cacheAllResources(
     std::unordered_map<std::string, std::vector<unsigned char>>& textureCache,
     std::unordered_map<std::string, nlohmann::json>& blockstateCache,
     std::unordered_map<std::string, nlohmann::json>& modelCache,
+    std::unordered_map<std::string, std::string>& modelAssetCache,
     std::unordered_map<std::string, nlohmann::json>& mcmetaCache,
     std::unordered_map<std::string, nlohmann::json>& biomeCache,
     std::unordered_map<std::string, std::vector<unsigned char>>& colormapCache,
@@ -218,6 +219,19 @@ void JarReader::cacheAllResources(
             size_t nsEnd = filePath.find('/', nsStart);
             if (nsEnd == std::string::npos) continue;
             std::string namespaceName = filePath.substr(nsStart, nsEnd - nsStart);
+
+            // Cache OBJ/MTL model assets used by custom NeoForge model loaders.
+            size_t modelsPos = filePath.find("/models/", nsEnd);
+            if (modelsPos != std::string::npos &&
+                (filePath.ends_with(".obj") || filePath.ends_with(".mtl"))) {
+                size_t resStart = modelsPos + 8;
+                std::string resourcePath = filePath.substr(resStart);
+                std::string cacheKey = namespaceName + ":" + resourcePath;
+                if (!modelAssetCache.contains(cacheKey)) {
+                    modelAssetCache.emplace(cacheKey, getFileContent(archiveFilePath));
+                }
+                continue;
+            }
 
             // 处理纹理
             if (filePath.find("/textures/") != std::string::npos &&

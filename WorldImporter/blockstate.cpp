@@ -9,6 +9,7 @@
 #include <sstream>
 #include <mutex>
 #include <shared_mutex>
+#include <unordered_set>
 
 std::unordered_map<std::string, std::unordered_map<std::string, ModelData>> BlockModelCache;
 
@@ -18,6 +19,7 @@ std::unordered_map<std::string,std::unordered_map<std::string,std::vector<std::v
 
 // 将互斥锁类型更改为 std::shared_mutex
 std::shared_mutex blockstateCachesMutex;
+std::atomic<bool> blockstateCachesFrozen{false};
 
 // --------------------------------------------------------------------------------
 // 条件匹配函数
@@ -226,17 +228,23 @@ nlohmann::json GetBlockstateJson(const std::string& namespaceName, const std::st
 // 方块状态 JSON 处理
 // --------------------------------------------------------------------------------
 ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::string& blockId) {
-    std::shared_lock<std::shared_mutex> lock(blockstateCachesMutex); // 使用 shared_lock 进行读操作
-    // 先检查主缓存
-    if (BlockModelCache.count(namespaceName) &&
-        BlockModelCache[namespaceName].count(blockId)) {
-        return BlockModelCache[namespaceName][blockId];
+    // 加载阶段持锁，模型阶段缓存冻结后直接并发只读，避免每个方块一次 shared_mutex。
+    std::shared_lock<std::shared_mutex> lock(blockstateCachesMutex, std::defer_lock);
+    if (!blockstateCachesFrozen.load(std::memory_order_acquire)) lock.lock();
+    // 并发读取必须使用 const find，不能调用 unordered_map::operator[]。
+    // 即便 key 已存在，非 const operator[] 也不保证可被多个线程同时调用。
+    auto blockNsIt = BlockModelCache.find(namespaceName);
+    if (blockNsIt != BlockModelCache.end()) {
+        auto blockIt = blockNsIt->second.find(blockId);
+        if (blockIt != blockNsIt->second.end()) return blockIt->second;
     }
-    
+
     // 检查 variant 缓存
-    if (VariantModelCache.count(namespaceName) &&
-        VariantModelCache[namespaceName].count(blockId)) {
-        auto& models = VariantModelCache[namespaceName][blockId];
+    auto variantNsIt = VariantModelCache.find(namespaceName);
+    if (variantNsIt != VariantModelCache.end()) {
+        auto variantIt = variantNsIt->second.find(blockId);
+        if (variantIt != variantNsIt->second.end()) {
+        const auto& models = variantIt->second;
         int totalWeight = 0;
         for (const auto& wm : models) {
             totalWeight += wm.weight;
@@ -259,13 +267,16 @@ ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::s
                 return models[0].model;
             }
         }
+        }
     }
 
     // 检查 multipart 缓存:在 multipart 时只进行一次随机,
     // 对每个组选取对应位置的模型(如果该位置没有则使用第一个)
-    if (MultipartModelCache.count(namespaceName) &&
-        MultipartModelCache[namespaceName].count(blockId)) {
-        auto& partList = MultipartModelCache[namespaceName][blockId];
+    auto multipartNsIt = MultipartModelCache.find(namespaceName);
+    if (multipartNsIt != MultipartModelCache.end()) {
+        auto multipartIt = multipartNsIt->second.find(blockId);
+        if (multipartIt == multipartNsIt->second.end()) return ModelData();
+        const auto& partList = multipartIt->second;
 
         // 计算所有组中模型数的最大值作为随机索引的范围
         size_t maxCount = 0;
@@ -286,7 +297,7 @@ ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::s
         }
 
         ModelData merged;
-        for (auto& parts : partList) {
+        for (const auto& parts : partList) {
             int index = selectedIndex;
             if (index >= parts.size()) {
                 index = 0; // 如果当前组中没有该位置的模型,则默认选第一个
@@ -300,30 +311,102 @@ ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::s
     return ModelData();
 }
 
+std::vector<ModelData> GetAllModelsFromCache(const std::string& namespaceName, const std::string& blockId) {
+    std::vector<ModelData> result;
+
+    // 加载阶段持锁，模型阶段缓存冻结后直接并发只读
+    std::shared_lock<std::shared_mutex> lock(blockstateCachesMutex, std::defer_lock);
+    if (!blockstateCachesFrozen.load(std::memory_order_acquire)) lock.lock();
+
+    auto blockNsIt = BlockModelCache.find(namespaceName);
+    if (blockNsIt != BlockModelCache.end()) {
+        auto blockIt = blockNsIt->second.find(blockId);
+        if (blockIt != blockNsIt->second.end()) {
+            result.push_back(blockIt->second);
+            return result;
+        }
+    }
+
+    auto variantNsIt = VariantModelCache.find(namespaceName);
+    if (variantNsIt != VariantModelCache.end()) {
+        auto variantIt = variantNsIt->second.find(blockId);
+        if (variantIt != variantNsIt->second.end()) {
+            for (const auto& wm : variantIt->second) {
+                result.push_back(wm.model);
+            }
+            return result;
+        }
+    }
+
+    auto multipartNsIt = MultipartModelCache.find(namespaceName);
+    if (multipartNsIt != MultipartModelCache.end()) {
+        auto multipartIt = multipartNsIt->second.find(blockId);
+        if (multipartIt != multipartNsIt->second.end()) {
+            ModelData merged;
+            for (const auto& parts : multipartIt->second) {
+                if (!parts.empty()) {
+                    merged = MergeModelData(merged, parts[0].model);
+                }
+            }
+            if (!merged.vertices.empty()) {
+                result.push_back(merged);
+            }
+        }
+    }
+
+    return result;
+}
+
 // 此方法会处理对应的json文件 
 // 然后计算出方块的模型数据存储在BlockModelCache / VariantModelCache / MultipartModelCache 里面
 // 你可以使用 GetRandomModelFromCache 方法来获取模型
+// 快速解析 "k=v,k=v" 形式的字符串（替代正则/stringstream，热路径）
+static void ParseConditionInto(const std::string& input, std::unordered_map<std::string, std::string>& out) {
+    size_t i = 0;
+    while (i < input.size()) {
+        size_t comma = input.find(',', i);
+        size_t end = (comma == std::string::npos) ? input.size() : comma;
+        size_t eq = input.find('=', i);
+        if (eq != std::string::npos && eq < end && eq > i && end > eq + 1) {
+            out[input.substr(i, eq - i)] = input.substr(eq + 1, end - eq - 1);
+        }
+        i = end + 1;
+    }
+}
+
+// variant key 的所有键值对是否都满足 condition（等价于旧的
+// IsSubset(ParseKeyValuePairs(SortedVariantKey(variant)), ParseKeyValuePairs(SortedVariantKey(condition)))）
+static bool VariantKeyMatches(const std::string& variantKey,
+    const std::unordered_map<std::string, std::string>& conditionMap) {
+    size_t i = 0;
+    while (i < variantKey.size()) {
+        size_t comma = variantKey.find(',', i);
+        size_t end = (comma == std::string::npos) ? variantKey.size() : comma;
+        size_t eq = variantKey.find('=', i);
+        if (eq != std::string::npos && eq < end) {
+            auto it = conditionMap.find(variantKey.substr(i, eq - i));
+            if (it == conditionMap.end()) return false;
+            if (it->second != variantKey.substr(eq + 1, end - eq - 1)) return false;
+        }
+        i = end + 1;
+    }
+    return true;
+}
+
 void ProcessBlockstate(const std::string& namespaceName, const std::vector<std::string>& blockIds) {
     for (const auto& blockId : blockIds) {
         // 解析 blockId 和条件
-        static const std::regex blockIdRegex(R"(^(.*?)\[(.*)\]$)");
-        std::smatch match;
         std::string baseBlockId = blockId;
         std::string condition;
         std::unordered_map<std::string, std::string> blockConditions;
         std::string blockstateName = namespaceName + ":" + blockId;
 
-        if (std::regex_match(blockId, match, blockIdRegex)) {
-            baseBlockId = match.str(1);
-            condition = match.str(2);
-
-            static const std::regex conditionRegex(R"((\w+)=([^,]+))");
-            auto conditionsBegin = std::sregex_iterator(condition.begin(), condition.end(), conditionRegex);
-            auto conditionsEnd = std::sregex_iterator();
-
-            for (auto i = conditionsBegin; i != conditionsEnd; ++i) {
-                std::smatch submatch = *i;
-                blockConditions[submatch[1].str()] = submatch[2].str();
+        if (!blockId.empty() && blockId.back() == ']') {
+            size_t lb = blockId.find('[');
+            if (lb != std::string::npos) {
+                baseBlockId = blockId.substr(0, lb);
+                condition = blockId.substr(lb + 1, blockId.size() - lb - 2);
+                ParseConditionInto(condition, blockConditions);
             }
         }
 
@@ -342,15 +425,10 @@ void ProcessBlockstate(const std::string& namespaceName, const std::vector<std::
         if (blockstateJson.contains("variants")) {
             for (auto& variant : blockstateJson["variants"].items()) {
                 std::string variantKey = variant.key();
-                std::string normalizedCondition = SortedVariantKey(condition);
-                std::string normalizedVariantKey = SortedVariantKey(variantKey);
+                bool matched = condition.empty() || VariantKeyMatches(variantKey, blockConditions);
 
-                // 解析为键值对
-                auto conditionMap = ParseKeyValuePairs(normalizedCondition);
-                auto variantMap = ParseKeyValuePairs(normalizedVariantKey);
-
-                // 判断条件:variantMap 的所有键值对需存在于 conditionMap 中
-                if (condition.empty() || IsSubset(variantMap, conditionMap)) {
+                // 判断条件:variant 的所有键值对需存在于 condition 中
+                if (matched) {
                     int rotationX = 0, rotationY = 0;
                     bool uvlock = false;
 
@@ -592,6 +670,10 @@ void ProcessBlockstate(const std::string& namespaceName, const std::vector<std::
 
 void ProcessBlockstateForBlocks(const std::vector<Block>& blocks) {
     std::unordered_map<std::string, std::vector<std::string>> namespaceToBlockIdsMap;
+    // ChunkLoader 会在每个批次传入整个全局调色板。记录已尝试项，避免同一方块
+    // 在数百个批次中反复解析和重复打印错误。
+    static std::mutex attemptedMutex;
+    static std::unordered_set<std::string> attemptedBlockstates;
 
     // 将 Block 列表按命名空间分组
     for (const auto& block : blocks) {
@@ -600,13 +682,23 @@ void ProcessBlockstateForBlocks(const std::vector<Block>& blocks) {
         namespaceToBlockIdsMap[namespaceName].push_back(blockId);
     }
 
-    // 处理每个命名空间下的方块 ID
+    // 逐方块处理并隔离异常。新版或模组中的单个非标准 JSON 不能中断
+    // 同一命名空间后续所有方块，否则会产生大批缺失模型/紫色方块。
     for (const auto& entry : namespaceToBlockIdsMap) {
         const std::string& namespaceName = entry.first;
-        const std::vector<std::string>& blockIds = entry.second;
-
-        ProcessBlockstate(namespaceName, blockIds);
-       
+        for (const auto& blockId : entry.second) {
+            const std::string attemptedKey = namespaceName + "\n" + blockId;
+            {
+                std::lock_guard<std::mutex> lock(attemptedMutex);
+                if (!attemptedBlockstates.insert(attemptedKey).second) continue;
+            }
+            try {
+                ProcessBlockstate(namespaceName, {blockId});
+            } catch (const std::exception& e) {
+                std::cerr << "Error processing blockstate " << namespaceName << ":"
+                          << blockId << ": " << e.what() << std::endl;
+            }
+        }
     }
 
 }

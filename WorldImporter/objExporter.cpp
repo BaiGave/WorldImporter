@@ -105,33 +105,16 @@ inline int calculateIntLength(int value) {
     }
     return length;
 }
-// 快速计算浮点数转换为 "%.6f" 格式后的字符串长度(数学估算)
+// 快速整数转字符串(带符号)的前置声明
+inline char* fast_itoa(int value, char* ptr);
+// 快速浮点转字符串的前置声明；长度计算直接复用同一实现，
+// 避免数学估算在 9.9999996 -> 10.000000 进位时少算 1 字节并写穿堆缓冲区。
+inline char* fast_ftoa(float value, char* ptr);
+
+// 计算浮点数实际写出长度（与 fast_ftoa 严格一致）
 inline int calculateFloatStringLength(float value) {
-    if (value == floor(value)) {  // 整数
-        return calculateIntLength(static_cast<int>(value));
-    }
-    else {
-        const bool negative = value < 0.0f;
-        const double absValue = std::abs(static_cast<double>(value));
-
-        // 处理特殊情况:0.0
-        if (absValue < 1e-7) {
-            return negative ? 9 : 8; // "-0.000000" 或 "0.000000"
-        }
-
-        // 计算整数部分位数
-        int integerDigits;
-        if (absValue < 1.0) {
-            integerDigits = 1; // 例如 0.123456 -> "0.123456"
-        }
-        else {
-            integerDigits = static_cast<int>(std::floor(std::log10(absValue))) + 1;
-        }
-
-        // 总长度 = 符号位 + 整数部分 + 小数点 + 6位小数
-        return (negative ? 1 : 0) + integerDigits + 1 + 6;
-    }
-
+    char buffer[128];
+    return static_cast<int>(fast_ftoa(value, buffer) - buffer);
 }
 // 快速整数转字符串(正数版)
 inline char* fast_itoa_positive(uint32_t value, char* ptr) {
@@ -165,6 +148,16 @@ inline char* fast_itoa(int value, char* ptr) {
 
 // 快速浮点转字符串(固定6位小数)
 inline char* fast_ftoa(float value, char* ptr) {
+    // 非有限值(NaN/Inf):统一写 0,避开 floor()/整数转换的未定义行为
+    if (!std::isfinite(value)) {
+        *ptr++ = '0';
+        return ptr;
+    }
+    // 超出定点缩放安全范围:走 snprintf 兜底,避免 int64 溢出
+    if (std::fabs(value) >= 1.0e12f) {
+        int written = snprintf(ptr, 64, "%.6f", static_cast<double>(value));
+        return ptr + (written > 0 ? written : 0);
+    }
     if (value == floor(value)) {  // 检查是否是整数
         return fast_itoa(static_cast<int>(value), ptr);
     }
@@ -175,11 +168,6 @@ inline char* fast_ftoa(float value, char* ptr) {
         if (negative) {
             *ptr++ = '-';
             value = -value;
-        }
-
-        if (std::isinf(value)) {
-            memcpy(ptr, "inf", 3);
-            return ptr + 3;
         }
 
         int64_t scaled = static_cast<int64_t>(std::round(value * scale));
@@ -209,7 +197,12 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
     size_t totalSize = 0;
     // 文件头部分
     totalSize += snprintf(nullptr, 0, "mtllib %s\n", mtlFilePath.c_str());
-    std::string modelName = objName.substr(objName.find_last_of("//") + 1);
+    // 提取模型名称(取路径最后一段;兼容 / 与 \ 分隔符)
+    std::string modelName = objName;
+    size_t sepPos = objName.find_last_of("/\\");
+    if (sepPos != std::string::npos) {
+        modelName = objName.substr(sepPos + 1);
+    }
     totalSize += snprintf(nullptr, 0, "o %s\n\n", modelName.c_str());
 
     // 预计算顶点注释行的长度
@@ -266,7 +259,8 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
     std::vector<size_t> usemtlLengths(data.materials.size());
 #pragma omp parallel for
     for (int matIndex = 0; matIndex < data.materials.size(); ++matIndex) {
-        usemtlLengths[matIndex] = 8 + data.materials[matIndex].name.size() + 1; // "usemtl " + name + "\n"
+        // "usemtl "(7) + name + "\n"(1)
+        usemtlLengths[matIndex] = 8 + data.materials[matIndex].name.size();
     }
 
 #pragma omp parallel for reduction(+:totalSize)
@@ -340,6 +334,12 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         }
     }
 
+    const size_t writtenSize = static_cast<size_t>(ptr - buffer.data());
+    if (writtenSize != totalSize) {
+        throw std::runtime_error("OBJ缓冲长度计算不一致: estimated=" +
+            std::to_string(totalSize) + ", actual=" + std::to_string(writtenSize));
+    }
+
     // 使用跨平台方式写入文件
     try {
 #ifdef _WIN32
@@ -403,11 +403,11 @@ void createObjFile(const ModelData& data, const std::string& objName, const std:
     std::string objFilePath = exeDir + objName + ".obj";
     std::string mtlFilePath = mtlFileName.empty() ? (objName + ".mtl") : (mtlFileName + ".mtl");
 
-    // 提取模型名称
-    std::string name;
-    size_t commentPos = objName.find("//");
-    if (commentPos != std::string::npos) {
-        name = objName.substr(commentPos + 2);
+    // 提取模型名称(取路径最后一段;兼容 / 与 \ 分隔符)
+    std::string name = objName;
+    size_t sepPos = objName.find_last_of("/\\");
+    if (sepPos != std::string::npos) {
+        name = objName.substr(sepPos + 1);
     }
 
     // 使用流缓冲区进行拼接,减少IO操作次数
@@ -473,7 +473,7 @@ void createObjFile(const ModelData& data, const std::string& objName, const std:
     }
 }
 
-void CreateSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMaterials, const std::string& mtlFileName, const std::unordered_map<std::string, int8_t>& uniqueTints) {
+void CreateSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMaterials, const std::string& mtlFileName, const std::unordered_map<std::string, TintResult>& uniqueTints) {
     std::string exeDir = getExecutableDir();
     std::string fullMtlPath = exeDir + mtlFileName + ".mtl";
 
@@ -495,6 +495,15 @@ void CreateSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMate
                 mtlFile << "Ke 0.900000 0.900000 0.900000\n";
                 mtlFile << "Ni 1.500000\n";
                 mtlFile << "illum 2\n";
+            }
+            // 缺失纹理不写虚假的 .png 引用，避免 Blender 显示紫色材质。
+            else if (texturePath.empty()) {
+                mtlFile << "Ns 90.000000\n";
+                mtlFile << "Kd 1.000000 1.000000 1.000000\n";
+                mtlFile << "Ks 0.000000 0.000000 0.000000\n";
+                mtlFile << "Ke 0.000000 0.000000 0.000000\n";
+                mtlFile << "Ni 1.500000\n";
+                mtlFile << "illum 1\n";
             }
             // 处理纯颜色材质(支持流体格式:color#r g b-流体名 和普通格式:color#r g b=)
             else if (texturePath.find("color#") != std::string::npos) {
@@ -556,6 +565,47 @@ void CreateSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMate
     else {
         std::cerr << "Failed to create .mtl file: " << mtlFileName << std::endl;
     }
+
+    CreateTintJsonFile(uniqueTints);
+}
+
+namespace {
+    float SrgbChannelToLinear(uint32_t channel) {
+        float s = static_cast<float>(channel & 0xFF) / 255.0f;
+        return (s <= 0.04045f) ? (s / 12.92f) : std::pow((s + 0.055f) / 1.055f, 2.4f);
+    }
+}
+
+// 输出 tint.json（材质名 -> {kind, color?}；无 kind 表示不上色），供 Blender 插件按接口接线
+void CreateTintJsonFile(const std::unordered_map<std::string, TintResult>& uniqueTints) {
+    if (uniqueTints.empty()) return;
+
+    nlohmann::json root = nlohmann::json::object();
+    for (const auto& entry : uniqueTints) {
+        const TintResult& tint = entry.second;
+        nlohmann::json value = nlohmann::json::object();
+        if (tint.on()) {
+            value["kind"] = TintKindName(tint.kind);
+            if (tint.kind == TintKind::Fixed) {
+                nlohmann::json color = nlohmann::json::array();
+                color.push_back(SrgbChannelToLinear((tint.color >> 16) & 0xFF));
+                color.push_back(SrgbChannelToLinear((tint.color >> 8) & 0xFF));
+                color.push_back(SrgbChannelToLinear(tint.color & 0xFF));
+                value["color"] = std::move(color);
+            }
+        }
+        root[entry.first] = std::move(value);
+    }
+
+    std::string path = getExecutableDir() + "tint.json";
+    std::ofstream file(path, std::ios::binary);
+    if (file.is_open()) {
+        file << root.dump(2);
+        file.close();
+    }
+    else {
+        std::cerr << "Failed to create tint.json: " << path << std::endl;
+    }
 }
 
 // 创建 .mtl 文件,接收 textureToPath 作为参数
@@ -581,6 +631,15 @@ void createMtlFile(const ModelData& data, const std::string& mtlFileName) {
                 mtlFile << "Ke 0.900000 0.900000 0.900000\n";
                 mtlFile << "Ni 1.500000\n";
                 mtlFile << "illum 2\n";
+            }
+            // 缺失纹理不写虚假的 .png 引用，避免 Blender 显示紫色材质。
+            else if (texturePath.empty()) {
+                mtlFile << "Ns 90.000000\n";
+                mtlFile << "Kd 1.000000 1.000000 1.000000\n";
+                mtlFile << "Ks 0.000000 0.000000 0.000000\n";
+                mtlFile << "Ke 0.000000 0.000000 0.000000\n";
+                mtlFile << "Ni 1.500000\n";
+                mtlFile << "illum 1\n";
             }
             // 处理纯颜色材质(支持流体格式:color#r g b-流体名 和普通格式:color#r g b=)
             else if (texturePath.find("color#") != std::string::npos) {

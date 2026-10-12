@@ -6,40 +6,39 @@
 #include "locutil.h"
 #include "ChunkLoader.h"
 #include "block.h"
+#include "blockstate.h"
 #include "LODManager.h"
 #include "RegionCache.h"
 
 void ChunkLoader::LoadChunks(int chunkXStart, int chunkXEnd, int chunkZStart, int chunkZEnd,
     int sectionYStart, int sectionYEnd) {
 
-    // 使用多线程加载所有相关的分块和分段
-    std::vector<std::future<void>> futures;
-
+    // 区块加载会注册全局方块/模型缓存，并且模型解析会查询 sectionCache。
+    // 原先每个区块使用 std::async，会造成 sectionCache 与模型缓存的锁顺序死锁。
+    // 保持模型导出阶段并行，加载阶段串行以保证缓存一致性。
     for (int chunkX = chunkXStart; chunkX <= chunkXEnd; ++chunkX) {
         for (int chunkZ = chunkZStart; chunkZ <= chunkZEnd; ++chunkZ) {
-            // 新增:如果 chunk 不存在于 region 文件中或为空，则跳过加载
             if (!HasChunk(chunkX, chunkZ)) {
                 continue;
             }
-            futures.push_back(std::async(std::launch::async, [&, chunkX, chunkZ]() {
-                LoadAndCacheBlockData(chunkX, chunkZ);
-                for (int sectionY = sectionYStart; sectionY <= sectionYEnd; ++sectionY) {
-                    auto key = std::make_tuple(chunkX, sectionY, chunkZ);
-                    // 确保条目存在（可能由RegionModelExporter预先创建以存储LOD）
-                    // 如果不存在，则创建一个新的条目并设置加载状态
-                    // LOD值在此处不设置，它由RegionModelExporter负责
-                    {
-                        std::unique_lock<std::shared_mutex> lock(g_chunkSectionInfoMapMutex);
-                        g_chunkSectionInfoMap[key].isLoaded.store(true, std::memory_order_release);
-                    }
-                }
-                }));
+            LoadAndCacheBlockData(chunkX, chunkZ);
+            for (int sectionY = sectionYStart; sectionY <= sectionYEnd; ++sectionY) {
+                auto key = std::make_tuple(chunkX, sectionY, chunkZ);
+                std::unique_lock<std::shared_mutex> lock(g_chunkSectionInfoMapMutex);
+                g_chunkSectionInfoMap[key].isLoaded.store(true, std::memory_order_release);
+            }
         }
     }
 
-    // 等待所有线程完成
-    for (auto& future : futures) {
-        future.get();
+    // sectionCache 已完整可读后，再统一解析新方块模型。
+    // 不在 LoadAndCacheBlockData 的写锁内调用，避免模型/CTM 查询 sectionCache 时自锁。
+    std::vector<Block> blocksToProcess;
+    {
+        std::lock_guard<std::mutex> lock(globalPaletteMutex);
+        blocksToProcess = globalBlockPalette;
+    }
+    if (!blocksToProcess.empty()) {
+        ProcessBlockstateForBlocks(blocksToProcess);
     }
 }
 

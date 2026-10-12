@@ -4,10 +4,12 @@
 #include <iostream>
 #include <vector>
 #include "model.h" // 假设 ModelData 定义在这个头文件中
+#include "nbtutils.h"
 
 struct EntityBlock {
     std::string id;  // 实体方块的ID
     int x, y, z;     // 实体方块的坐标
+    NbtTagPtr rawNbt; // 保留运行时渲染所需的模组方块实体数据
 
     virtual ~EntityBlock() = default;  // 虚析构函数,以便正确析构派生类对象
     virtual void PrintDetails() const;

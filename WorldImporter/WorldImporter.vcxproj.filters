@@ -116,6 +116,9 @@
     <ClCompile Include="biome.cpp">
       <Filter>源文件\World</Filter>
     </ClCompile>
+    <ClCompile Include="blocktint.cpp">
+      <Filter>源文件\World</Filter>
+    </ClCompile>
     <ClCompile Include="block.cpp">
       <Filter>源文件\World</Filter>
     </ClCompile>
@@ -132,6 +135,9 @@
       <Filter>源文件\Core\Reader</Filter>
     </ClCompile>
     <ClCompile Include="EntityBlock.cpp">
+      <Filter>源文件\Blocks</Filter>
+    </ClCompile>
+    <ClCompile Include="BbsModelSupport.cpp">
       <Filter>源文件\Blocks</Filter>
     </ClCompile>
     <ClCompile Include="SpecialBlock.cpp">
@@ -185,6 +191,9 @@
     <!-- 工具相关文件 -->
     <!-- 数据格式相关文件 -->
     <!-- 渲染相关文件 -->
+    <ClInclude Include="BbsModelSupport.h">
+      <Filter>头文件\Blocks</Filter>
+    </ClInclude>
     <ClInclude Include="SpecialBlock.h">
       <Filter>头文件\Blocks</Filter>
     </ClInclude>
@@ -204,6 +213,9 @@
       <Filter>头文件\Core\Model</Filter>
     </ClInclude>
     <ClInclude Include="biome.h">
+      <Filter>头文件\World</Filter>
+    </ClInclude>
+    <ClInclude Include="blocktint.h">
       <Filter>头文件\World</Filter>
     </ClInclude>
     <ClInclude Include="block.h">

@@ -1,12 +1,17 @@
 #include "texture.h"
 #include "fileutils.h"
+#include "include/stb_image.h"
 #include <Windows.h>   
 #include <iostream>
 #include <fstream>
 #include <chrono>
+#include <shared_mutex>
+#include <unordered_map>
 
 std::unordered_map<std::string, std::string> texturePathCache; // 定义材质路径缓存
+std::mutex texturePathCacheMutex;
 std::unordered_map<std::string, TextureDimension> textureDimensionCache; // 定义材质尺寸缓存
+std::mutex textureDimensionMutex;
 
 // PNG文件头部解析，读取图像尺寸
 bool GetPNGDimensions(const std::vector<unsigned char>& pngData, int& width, int& height) {
@@ -375,4 +380,99 @@ MaterialType DetectMaterialType(const std::string& namespaceName, const std::str
 MaterialType DetectMaterialType(const std::string& namespaceName, const std::string& texturePath) {
     float aspectRatio;
     return DetectMaterialType(namespaceName, texturePath, aspectRatio);
+}
+
+// --------------------------------------------------------------------------------
+// 纹理像素解码 / 不透明判定（运行时遮挡表使用）
+// --------------------------------------------------------------------------------
+
+// 程序所在目录（供 PNG 磁盘回退使用）
+static std::string GetTextureExeDir() {
+    wchar_t buffer[MAX_PATH];
+    GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+    std::wstring ws(buffer);
+    int len = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string exePath;
+    if (len > 0) {
+        exePath.resize(len - 1);
+        WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, &exePath[0], len, nullptr, nullptr);
+    }
+    size_t pos = exePath.find_last_of("\\/");
+    return (pos == std::string::npos) ? std::string() : exePath.substr(0, pos);
+}
+
+bool LoadTexturePixels(const std::string& namespaceName, const std::string& texturePath,
+    std::vector<unsigned char>& outPixels, int& outWidth, int& outHeight) {
+    outPixels.clear();
+    outWidth = 0;
+    outHeight = 0;
+
+    std::vector<unsigned char> pngData;
+    {
+        std::shared_lock<std::shared_mutex> lock(GlobalCache::cacheMutex);
+        auto indexIt = GlobalCache::textureIndex.find("textures:" + namespaceName + ":" + texturePath);
+        if (indexIt != GlobalCache::textureIndex.end()) {
+            auto textureIt = GlobalCache::textures.find(indexIt->second);
+            if (textureIt != GlobalCache::textures.end()) {
+                pngData = textureIt->second;
+            }
+        }
+    }
+
+    unsigned char* pixels = nullptr;
+    int channels = 0;
+    if (!pngData.empty()) {
+        pixels = stbi_load_from_memory(
+            pngData.data(), static_cast<int>(pngData.size()), &outWidth, &outHeight, &channels, 4);
+    }
+
+    // 回退：读取程序目录下已导出的 PNG（CTM 合成图、内存缓存未命中时）
+    if (!pixels) {
+        const std::string exeDir = GetTextureExeDir();
+        if (!exeDir.empty()) {
+            const std::string filePath =
+                exeDir + "\\textures\\" + namespaceName + "\\" + texturePath + ".png";
+            pixels = stbi_load(filePath.c_str(), &outWidth, &outHeight, &channels, 4);
+        }
+    }
+
+    if (!pixels || outWidth <= 0 || outHeight <= 0) {
+        if (pixels) stbi_image_free(pixels);
+        return false;
+    }
+    outPixels.assign(pixels, pixels + static_cast<size_t>(outWidth) * outHeight * 4);
+    stbi_image_free(pixels);
+    return true;
+}
+
+bool IsTextureFullyOpaque(const std::string& namespaceName, const std::string& texturePath) {
+    static std::mutex opaqueCacheMutex;
+    static std::unordered_map<std::string, bool> opaqueCache;
+
+    const std::string key = namespaceName + ":" + texturePath;
+    {
+        std::lock_guard<std::mutex> lock(opaqueCacheMutex);
+        auto it = opaqueCache.find(key);
+        if (it != opaqueCache.end()) return it->second;
+    }
+
+    bool opaque = false;
+    std::vector<unsigned char> pixels;
+    int w = 0, h = 0;
+    if (LoadTexturePixels(namespaceName, texturePath, pixels, w, h)) {
+        opaque = true;
+        const size_t count = static_cast<size_t>(w) * h;
+        for (size_t i = 0; i < count; ++i) {
+            if (pixels[i * 4 + 3] < 250) {
+                opaque = false;
+                break;
+            }
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(opaqueCacheMutex);
+        opaqueCache[key] = opaque;
+    }
+    return opaque;
 }

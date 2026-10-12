@@ -29,14 +29,7 @@ std::wstring string_to_wstring(const std::string& str);
 
 
 /**
- * @brief 从配置文件加载固体方块列表
- * 
- * @param filepath 配置文件路径
- */
-void LoadSolidBlocks(const std::string& filepath);
-
-/**
- * @brief 从配置文件加载流体方块定义
+ * @brief 从配置文件加载流体方块定�?
  * 
  * @param filepath 配置文件路径
  */

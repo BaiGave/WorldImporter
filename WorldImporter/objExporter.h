@@ -24,5 +24,8 @@ void CreateMultiModelFiles(const ModelData& data, const std::string& filename,
 
 
 // 在ObjExporter.h中添加新函数声明
-void CreateSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMaterials, const std::string& mtlFileName, const std::unordered_map<std::string, int8_t>& uniqueTints = {});
+void CreateSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMaterials, const std::string& mtlFileName, const std::unordered_map<std::string, TintResult>& uniqueTints = {});
+
+// 输出 tint.json（材质名 -> {on, kind, color?}），供 Blender 插件读取
+void CreateTintJsonFile(const std::unordered_map<std::string, TintResult>& uniqueTints);
 #endif

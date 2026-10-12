@@ -4,11 +4,14 @@
 
 #include "model.h"
 #include "config.h"
+#include "nbtutils.h"
 #include <string>
 
 class SpecialBlock {
 public:
     static ModelData GenerateSpecialBlockModel(const std::string& blockName);
+    static bool TryGenerateCreateBlockModel(const std::string& blockName,
+        int x, int y, int z, const NbtTagPtr& blockEntityNbt, ModelData& outModel);
 
 private:
     static ModelData GenerateLightBlockModel(const std::string& texturePath);

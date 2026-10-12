@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -143,6 +143,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="biome.cpp" />
+    <ClCompile Include="blocktint.cpp" />
+    <ClCompile Include="BbsModelSupport.cpp" />
     <ClCompile Include="block.cpp" />
     <ClCompile Include="blockstate.cpp" />
     <ClCompile Include="chunk.cpp" />
@@ -150,11 +152,13 @@
     <ClCompile Include="ChunkGroupAllocator.cpp" />
     <ClCompile Include="ChunkLoader.cpp" />
     <ClCompile Include="CTM.cpp" />
+    <ClCompile Include="CreateCT.cpp" />
     <ClCompile Include="config.cpp" />
     <ClCompile Include="init.cpp" />
     <ClCompile Include="locutil.cpp" />
     <ClCompile Include="decompressor.cpp" />
     <ClCompile Include="EntityBlock.cpp" />
+    <ClCompile Include="EntityExporter.cpp" />
     <ClCompile Include="MemoryMonitor.cpp" />
     <ClCompile Include="RegionCache.cpp" />
     <ClCompile Include="SpecialBlock.cpp" />
@@ -174,10 +178,13 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="biome.h" />
+    <ClInclude Include="blocktint.h" />
+    <ClInclude Include="BbsModelSupport.h" />
     <ClInclude Include="block.h" />
     <ClInclude Include="blockstate.h" />
     <ClInclude Include="chunk.h" />
     <ClInclude Include="CTM.h" />
+    <ClInclude Include="CreateCT.h" />
     <ClInclude Include="ChunkGenerator.h" />
     <ClInclude Include="ChunkGroupAllocator.h" />
     <ClInclude Include="ChunkLoader.h" />
@@ -188,6 +195,7 @@
     <ClInclude Include="logutil.h" />
     <ClInclude Include="decompressor.h" />
     <ClInclude Include="EntityBlock.h" />
+    <ClInclude Include="EntityExporter.h" />
     <ClInclude Include="hashutils.h" />
     <ClInclude Include="MemoryMonitor.h" />
     <ClInclude Include="RegionCache.h" />

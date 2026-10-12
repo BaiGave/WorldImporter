@@ -40,7 +40,6 @@ extern "C" {
 #endif
 
 // 全局变量定义
-std::unordered_set<std::string> solidBlocks;  // 固体方块集合
 std::unordered_set<std::string> fluidBlocks;  // 流体方块集合
 
 // ========= 全局缓存命名空间 =========
@@ -50,6 +49,7 @@ namespace GlobalCache {
     std::unordered_map<std::string, nlohmann::json> mcmetaCache;             // 材质元数据缓存
     std::unordered_map<std::string, nlohmann::json> blockstates;             // 方块状态缓存
     std::unordered_map<std::string, nlohmann::json> models;                  // 模型缓存
+    std::unordered_map<std::string, std::string> modelAssets;                // OBJ/MTL模型资源
     std::unordered_map<std::string, nlohmann::json> biomes;                  // 生物群系缓存
     std::unordered_map<std::string, std::vector<unsigned char>> colormaps;   // 颜色映射缓存
 
@@ -60,6 +60,7 @@ namespace GlobalCache {
     // 快速查找索引: "resourceType:namespace:resourcePath" -> 完整缓存键
     std::unordered_map<std::string, std::string> blockstateIndex;
     std::unordered_map<std::string, std::string> modelIndex;
+    std::unordered_map<std::string, std::string> modelAssetIndex;
     std::unordered_map<std::string, std::string> textureIndex;
     std::unordered_map<std::string, std::string> mcmetaIndex;
     std::unordered_map<std::string, std::string> biomeIndex;
@@ -88,6 +89,7 @@ struct TaskResult {
     std::unordered_map<std::string, std::vector<unsigned char>> localTextures;    // 本地材质
     std::unordered_map<std::string, nlohmann::json> localBlockstates;             // 本地方块状态
     std::unordered_map<std::string, nlohmann::json> localModels;                  // 本地模型
+    std::unordered_map<std::string, std::string> localModelAssets;                // OBJ/MTL模型资源
     std::unordered_map<std::string, nlohmann::json> localMcmetas;                 // 本地材质元数据
     std::unordered_map<std::string, nlohmann::json> localBiomes;                  // 本地生物群系
     std::unordered_map<std::string, std::vector<unsigned char>> localColormaps;   // 本地颜色映射
@@ -252,6 +254,7 @@ void InitializeAllCaches() {
                         taskResults[idx].localTextures,
                         taskResults[idx].localBlockstates,
                         taskResults[idx].localModels,
+                        taskResults[idx].localModelAssets,
                         taskResults[idx].localMcmetas,
                         taskResults[idx].localBiomes,
                         taskResults[idx].localColormaps,
@@ -328,6 +331,11 @@ void InitializeAllCaches() {
                         std::string indexKey = std::string("models:") + pair.first;
                         GlobalCache::modelIndex.emplace(indexKey, cacheKey);
                     }
+                }
+                for (auto& pair : result.localModelAssets) {
+                    std::string cacheKey = currentModId + ":" + pair.first;
+                    GlobalCache::modelAssets.emplace(cacheKey, std::move(pair.second));
+                    GlobalCache::modelAssetIndex.emplace("modelassets:" + pair.first, cacheKey);
                 }
                 // 合并生物群系
                 for (auto& pair : result.localBiomes) {

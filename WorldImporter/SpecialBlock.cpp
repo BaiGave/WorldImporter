@@ -4,11 +4,423 @@
 #include <sstream>
 #include <span>
 #include "texture.h"
+#include "blockstate.h"
+#include <unordered_map>
+#include <cmath>
 
 using namespace std;
 float centerX = 0.5f;
 float centerY = 0.5f;
 float centerZ = 0.5f;
+
+namespace {
+    unordered_map<string, string> ParseBlockStates(const string& blockName) {
+        unordered_map<string, string> states;
+        size_t begin = blockName.find('[');
+        size_t end = blockName.rfind(']');
+        if (begin == string::npos || end == string::npos || begin >= end) return states;
+
+        stringstream stream(blockName.substr(begin + 1, end - begin - 1));
+        string pair;
+        while (getline(stream, pair, ',')) {
+            size_t separator = pair.find('=');
+            if (separator == string::npos) separator = pair.find(':');
+            if (separator != string::npos) {
+                states[pair.substr(0, separator)] = pair.substr(separator + 1);
+            }
+        }
+        return states;
+    }
+
+    string BaseBlockName(const string& blockName) {
+        size_t end = blockName.find('[');
+        return blockName.substr(0, end);
+    }
+
+    void DisableCulling(ModelData& model) {
+        for (auto& face : model.faces) face.faceDirection = FaceType::DO_NOT_CULL;
+    }
+
+    ModelData LoadCreateModel(const string& path, int index) {
+        ModelData model = ProcessModelJson("create", path, 0, 0, false, index);
+        DisableCulling(model);
+        return model;
+    }
+
+    string GetCreateModelAsset(const string& path) {
+        shared_lock<shared_mutex> lock(GlobalCache::cacheMutex);
+        auto index = GlobalCache::modelAssetIndex.find("modelassets:create:" + path);
+        if (index == GlobalCache::modelAssetIndex.end()) return "";
+        auto asset = GlobalCache::modelAssets.find(index->second);
+        return asset == GlobalCache::modelAssets.end() ? "" : asset->second;
+    }
+
+    string ResolveTexture(const nlohmann::json& modelJson, string value) {
+        unordered_set<string> visited;
+        while (!value.empty() && value[0] == '#' && visited.insert(value).second) {
+            string key = value.substr(1);
+            if (!modelJson.contains("textures") || !modelJson["textures"].contains(key)) return "";
+            value = modelJson["textures"][key].get<string>();
+        }
+        return value;
+    }
+
+    Material CreateMaterial(const string& texture) {
+        string ns = "minecraft";
+        string path = texture;
+        size_t colon = texture.find(':');
+        if (colon != string::npos) {
+            ns = texture.substr(0, colon);
+            path = texture.substr(colon + 1);
+        }
+        string root = "textures";
+        string savedPath = "textures/" + ns + "/" + path + ".png";
+        if (SaveTextureToFile(ns, path, root)) RegisterTexture(ns, path, savedPath);
+        Material material(texture, savedPath, -1);
+        material.type = DetectMaterialType(ns, path, material.aspectRatio);
+        return material;
+    }
+
+    ModelData LoadCreateObjModel(const string& jsonPath, int index) {
+        (void)index;
+        nlohmann::json modelJson = GetModelJson("create", jsonPath);
+        if (modelJson.is_null()) return {};
+        modelJson = LoadParentModel("create", jsonPath, modelJson);
+        if (!modelJson.contains("model")) return {};
+
+        string objPath = modelJson["model"].get<string>();
+        size_t colon = objPath.find(':');
+        if (colon != string::npos) objPath = objPath.substr(colon + 1);
+        if (objPath.starts_with("models/")) objPath = objPath.substr(7);
+        string obj = GetCreateModelAsset(objPath);
+        if (obj.empty()) return {};
+
+        vector<array<float, 3>> positions;
+        vector<array<float, 2>> uvs;
+        unordered_map<string, string> mtlTextures;
+        stringstream objStream(obj);
+        string line;
+        while (getline(objStream, line)) {
+            if (!line.starts_with("mtllib ")) continue;
+            string mtlName = line.substr(7);
+            string directory = objPath.substr(0, objPath.find_last_of('/') + 1);
+            stringstream mtlStream(GetCreateModelAsset(directory + mtlName));
+            string materialName;
+            while (getline(mtlStream, line)) {
+                if (line.starts_with("newmtl ")) materialName = line.substr(7);
+                else if (line.starts_with("map_Kd ") && !materialName.empty()) {
+                    mtlTextures[materialName] = ResolveTexture(modelJson, line.substr(7));
+                }
+            }
+        }
+
+        ModelData result;
+        unordered_map<string, int> materialIndices;
+        string currentMaterial;
+        objStream.clear();
+        objStream.seekg(0);
+        bool flipV = modelJson.value("flip_v", false);
+        while (getline(objStream, line)) {
+            stringstream values(line);
+            string type;
+            values >> type;
+            if (type == "v") {
+                array<float, 3> value{};
+                values >> value[0] >> value[1] >> value[2];
+                positions.push_back(value);
+            }
+            else if (type == "vt") {
+                array<float, 2> value{};
+                values >> value[0] >> value[1];
+                if (flipV) value[1] = 1.0f - value[1];
+                uvs.push_back(value);
+            }
+            else if (type == "usemtl") values >> currentMaterial;
+            else if (type == "f") {
+                vector<pair<int, int>> corners;
+                string corner;
+                while (values >> corner) {
+                    size_t slash = corner.find('/');
+                    int vertex = stoi(corner.substr(0, slash)) - 1;
+                    size_t nextSlash = slash == string::npos ? string::npos : corner.find('/', slash + 1);
+                    int uv = slash == string::npos ? -1 : stoi(corner.substr(slash + 1, nextSlash - slash - 1)) - 1;
+                    corners.emplace_back(vertex, uv);
+                }
+                if (corners.size() < 3) continue;
+                int materialIndex;
+                auto materialIt = materialIndices.find(currentMaterial);
+                if (materialIt == materialIndices.end()) {
+                    string texture = mtlTextures.contains(currentMaterial) ? mtlTextures[currentMaterial] : "minecraft:block/missingno";
+                    materialIndex = static_cast<int>(result.materials.size());
+                    result.materials.push_back(CreateMaterial(texture));
+                    materialIndices[currentMaterial] = materialIndex;
+                }
+                else materialIndex = materialIt->second;
+
+                for (size_t triangle = 1; triangle + 1 < corners.size(); ++triangle) {
+                    array<pair<int, int>, 4> quad = { corners[0], corners[triangle], corners[triangle + 1], corners[triangle + 1] };
+                    Face face{};
+                    face.materialIndex = materialIndex;
+                    face.faceDirection = FaceType::DO_NOT_CULL;
+                    for (size_t i = 0; i < quad.size(); ++i) {
+                        const auto& position = positions[quad[i].first];
+                        face.vertexIndices[i] = static_cast<int>(result.vertices.size() / 3);
+                        result.vertices.insert(result.vertices.end(), position.begin(), position.end());
+                        face.uvIndices[i] = static_cast<int>(result.uvCoordinates.size() / 2);
+                        if (quad[i].second >= 0 && static_cast<size_t>(quad[i].second) < uvs.size()) {
+                            result.uvCoordinates.push_back(uvs[quad[i].second][0]);
+                            result.uvCoordinates.push_back(uvs[quad[i].second][1]);
+                        }
+                        else {
+                            result.uvCoordinates.push_back(0.0f);
+                            result.uvCoordinates.push_back(0.0f);
+                        }
+                    }
+                    result.faces.push_back(face);
+                }
+            }
+        }
+        return result;
+    }
+
+    void Rotate(ModelData& model, float x, float y, float z) {
+        if (model.vertices.empty()) return;
+        ApplyRotationToVertices(span<float>(model.vertices.data(), model.vertices.size()), x, y, z);
+        DisableCulling(model);
+    }
+
+    void Append(ModelData& target, ModelData part) {
+        if (part.vertices.empty()) return;
+        if (target.vertices.empty()) target = std::move(part);
+        else MergeModelsDirectly(target, part);
+    }
+
+    string NbtString(const NbtTagPtr& nbt, const string& name) {
+        auto tag = getChildByName(nbt, name);
+        return tag && tag->type == TagType::STRING ? bytesToString(tag->payload) : "";
+    }
+
+    bool NbtBool(const NbtTagPtr& nbt, const string& name) {
+        auto tag = getChildByName(nbt, name);
+        return tag && tag->type == TagType::BYTE && bytesToByte(tag->payload) != 0;
+    }
+
+    void ReplaceTexture(ModelData& model, const string& oldPath, const string& newPath) {
+        string saveRoot = "textures";
+        if (!SaveTextureToFile("create", newPath, saveRoot)) return;
+        string savedPath = "textures/create/" + newPath + ".png";
+        RegisterTexture("create", newPath, savedPath);
+        for (auto& material : model.materials) {
+            if (material.name == "create:" + oldPath) {
+                material.name = "create:" + newPath;
+                material.texturePath = savedPath;
+                material.type = DetectMaterialType("create", newPath, material.aspectRatio);
+            }
+        }
+    }
+
+    float FacingY(const string& facing) {
+        if (facing == "west") return 90.0f;
+        if (facing == "north") return 180.0f;
+        if (facing == "east") return 270.0f;
+        return 0.0f;
+    }
+
+    void RotateKineticAxis(ModelData& model, const string& axis) {
+        if (axis == "x") Rotate(model, 90.0f, 90.0f, 0.0f);
+        else if (axis == "z") Rotate(model, 90.0f, 180.0f, 0.0f);
+    }
+
+    void RotateFromSouth(ModelData& model, const string& direction) {
+        if (direction == "north") Rotate(model, 0.0f, 180.0f, 0.0f);
+        else if (direction == "east") Rotate(model, 0.0f, 90.0f, 0.0f);
+        else if (direction == "west") Rotate(model, 0.0f, 270.0f, 0.0f);
+        else if (direction == "up") Rotate(model, 270.0f, 0.0f, 0.0f);
+        else if (direction == "down") Rotate(model, 90.0f, 0.0f, 0.0f);
+    }
+
+    ModelData LoadBlockstateModel(const string& blockName) {
+        size_t colon = blockName.find(':');
+        string localName = colon == string::npos ? blockName : blockName.substr(colon + 1);
+        return GetRandomModelFromCache("create", localName);
+    }
+
+    ModelData GenerateCreateWaterWheel(const string& id, const string& blockName,
+        const unordered_map<string, string>& states, int x, int y, int z) {
+        ModelData result;
+        string axis = "y";
+        if (id == "water_wheel") {
+            result = LoadBlockstateModel(blockName);
+            string facing = states.contains("facing") ? states.at("facing") : "up";
+            axis = facing == "east" || facing == "west" ? "x" :
+                facing == "north" || facing == "south" ? "z" : "y";
+            ModelData wheel = LoadCreateObjModel("block/water_wheel/wheel", 120);
+            RotateKineticAxis(wheel, axis);
+            Append(result, std::move(wheel));
+        }
+        else {
+            axis = states.contains("axis") ? states.at("axis") : "y";
+            bool extension = states.contains("extension") && states.at("extension") == "true";
+            result = LoadCreateObjModel(extension ? "block/large_water_wheel/block_extension" :
+                "block/large_water_wheel/block", 121);
+            RotateKineticAxis(result, axis);
+        }
+        int parity = axis == "x" ? y + z : axis == "z" ? x + y : x + z;
+        float phase = parity % 2 == 0 ? 22.5f : 0.0f;
+        if (axis == "x") Rotate(result, phase, 0.0f, 0.0f);
+        else if (axis == "z") Rotate(result, 0.0f, 0.0f, phase);
+        else Rotate(result, 0.0f, phase, 0.0f);
+        return result;
+    }
+
+    ModelData GenerateCreateShaftedBlock(const string& id, const string& blockName,
+        const unordered_map<string, string>& states) {
+        ModelData result = LoadBlockstateModel(blockName);
+        string axis = states.contains("axis") ? states.at("axis") : "y";
+        ModelData shaft = LoadCreateModel("block/shaft", 132);
+        RotateKineticAxis(shaft, axis);
+        Append(result, std::move(shaft));
+        return result;
+    }
+
+    void RotateAroundAxis(ModelData& model, const string& axis, float angle) {
+        if (axis == "x") Rotate(model, angle, 0.0f, 0.0f);
+        else if (axis == "z") Rotate(model, 0.0f, 0.0f, angle);
+        else Rotate(model, 0.0f, angle, 0.0f);
+    }
+
+    ModelData GenerateCreateKinetic(const string& id,
+        const unordered_map<string, string>& states, int x, int y, int z) {
+        ModelData model = LoadCreateModel("block/" + id, 100);
+        string axis = "y";
+        auto axisIt = states.find("axis");
+        if (axisIt != states.end()) axis = axisIt->second;
+        RotateKineticAxis(model, axis);
+
+        // Create offsets adjacent gears so their teeth mesh in a static export.
+        int parity = axis == "x" ? y + z : axis == "z" ? x + y : x + z;
+        float phase = parity % 2 == 0 ? 22.5f : (id == "large_cogwheel" ? 11.25f : 0.0f);
+        if (id != "shaft") RotateAroundAxis(model, axis, phase);
+        return model;
+    }
+
+    ModelData GenerateCreateEncasedCogwheel(const string& id, const string& blockName,
+        const unordered_map<string, string>& states, int x, int y, int z) {
+        ModelData result = LoadBlockstateModel(blockName);
+        bool isLarge = id.find("large_cogwheel") != string::npos;
+        string cogwheelId = isLarge ? "large_cogwheel" : "cogwheel";
+        ModelData cogwheel = GenerateCreateKinetic(cogwheelId, states, x, y, z);
+        Append(result, std::move(cogwheel));
+        return result;
+    }
+
+    ModelData GenerateCreateBelt(const unordered_map<string, string>& states, const NbtTagPtr& nbt) {
+        const string facing = states.contains("facing") ? states.at("facing") : "south";
+        const string slope = states.contains("slope") ? states.at("slope") : "horizontal";
+        const string part = states.contains("part") ? states.at("part") : "middle";
+        const bool casing = states.contains("casing") && states.at("casing") == "true";
+        const bool diagonal = slope == "upward" || slope == "downward";
+        const bool sideways = slope == "sideways";
+        const bool vertical = slope == "vertical";
+        const bool downward = slope == "downward";
+        const bool alongX = facing == "east" || facing == "west";
+        const bool alongZ = !alongX;
+
+        string beltPart = part == "pulley" ? "middle" : part;
+        string beltPath = diagonal ? "block/belt/diagonal_" + beltPart : "block/belt/" + beltPart;
+        ModelData result;
+        Append(result, LoadCreateModel(beltPath, 110));
+        if (!diagonal) Append(result, LoadCreateModel(beltPath + "_bottom", 111));
+
+        float rx = ((!diagonal && slope != "horizontal") ? 90.0f : 0.0f)
+            + (downward ? 180.0f : 0.0f) + (sideways ? 90.0f : 0.0f)
+            + (vertical && alongZ ? 180.0f : 0.0f);
+        float ry = FacingY(facing)
+            + (((diagonal != alongX) && !downward) ? 180.0f : 0.0f)
+            + (sideways && alongZ ? 180.0f : 0.0f)
+            + (vertical && alongX ? 90.0f : 0.0f);
+        float rz = (sideways ? 90.0f : 0.0f) + (vertical && alongX ? 90.0f : 0.0f);
+        Rotate(result, rx, ry, rz);
+
+        string dye = NbtString(nbt, "Dye");
+        transform(dye.begin(), dye.end(), dye.begin(), [](unsigned char c) { return static_cast<char>(tolower(c)); });
+        if (!dye.empty()) {
+            string baseTexture = diagonal ? "block/belt_diagonal" : "block/belt";
+            string dyedTexture = "block/belt/" + dye + (diagonal ? "_diagonal_scroll" : "_scroll");
+            ReplaceTexture(result, baseTexture, dyedTexture);
+        }
+
+        if (part != "middle") {
+            ModelData pulley = LoadCreateModel("block/belt_pulley", 112);
+            if (sideways) Rotate(pulley, 180.0f, 0.0f, 0.0f);
+            else if (alongX) Rotate(pulley, 90.0f, 90.0f, 0.0f);
+            else Rotate(pulley, 90.0f, 0.0f, 0.0f);
+            Append(result, std::move(pulley));
+        }
+
+        if (casing) {
+            string casingPart = part;
+            bool negativeFacing = facing == "north" || facing == "west";
+            if (part != "pulley" && ((vertical && negativeFacing) || downward || (sideways && negativeFacing))) {
+                if (casingPart == "start") casingPart = "end";
+                else if (casingPart == "end") casingPart = "start";
+            }
+            string shape = diagonal ? "diagonal" : (vertical ? "sideways" : "horizontal");
+            ModelData casingModel = LoadCreateModel("block/belt_casing/" + shape + "_" + casingPart, 113);
+            float casingX = vertical ? 90.0f : (sideways && negativeFacing ? 180.0f : 0.0f);
+            float casingY = FacingY(facing) + (slope == "upward" ? 180.0f : 0.0f)
+                + (vertical ? 90.0f : 0.0f);
+            Rotate(casingModel, casingX, casingY, 0.0f);
+            string casingType = NbtString(nbt, "Casing");
+            if (casingType == "ANDESITE" || casingType == "andesite") {
+                ReplaceTexture(casingModel, "block/belt/brass_belt_casing", "block/belt/andesite_belt_casing");
+            }
+            Append(result, std::move(casingModel));
+
+            if (NbtBool(nbt, "Covered")) {
+                bool brass = casingType == "BRASS" || casingType == "brass";
+                string cover = "block/belt_cover/" + string(brass ? "brass" : "andesite")
+                    + "_belt_cover_" + (alongX ? "x" : "z");
+                Append(result, LoadCreateModel(cover, 114));
+            }
+        }
+        return result;
+    }
+}
+
+bool SpecialBlock::TryGenerateCreateBlockModel(const string& blockName,
+    int x, int y, int z, const NbtTagPtr& blockEntityNbt, ModelData& outModel) {
+    string baseName = BaseBlockName(blockName);
+    if (baseName == "create:shaft" || baseName == "create:cogwheel" ||
+        baseName == "create:large_cogwheel") {
+        outModel = GenerateCreateKinetic(baseName.substr(7), ParseBlockStates(blockName), x, y, z);
+        return !outModel.vertices.empty();
+    }
+    if (baseName == "create:belt") {
+        outModel = GenerateCreateBelt(ParseBlockStates(blockName), blockEntityNbt);
+        return !outModel.vertices.empty();
+    }
+    if (baseName == "create:water_wheel" || baseName == "create:large_water_wheel") {
+        outModel = GenerateCreateWaterWheel(baseName.substr(7), blockName,
+            ParseBlockStates(blockName), x, y, z);
+        return !outModel.vertices.empty();
+    }
+    if (baseName == "create:andesite_encased_shaft" ||
+        baseName == "create:brass_encased_shaft" ||
+        baseName == "create:metal_girder_encased_shaft") {
+        outModel = GenerateCreateShaftedBlock(baseName.substr(7), blockName, ParseBlockStates(blockName));
+        return !outModel.vertices.empty();
+    }
+    if (baseName == "create:andesite_encased_cogwheel" ||
+        baseName == "create:brass_encased_cogwheel" ||
+        baseName == "create:andesite_encased_large_cogwheel" ||
+        baseName == "create:brass_encased_large_cogwheel") {
+        outModel = GenerateCreateEncasedCogwheel(baseName.substr(7), blockName,
+            ParseBlockStates(blockName), x, y, z);
+        return !outModel.vertices.empty();
+    }
+    return false;
+}
 
 ModelData SpecialBlock::GenerateSpecialBlockModel(const string& blockName) {
     string texturePath;
