@@ -24,4 +24,8 @@ public:
 
 };
 
+// 设置模型阶段的并发预算(外层模型线程数)。
+// 去重/并行步骤会据此限制内部线程数,避免线程数量爆炸。
+void SetModelThreadBudget(int threads);
+
 #endif // MODEL_DEDUPLICATOR_H

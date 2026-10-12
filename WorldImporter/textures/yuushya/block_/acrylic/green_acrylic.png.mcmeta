@@ -1,0 +1,9 @@
+{
+    "ctm": {
+        "ctm_version": 1,
+        "textures": [
+            "yuushya:block_/acrylic/green_acrylic_ctm"
+        ],
+        "type": "CTM"
+    }
+}

@@ -1,5 +1,6 @@
 // ModelDeduplicator.cpp
 #include "ModelDeduplicator.h"
+#include <execution>
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -10,6 +11,7 @@
 #include <stack>
 #include <string>
 #include <set>
+#include <unordered_set>
 #include "TaskMonitor.h"
 #include <future> // 新增: 用于 std::async, std::future
 #include <mutex>  // 新增: 用于 std::mutex, std::lock_guard
@@ -23,6 +25,38 @@
 #include <functional> // 新增: 用于 std::function
 #undef max
 #undef min
+// 顶点量化:统一使用四舍五入(std::round)。
+// 历史实现中不同阶段分别采用 std::round 与 int(v*10000+0.5f)，
+// 负数舍入结果不一致，会导致贪心合面反查顶点键时命中失败。
+inline VertexKey MakeVertexKey(float x, float y, float z) {
+    return VertexKey{
+        static_cast<int>(std::round(x * 10000.0f)),
+        static_cast<int>(std::round(y * 10000.0f)),
+        static_cast<int>(std::round(z * 10000.0f))
+    };
+}
+
+/* 并发预算与去重线程数 */
+namespace {
+    std::atomic<int> g_modelThreadBudget{1};
+}
+
+void SetModelThreadBudget(int threads) {
+    g_modelThreadBudget.store(threads > 1 ? threads : 1, std::memory_order_relaxed);
+}
+
+// 去重内部的并行度:外层多线程时按预算分摊核数,避免线程数量爆炸。
+static unsigned int DedupThreadCount() {
+    unsigned int hc = std::thread::hardware_concurrency();
+    if (hc == 0) hc = 1;
+    int budget = g_modelThreadBudget.load(std::memory_order_relaxed);
+    // 外层已有多个长期存活的模型线程时，内部去重保持串行。
+    // 旧逻辑按 hc/budget 继续反复创建短命线程，4×4 线程频繁退出会在
+    // MinGW/UCRT TLS 清理路径触发 0xC0000374，且线程创建开销抵消收益。
+    if (budget > 1) return 1;
+    return hc;
+}
+
 // 2x2矩阵结构体,用于UV坐标变换
 struct Matrix2x2 {
     float m[2][2];
@@ -94,7 +128,7 @@ void ModelDeduplicator::DeduplicateVertices(ModelData& data) {
     std::vector<KeyAndIndex> keys(vertCount);
 
     // 并行计算顶点键
-    unsigned int numThreads = std::thread::hardware_concurrency();
+    unsigned int numThreads = DedupThreadCount();
     if (numThreads == 0) numThreads = 1;
     std::vector<std::thread> threads;
     threads.reserve(numThreads);
@@ -109,12 +143,8 @@ void ModelDeduplicator::DeduplicateVertices(ModelData& data) {
                 float y = data.vertices[3*i + 1];
                 float z = data.vertices[3*i + 2];
                 
-                // 确保精确的量化，使用相同的舍入方法
-                int rx = static_cast<int>(std::round(x * 10000.0f));
-                int ry = static_cast<int>(std::round(y * 10000.0f));
-                int rz = static_cast<int>(std::round(z * 10000.0f));
-                
-                keys[i] = { VertexKey{rx, ry, rz}, static_cast<int>(i) };
+                // 确保精确的量化，使用统一的舍入方法
+                keys[i] = { MakeVertexKey(x, y, z), static_cast<int>(i) };
             }
         });
     }
@@ -123,12 +153,22 @@ void ModelDeduplicator::DeduplicateVertices(ModelData& data) {
     auto t1 = Clock::now();
     std::cerr << "计算顶点键: " << Ms(t1 - t0).count() << " ms\n";
 
-    // 使用稳定排序，相同键的情况下保持原顺序
-    std::stable_sort(keys.begin(), keys.end(), [](const KeyAndIndex &a, const KeyAndIndex &b) {
+    // Explicit original-index tie-break preserves stable_sort's representative
+    // exactly while allowing the large final mesh sort to run across cores.
+    auto keyLess = [](const KeyAndIndex &a, const KeyAndIndex &b) {
         if (a.key.x != b.key.x) return a.key.x < b.key.x;
         if (a.key.y != b.key.y) return a.key.y < b.key.y;
-        return a.key.z < b.key.z;
-    });
+        if (a.key.z != b.key.z) return a.key.z < b.key.z;
+        return a.oldIndex < b.oldIndex;
+    };
+    if (numThreads > 1 && keys.size() >= 262144)
+        std::sort(std::execution::par, keys.begin(), keys.end(), keyLess);
+    else
+        std::stable_sort(keys.begin(), keys.end(), [](const KeyAndIndex& a, const KeyAndIndex& b) {
+            if (a.key.x != b.key.x) return a.key.x < b.key.x;
+            if (a.key.y != b.key.y) return a.key.y < b.key.y;
+            return a.key.z < b.key.z;
+        });
 
     auto t2 = Clock::now();
     std::cerr << "排序顶点键: " << Ms(t2 - t1).count() << " ms\n";
@@ -254,31 +294,47 @@ void ModelDeduplicator::DeduplicateFaces(ModelData& data) {
     keys.reserve(faceCountNum);
 
     // 第一次遍历:计算每个面的规范化键并存入数组(避免重复排序)
+    // 键 = (顶点索引, UV 索引) 配对排序 + 材质。UV 必须参与: 同一方块面上
+    // 的 CTM overlay 会有多个面(顶点/材质相同, 仅 tile/UV 不同), 只按顶点
+    // 去重会误删第二个 tile(表现为连接纹理缺角、缺边)。
     for (size_t i = 0; i < data.faces.size(); i++) {
         const auto& face = data.faces[i];
-        std::array<int, 4> faceArray = {
-            face.vertexIndices[0], face.vertexIndices[1],
-            face.vertexIndices[2], face.vertexIndices[3]
-        };
-        std::array<int, 4> sorted = faceArray;
-        std::sort(sorted.begin(), sorted.end());
+        std::array<std::pair<int, int>, 4> pairs = {{
+            { face.vertexIndices[0], face.uvIndices[0] },
+            { face.vertexIndices[1], face.uvIndices[1] },
+            { face.vertexIndices[2], face.uvIndices[2] },
+            { face.vertexIndices[3], face.uvIndices[3] }
+        }};
+        // Canonicalize cyclic starts, but never reverse winding. Sorting all
+        // four pairs erased front/back identity of zero-thickness foliage.
+        auto canonical = pairs;
+        for (int start = 1; start < 4; ++start) {
+            std::array<std::pair<int, int>, 4> candidate;
+            for (int k = 0; k < 4; ++k) candidate[k] = pairs[(start + k) % 4];
+            if (candidate < canonical) canonical = candidate;
+        }
+        std::array<int, 4> sortedVerts;
+        std::array<int, 4> sortedUVs;
+        for (int k = 0; k < 4; ++k) {
+            sortedVerts[k] = canonical[k].first;
+            sortedUVs[k] = canonical[k].second;
+        }
         int matIndex = config.strictDeduplication ? face.materialIndex : -1;
-        keys.push_back(FaceKey{ sorted, matIndex });
+        keys.push_back(FaceKey{ sortedVerts, sortedUVs, matIndex });
     }
 
-    // 使用预分配容量的 unordered_map 来统计每个 FaceKey 的出现次数
-    std::unordered_map<FaceKey, int, FaceKeyHasher> freq;
-    freq.reserve(faceCountNum);
-    for (const auto& key : keys) {
-        freq[key]++;
-    }
-
-    // 第二次遍历:过滤只出现一次的面
+    // 第二次遍历:每个重合面键保留首个面。
+    // 旧实现仅保留 freq==1，两个完全重合的面会被「全部删除」；玻璃、
+    // 玻璃板、多元素模型及水面等经常出现这类重复，导致随机缺面甚至整块消失。
+    // ChunkGenerator 已在方块邻居层剔除真正的内部面，此处只能安全地去重，
+    // 不能把所有副本都删除。
+    std::unordered_set<FaceKey, FaceKeyHasher> kept;
+    kept.reserve(faceCountNum);
     std::vector<Face> newFaces;
     newFaces.reserve(data.faces.size());
 
     for (size_t i = 0; i < keys.size(); i++) {
-        if (freq[keys[i]] == 1) {
+        if (kept.insert(keys[i]).second) {
             newFaces.push_back(data.faces[i]);
         }
     }
@@ -323,7 +379,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     // 1. 计算所有面的法线 (并行化)
     std::vector<Vector3> faceNormals(faceCount);
     {
-        unsigned int numThreads = std::thread::hardware_concurrency();
+        unsigned int numThreads = DedupThreadCount();
         if (numThreads == 0) numThreads = 1;
         std::vector<std::thread> threads;
         threads.reserve(numThreads);
@@ -331,6 +387,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         for (unsigned int t = 0; t < numThreads; ++t) {
             size_t start = t * chunk;
             size_t end = std::min(start + chunk, faceCount);
+            if (start >= end) continue; // 面数少于线程数时跳过空线程
             threads.emplace_back([&, start, end]() {
                 for (size_t i = start; i < end; ++i) {
                     const auto& vs = data.faces[i].vertexIndices;
@@ -362,7 +419,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     // 使用批次填充以减少同步成本
     const size_t BATCH_SIZE = 1024; // 每批次处理的面数
     std::vector<std::vector<std::pair<EdgeKey,int>>> threadBatches;
-    unsigned int numThreads2 = std::thread::hardware_concurrency(); if (numThreads2 == 0) numThreads2 = 1;
+    unsigned int numThreads2 = DedupThreadCount(); if (numThreads2 == 0) numThreads2 = 1;
     threadBatches.resize(numThreads2);
     
     std::vector<std::thread> fillThreads; fillThreads.reserve(numThreads2);
@@ -371,6 +428,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     for (unsigned int t = 0; t < numThreads2; ++t) {
         size_t startF = t * facesPerThread;
         size_t endF = std::min(startF + facesPerThread, faceCount);
+        if (startF >= endF) continue; // 面数少于线程数时跳过空线程，避免 size_t 下溢
         size_t batchSize = (endF - startF) * 4; // 每个面有4条边
         threadBatches[t].reserve(batchSize);
         
@@ -418,58 +476,24 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     
     auto t2_adj_start = Clock::now();
     
-    // 分段处理以并行化
-    const size_t segmentSize = (allEdges.size() + numThreads2 - 1) / numThreads2;
-    std::vector<std::thread> adjThreads;
-    adjThreads.reserve(numThreads2);
-    std::mutex adjMutex; // 用于同步边界处理
-    
-    for (unsigned int t = 0; t < numThreads2; ++t) {
-        size_t startIdx = t * segmentSize;
-        size_t endIdx = std::min(startIdx + segmentSize, allEdges.size());
-        
-        // 确保相同key的边不会被拆分到不同线程
-        if (t > 0 && startIdx < allEdges.size()) {
-            EdgeKey prevKey = allEdges[startIdx-1].first;
-            while (startIdx < allEdges.size() && allEdges[startIdx].first == prevKey) {
-                startIdx++;
+    // 按边顺序构建邻接表。旧实现按边分段并行，但同一个面拥有多条边，
+    // 不同线程会同时向同一个 faceAdj[f] vector push_back，造成堆损坏。
+    // 此步骤通常仅占几毫秒，串行处理比为每个面加锁更快且稳定。
+    size_t edgeIndex = 0;
+    while (edgeIndex < allEdges.size()) {
+        const EdgeKey edgeKey = allEdges[edgeIndex].first;
+        std::vector<int> edgeFaces;
+        while (edgeIndex < allEdges.size() && allEdges[edgeIndex].first == edgeKey) {
+            edgeFaces.push_back(allEdges[edgeIndex].second);
+            ++edgeIndex;
+        }
+        for (size_t i = 0; i < edgeFaces.size(); ++i) {
+            const int f1 = edgeFaces[i];
+            for (size_t j = 0; j < edgeFaces.size(); ++j) {
+                if (i != j) faceAdj[f1].push_back(edgeFaces[j]);
             }
         }
-        
-        // 确保endIdx也在边界上
-        if (t < numThreads2-1 && endIdx < allEdges.size()) {
-            EdgeKey currKey = allEdges[endIdx-1].first;
-            while (endIdx < allEdges.size() && allEdges[endIdx].first == currKey) {
-                endIdx++;
-            }
-        }
-        
-        adjThreads.emplace_back([&, startIdx, endIdx]() {
-            size_t idx = startIdx;
-            while (idx < endIdx) {
-                EdgeKey ek = allEdges[idx].first;
-                // 找到所有具有相同边的面
-                std::vector<int> edgeFaces;
-                while (idx < endIdx && allEdges[idx].first == ek) {
-                    edgeFaces.push_back(allEdges[idx].second);
-                    idx++;
-                }
-                
-                // 为每个面添加相邻面
-                for (size_t i = 0; i < edgeFaces.size(); ++i) {
-                    int f1 = edgeFaces[i];
-                    for (size_t j = 0; j < edgeFaces.size(); ++j) {
-                        if (i != j) {
-                            int f2 = edgeFaces[j];
-                            faceAdj[f1].push_back(f2);
-                        }
-                    }
-                }
-            }
-        });
     }
-    
-    for (auto& th : adjThreads) th.join();
     
     // 释放内存
     std::vector<std::pair<EdgeKey,int>>().swap(allEdges);
@@ -480,7 +504,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     int vertCount = data.vertices.size() / 3;
     std::vector<std::pair<VertexKey,int>> vertKVPairs(vertCount);
     {
-        unsigned int numThreads = std::thread::hardware_concurrency();
+        unsigned int numThreads = DedupThreadCount();
         if (numThreads == 0) numThreads = 1;
         std::vector<std::thread> threads;
         threads.reserve(numThreads);
@@ -493,10 +517,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
                     float x = data.vertices[3*vi];
                     float y = data.vertices[3*vi + 1];
                     float z = data.vertices[3*vi + 2];
-                    int rx = static_cast<int>(x * 10000 + 0.5f);
-                    int ry = static_cast<int>(y * 10000 + 0.5f);
-                    int rz = static_cast<int>(z * 10000 + 0.5f);
-                    vertKVPairs[vi] = { VertexKey{rx, ry, rz}, (int)vi };
+                    vertKVPairs[vi] = { MakeVertexKey(x, y, z), (int)vi };
                 }
             });
         }
@@ -511,8 +532,16 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     });
     auto t3_end = Clock::now();
     std::cerr << "GreedyMesh Step3 sort vert pairs: " << Ms(t3_end - t3_start).count() << " ms\n";
+    // 顶点键 -> 索引的补充映射(仅用于量化键未命中时追加的新顶点)。
+    // 不能向有序数组 vertKVPairs 中间插入(O(n))，否则未命中较多时复杂度会平方放大。
+    std::unordered_map<VertexKey, int> extraVertexKeys;
+
     // Lookup lambda
     auto lookupVertexIndex = [&](const VertexKey &vk) {
+        // 先查补充映射(通常为空，仅在浮点边界差异时增长)
+        auto extraIt = extraVertexKeys.find(vk);
+        if (extraIt != extraVertexKeys.end()) return extraIt->second;
+
         auto it = std::lower_bound(vertKVPairs.begin(), vertKVPairs.end(), vk,
             [](auto &a, const VertexKey &b) {
                 if (a.first.x != b.x) return a.first.x < b.x;
@@ -521,13 +550,69 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             });
         if (it != vertKVPairs.end() && it->first.x == vk.x && it->first.y == vk.y && it->first.z == vk.z)
             return it->second;
-        return 0;
+        // 量化键未命中(仅可能出现在浮点边界差异):追加为新顶点并记录到补充映射，
+        // 避免静默返回 0 造成几何错位。此处为串行调用，无需加锁。
+        int newIdx = static_cast<int>(data.vertices.size() / 3);
+        data.vertices.push_back(static_cast<float>(vk.x) / 10000.0f);
+        data.vertices.push_back(static_cast<float>(vk.y) / 10000.0f);
+        data.vertices.push_back(static_cast<float>(vk.z) / 10000.0f);
+        extraVertexKeys.emplace(vk, newIdx);
+        return newIdx;
     };
 
     // 4. UV 连续性检查 (Lambda定义)
     enum UVAxis { NONE=0, HORIZONTAL=1, VERTICAL=2 };
     auto checkUV = [&](int fi){
-        const auto& uvs_indices = data.faces[fi].uvIndices;
+        const auto& face_uv = data.faces[fi];
+        const auto& uvs_indices = face_uv.uvIndices;
+        // 周期 atlas 材质(repeat): UV 落在格子内部, 以"格子矩形"作为边界基准;
+        // 仅接受恰好覆盖整格的面, 其余(非整格 UV)不参与合并。
+        float left = 0.0f, right = 1.0f, bottom = 0.0f, top = 1.0f;
+        if (face_uv.materialIndex >= 0 && (size_t)face_uv.materialIndex < data.materials.size()) {
+            const Material& mat = data.materials[face_uv.materialIndex];
+            if (mat.uvAtlas && !mat.uvPeriodic) {
+                // 非周期 atlas(ctm/random/horizontal/...): 只有整图即一格(1x1)
+                // 才能按普通贴图合并; 其余格子面一律不参与(跨格合并会贴错图)。
+                if (mat.uvCellW < 1.0f - eps || mat.uvCellH < 1.0f - eps) return NONE;
+            }
+            if (mat.uvPeriodic) {
+                // 面必须近似 1x1 格: 台阶侧面等半格面每格 UV 推进速率不同,
+                // 合并后必然错位, 一律不参与合并。
+                {
+                    float mn[3] = { 1e30f, 1e30f, 1e30f };
+                    float mx[3] = { -1e30f, -1e30f, -1e30f };
+                    for (int j = 0; j < 4; ++j) {
+                        int vi = face_uv.vertexIndices[j];
+                        if (vi < 0 || (size_t)(vi * 3 + 2) >= data.vertices.size()) return NONE;
+                        for (int a = 0; a < 3; ++a) {
+                            float c = data.vertices[vi * 3 + a];
+                            mn[a] = std::min(mn[a], c);
+                            mx[a] = std::max(mx[a], c);
+                        }
+                    }
+                    float ext[3] = { mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2] };
+                    std::sort(ext, ext + 3);
+                    if (std::fabs(ext[1] - 1.0f) > 1e-3f || std::fabs(ext[2] - 1.0f) > 1e-3f) return NONE;
+                }
+                float uMin = 0.0f, uMax = 0.0f, vMin = 0.0f, vMax = 0.0f;
+                bool first = true;
+                for (int j = 0; j < 4; ++j) {
+                    if (uvs_indices[j] < 0 || (uvs_indices[j] * 2 + 1) >= data.uvCoordinates.size()) {
+                        return NONE;
+                    }
+                    float u = data.uvCoordinates[2 * uvs_indices[j]];
+                    float v = data.uvCoordinates[2 * uvs_indices[j] + 1];
+                    if (first) { uMin = uMax = u; vMin = vMax = v; first = false; }
+                    else {
+                        uMin = std::min(uMin, u); uMax = std::max(uMax, u);
+                        vMin = std::min(vMin, v); vMax = std::max(vMax, v);
+                    }
+                }
+                if (std::fabs((uMax - uMin) - mat.uvCellW) > eps) return NONE;
+                if (std::fabs((vMax - vMin) - mat.uvCellH) > eps) return NONE;
+                left = uMin; right = uMax; bottom = vMin; top = vMax;
+            }
+        }
         int cntTop=0, cntBottom=0, cntLeft=0, cntRight=0;
         for (int j=0;j<4;++j) {
             if (uvs_indices[j] < 0 || (uvs_indices[j] * 2 + 1) >= data.uvCoordinates.size()) {
@@ -535,10 +620,10 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
             }
             float u = data.uvCoordinates[2*uvs_indices[j]];
             float v = data.uvCoordinates[2*uvs_indices[j]+1];
-            if (std::fabs(v-1.0f)<eps) ++cntTop;
-            if (std::fabs(v)<eps) ++cntBottom;
-            if (std::fabs(u)<eps) ++cntLeft;
-            if (std::fabs(u-1.0f)<eps) ++cntRight;
+            if (std::fabs(v-top)<eps) ++cntTop;
+            if (std::fabs(v-bottom)<eps) ++cntBottom;
+            if (std::fabs(u-left)<eps) ++cntLeft;
+            if (std::fabs(u-right)<eps) ++cntRight;
         }
         if (cntTop==2 && cntBottom==2) return VERTICAL;
         if (cntLeft==2 && cntRight==2) return HORIZONTAL;
@@ -610,20 +695,37 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
     std::cerr << "GreedyMesh Step5 grouping (UF): " << Ms(t5_end - t5_start).count() << " ms\n";
 
     // 6. 处理每个可合并组 (串行化)
-    struct MergedResult { std::vector<Face> faces; std::vector<float> uvCoords; };
-    auto processGroup = [&](std::vector<int> grp_indices)->MergedResult {
+    struct MergedResult {
+        std::vector<Face> faces;
+        std::vector<float> uvCoords;
+        std::vector<Vector3> positions;
+    };
+    auto processGroup = [&](const std::vector<int>& grp_indices)->MergedResult {
         MergedResult res;
         if (grp_indices.empty()) return res;
 
         int i0 = grp_indices[0];
         const Face& f0_group_base = data.faces[i0];
+        const Material& groupMat = data.materials[f0_group_base.materialIndex];
         Vector3 N0_group_base = faceNormals[i0];
         Vector3 arbi_group_base = std::fabs(N0_group_base.x)>std::fabs(N0_group_base.z)? Vector3{0,0,1}:Vector3{1,0,0};
         Vector3 T1_group_base = normalize(cross(arbi_group_base,N0_group_base));
         Vector3 T2_group_base = normalize(cross(N0_group_base,T1_group_base));
         Vector3 P0_group_base = getVertex(f0_group_base.vertexIndices[0]);
         
-        struct Entry { float minW, maxW, minH, maxH; float uMin, uMax, vMin, vMax; int rotation; std::array<int,4> vids; int originalFaceIndex; };
+        struct Entry {
+            float minW, maxW, minH, maxH;
+            float uMin, uMax, vMin, vMax;
+            int rotation;
+            std::array<int,4> vids;
+            int originalFaceIndex;
+            // 周期 atlas: 锚点仿射映射 (世界投影 (W,H) -> UV), 合并后用它重算 UV
+            bool  anchorValid = false;
+            float anchorW = 0.0f, anchorH = 0.0f;
+            float anchorU = 0.0f, anchorV = 0.0f;
+            float stepW_u = 0.0f, stepW_v = 0.0f;
+            float stepH_u = 0.0f, stepH_v = 0.0f;
+        };
         std::vector<Entry> entries;
         entries.reserve(grp_indices.size());
 
@@ -675,6 +777,41 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
                     e.rotation = (dotWx_Ux >= 0) ? 0 : 180;
                 } else {
                     e.rotation = (dotWx_Uy >= 0) ? 90 : 270;
+                }
+            }
+            // 周期 atlas: 从该面自身的顶点/UV 对应关系推出"世界 (W,H) -> UV"
+            // 的仿射映射(每格步进)。合并后按世界坐标重排 UV, 天然覆盖
+            // 旋转/镜像 UV, 且与合并顺序无关。
+            if (groupMat.uvPeriodic && uv_valid_for_rotation) {
+                Vector2 eA{ pts_proj[1].x - pts_proj[0].x, pts_proj[1].y - pts_proj[0].y };
+                Vector2 eB{ pts_proj[3].x - pts_proj[0].x, pts_proj[3].y - pts_proj[0].y };
+                Vector2 dA{ uvs_rot_calc[1].x - uvs_rot_calc[0].x, uvs_rot_calc[1].y - uvs_rot_calc[0].y };
+                Vector2 dB{ uvs_rot_calc[3].x - uvs_rot_calc[0].x, uvs_rot_calc[3].y - uvs_rot_calc[0].y };
+                const float axisEps = 1e-3f;
+                bool ok = false;
+                if (std::fabs(eA.x) > std::fabs(eA.y) + axisEps) {
+                    // A 沿 W, B 沿 H
+                    ok = std::fabs(eA.y) < axisEps && std::fabs(eB.x) < axisEps &&
+                         std::fabs(eA.x) > axisEps && std::fabs(eB.y) > axisEps;
+                    if (ok) {
+                        e.stepW_u = dA.x / eA.x; e.stepW_v = dA.y / eA.x;
+                        e.stepH_u = dB.x / eB.y; e.stepH_v = dB.y / eB.y;
+                    }
+                } else if (std::fabs(eA.y) > std::fabs(eA.x) + axisEps) {
+                    // A 沿 H, B 沿 W
+                    ok = std::fabs(eA.x) < axisEps && std::fabs(eB.y) < axisEps &&
+                         std::fabs(eA.y) > axisEps && std::fabs(eB.x) > axisEps;
+                    if (ok) {
+                        e.stepH_u = dA.x / eA.y; e.stepH_v = dA.y / eA.y;
+                        e.stepW_u = dB.x / eB.x; e.stepW_v = dB.y / eB.x;
+                    }
+                }
+                if (ok) {
+                    e.anchorValid = true;
+                    e.anchorW = pts_proj[0].x;
+                    e.anchorH = pts_proj[0].y;
+                    e.anchorU = uvs_rot_calc[0].x;
+                    e.anchorV = uvs_rot_calc[0].y;
                 }
             }
             entries.push_back(e);
@@ -817,6 +954,7 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
 
         for(auto& e_final: entries){
             Face nf; nf.materialIndex=f0_group_base.materialIndex; nf.faceDirection=UNKNOWN;
+            nf.tintIndex=f0_group_base.tintIndex;
             std::array<int,4> vidx_final;
             for(int k_final=0;k_final<4;++k_final){
                 float w2d = (k_final==0||k_final==3? e_final.minW : e_final.maxW);
@@ -824,12 +962,11 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
                 Vector3 pos_final{P0_group_base.x + w2d*T1_group_base.x + h2d*T2_group_base.x,
                                   P0_group_base.y + w2d*T1_group_base.y + h2d*T2_group_base.y,
                                   P0_group_base.z + w2d*T1_group_base.z + h2d*T2_group_base.z};
-                int rx_final=int(pos_final.x*10000+0.5f), ry_final=int(pos_final.y*10000+0.5f), rz_final=int(pos_final.z*10000+0.5f);
                 {
-                    VertexKey vk{rx_final, ry_final, rz_final};
-                    int mappedIdx = lookupVertexIndex(vk);
-                    vidx_final[k_final] = mappedIdx;
-                    nf.vertexIndices[k_final] = mappedIdx;
+                    // Workers only calculate geometry. Vertex cache mutation is
+                    // deferred to ordered publication after all workers join.
+                    res.positions.push_back(pos_final);
+                    nf.vertexIndices[k_final] = 0;
                 }
             }
             res.faces.push_back(nf);
@@ -837,18 +974,29 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
                 float du_final = e_final.uMax - e_final.uMin;
                 float dv_final = e_final.vMax - e_final.vMin;
                 for(int k_uv=0; k_uv < 4; ++k_uv) {
-                    float fw_uv = (k_uv == 1 || k_uv == 2) ? 1.0f : 0.0f;
-                    float fh_uv = (k_uv >= 2) ? 1.0f : 0.0f;
-                    float lu_uv, lv_uv;
-                    switch (e_final.rotation) {
-                        case 0:   lu_uv = fw_uv;             lv_uv = fh_uv;             break;
-                        case 90:  lu_uv = fh_uv;             lv_uv = 1.0f - fw_uv;      break;
-                        case 180: lu_uv = 1.0f - fw_uv;      lv_uv = 1.0f - fh_uv;      break;
-                        case 270: lu_uv = 1.0f - fh_uv;      lv_uv = fw_uv;             break;
-                        default:  lu_uv = fw_uv;             lv_uv = fh_uv;             break;
+                    float w_uv = (k_uv == 0 || k_uv == 3) ? e_final.minW : e_final.maxW;
+                    float h_uv = (k_uv == 0 || k_uv == 1) ? e_final.minH : e_final.maxH;
+                    float u_final, v_final;
+                    if (e_final.anchorValid) {
+                        // 周期 atlas: 按锚点仿射映射从世界坐标重算 UV
+                        u_final = e_final.anchorU + e_final.stepW_u * (w_uv - e_final.anchorW)
+                                                 + e_final.stepH_u * (h_uv - e_final.anchorH);
+                        v_final = e_final.anchorV + e_final.stepW_v * (w_uv - e_final.anchorW)
+                                                 + e_final.stepH_v * (h_uv - e_final.anchorH);
+                    } else {
+                        float fw_uv = (k_uv == 1 || k_uv == 2) ? 1.0f : 0.0f;
+                        float fh_uv = (k_uv >= 2) ? 1.0f : 0.0f;
+                        float lu_uv, lv_uv;
+                        switch (e_final.rotation) {
+                            case 0:   lu_uv = fw_uv;             lv_uv = fh_uv;             break;
+                            case 90:  lu_uv = fh_uv;             lv_uv = 1.0f - fw_uv;      break;
+                            case 180: lu_uv = 1.0f - fw_uv;      lv_uv = 1.0f - fh_uv;      break;
+                            case 270: lu_uv = 1.0f - fh_uv;      lv_uv = fw_uv;             break;
+                            default:  lu_uv = fw_uv;             lv_uv = fh_uv;             break;
+                        }
+                        u_final = e_final.uMin + lu_uv * du_final;
+                        v_final = e_final.vMin + lv_uv * dv_final;
                     }
-                    float u_final = e_final.uMin + lu_uv * du_final;
-                    float v_final = e_final.vMin + lv_uv * dv_final;
                     res.uvCoords.push_back(u_final);
                     res.uvCoords.push_back(v_final);
                 }
@@ -857,8 +1005,34 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         return res;
     };
 
-    // 7. 串行处理所有组，保证正确性
+    // Independent groups have immutable inputs. Parallelize expensive merging,
+    // then publish vertices/faces/UVs in the same order as the serial algorithm.
     auto t7_start = Clock::now();
+    const unsigned mergeThreads = faceCount >= 10000
+        ? std::min<unsigned>(DedupThreadCount(), static_cast<unsigned>(groups.size())) : 1;
+    std::vector<MergedResult> mergedGroups(mergeThreads > 1 ? groups.size() : 0);
+    if (mergeThreads > 1) {
+        std::atomic<size_t> nextGroup{0};
+        std::exception_ptr error;
+        std::mutex errorMutex;
+        std::vector<std::thread> workers;
+        for (unsigned t = 0; t < mergeThreads; ++t) {
+            workers.emplace_back([&] {
+                try {
+                    for (;;) {
+                        const size_t i = nextGroup.fetch_add(1, std::memory_order_relaxed);
+                        if (i >= groups.size()) break;
+                        if (groups[i].size() > 1) mergedGroups[i] = processGroup(groups[i]);
+                    }
+                } catch (...) {
+                    std::lock_guard<std::mutex> lock(errorMutex);
+                    if (!error) error = std::current_exception();
+                }
+            });
+        }
+        for (auto& worker : workers) worker.join();
+        if (error) std::rethrow_exception(error);
+    }
     {
         // 注意：不再按组大小排序，保持原顺序
         
@@ -870,10 +1044,17 @@ void ModelDeduplicator::GreedyMesh(ModelData& data) {
         data.uvCoordinates.reserve(data.uvCoordinates.size() + faceCount * 8); // 为每个面准备充足UV空间
         
         // 逐个处理每个组
-        for (const auto& grp : groups) {
+        for (size_t groupNo = 0; groupNo < groups.size(); ++groupNo) {
+            const auto& grp = groups[groupNo];
             if (grp.size() > 1) {
-                // 处理需要合并的组
-                MergedResult mr = processGroup(grp);
+                MergedResult mr = mergeThreads > 1
+                    ? std::move(mergedGroups[groupNo]) : processGroup(grp);
+                for (size_t i = 0; i < mr.faces.size(); ++i) {
+                    for (int k = 0; k < 4; ++k) {
+                        const auto& pos = mr.positions[i * 4 + k];
+                        mr.faces[i].vertexIndices[k] = lookupVertexIndex(MakeVertexKey(pos.x, pos.y, pos.z));
+                    }
+                }
                 
                 // 给所有新生成的面设置UV索引
                 for (size_t i = 0; i < mr.faces.size(); ++i) {

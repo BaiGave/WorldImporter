@@ -15,6 +15,7 @@
 #include "GlobalCache.h"
 #include <future>
 #include <mutex>
+#include <atomic>
 
 struct WeightedModelData {
     ModelData model;
@@ -31,6 +32,7 @@ extern std::unordered_map<std::string,
 extern std::unordered_map<std::string,
     std::unordered_map<std::string,
     std::vector<std::vector<WeightedModelData>>>> MultipartModelCache; // multipart部件缓存
+extern std::atomic<bool> blockstateCachesFrozen;
 
 bool matchConditions(const std::unordered_map<std::string, std::string>& blockConditions, const nlohmann::json& when);
 
@@ -47,6 +49,10 @@ void ProcessBlockstateForBlocks(const std::vector<Block>& blocks);
 nlohmann::json GetBlockstateJson(const std::string& namespaceName,const std::string& blockId);
 
 ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::string& blockId);
+
+// 获取该 block state 的全部模型（普通模型=1 个；加权 variant=全部变体；
+// multipart=按第 0 组选中的合并结果）。供运行时遮挡表做保守判定使用。
+std::vector<ModelData> GetAllModelsFromCache(const std::string& namespaceName, const std::string& blockId);
 
 
 

@@ -44,6 +44,8 @@ Config LoadConfig(const std::string& configFile) {
     config.exportLightBlockOnly = j.value("exportLightBlockOnly", config.exportLightBlockOnly);
     config.lightBlockSize = j.value("lightBlockSize", config.lightBlockSize);
     config.allowDoubleFace = j.value("allowDoubleFace", config.allowDoubleFace);
+    // 叠加层外移步长: 过小会在 Eevee 下 z-fighting, 过大在近景会看到层间错位
+    config.overlayLayerStep = std::clamp(j.value("overlayLayerStep", config.overlayLayerStep), 0.0002f, 0.05f);
     config.isLODAutoCenter = j.value("isLODAutoCenter", config.isLODAutoCenter);
     config.LODCenterX = j.value("LODCenterX", config.LODCenterX);
     config.LODCenterZ = j.value("LODCenterZ", config.LODCenterZ);
@@ -59,6 +61,7 @@ Config LoadConfig(const std::string& configFile) {
     config.activeLOD4 = j.value("activeLOD4", config.activeLOD4);
     config.useBiomeColors = j.value("useBiomeColors", config.useBiomeColors);
     config.useRandomBlockModels = j.value("useRandomBlockModels", config.useRandomBlockModels);
+    config.importEntities = j.value("importEntities", config.importEntities);
     
     // 读取LOD1级别使用原始模型的方块列表
     /*格式：
@@ -76,10 +79,14 @@ Config LoadConfig(const std::string& configFile) {
     }
 
     config.exportFullModel = j.value("exportFullModel", config.exportFullModel);
-    config.partitionSize = j.value("partitionSize", config.partitionSize);
-    
-    // 读取每批次的区块任务数量上限（如果存在）
-    config.maxTasksPerBatch = j.value("maxTasksPerBatch", config.maxTasksPerBatch);
+    // 对旧配置和手写配置做安全兜底；Python 自动模式仍写入同一批字段。
+    config.partitionSize = std::clamp(j.value("partitionSize", config.partitionSize), 1, 64);
+
+    // 读取每批次的区块任务数量上限（如果存在），避免 0 或异常大值导致
+    // 分批失效、整数溢出或一次加载整个世界。
+    const size_t requestedMaxTasks = j.value("maxTasksPerBatch", config.maxTasksPerBatch);
+    config.maxTasksPerBatch = std::clamp<size_t>(requestedMaxTasks, 1, 262144);
+    config.modelThreads = std::clamp(j.value("modelThreads", config.modelThreads), 1, 32);
 
 
     config.selectedDimension = j.value("selectedDimension", config.selectedDimension);

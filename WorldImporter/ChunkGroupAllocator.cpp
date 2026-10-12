@@ -5,6 +5,7 @@
 #include <limits> // 新增:用于 numeric_limits
 #include <algorithm>
 #include <shared_mutex>
+#include <utility>
 #undef max
 #undef min
 
@@ -18,7 +19,9 @@ namespace ChunkGroupAllocator {
         int sectionYStart, int sectionYEnd)
     {
         g_chunkGroups.clear(); // 清空之前的分组
-        int partitionSize = config.partitionSize;
+        // A single-file export must not serialize a whole huge partition on
+        // one worker. Internal 2x2 work units do not change output file layout.
+        int partitionSize = config.exportFullModel ? std::min(2, config.partitionSize) : config.partitionSize;
         int groupsX = ((chunkXEnd - chunkXStart) / partitionSize) + 1;
         int groupsZ = ((chunkZEnd - chunkZStart) / partitionSize) + 1;
         g_chunkGroups.reserve(groupsX * groupsZ);
@@ -92,7 +95,8 @@ namespace ChunkGroupAllocator {
 
         auto flushCurrentBatch = [&]() {
             if (!currentBatch.groups.empty()) {
-                g_chunkBatches.push_back(currentBatch);
+                // Batch 可能包含数万个任务，必须移动而不是完整复制。
+                g_chunkBatches.push_back(std::move(currentBatch));
                 // 重新初始化
                 currentBatch = ChunkBatch{};
                 currentBatch.chunkXStart = std::numeric_limits<int>::max();
@@ -103,22 +107,28 @@ namespace ChunkGroupAllocator {
             }
         };
 
-        for (const auto& group : g_chunkGroups) {
-            size_t groupTaskCount = group.tasks.size();
+        for (auto& group : g_chunkGroups) {
+            const size_t groupTaskCount = group.tasks.size();
+            const int groupStartX = group.startX;
+            const int groupStartZ = group.startZ;
 
             // 如果当前批次任务数超出限制,则先刷入当前批次
             if (currentTaskCount + groupTaskCount > maxTasksPerBatch && !currentBatch.groups.empty()) {
                 flushCurrentBatch();
             }
 
-            // 更新批次信息
-            currentBatch.groups.push_back(group);
             currentTaskCount += groupTaskCount;
+            currentBatch.chunkXStart = std::min(currentBatch.chunkXStart, groupStartX);
+            currentBatch.chunkZStart = std::min(currentBatch.chunkZStart, groupStartZ);
+            // 最后一组可能不足 partitionSize，不能把批次边界扩到选择区域外。
+            // Actual task bounds also cover internally subdivided full-model groups.
+            for (const auto& task : group.tasks) {
+                currentBatch.chunkXEnd = std::max(currentBatch.chunkXEnd, task.chunkX);
+                currentBatch.chunkZEnd = std::max(currentBatch.chunkZEnd, task.chunkZ);
+            }
 
-            currentBatch.chunkXStart = std::min(currentBatch.chunkXStart, group.startX);
-            currentBatch.chunkZStart = std::min(currentBatch.chunkZStart, group.startZ);
-            currentBatch.chunkXEnd   = std::max(currentBatch.chunkXEnd, group.startX + config.partitionSize - 1);
-            currentBatch.chunkZEnd   = std::max(currentBatch.chunkZEnd, group.startZ + config.partitionSize - 1);
+            // g_chunkGroups 在批次生成后只保留数量统计，任务向量直接搬入 Batch。
+            currentBatch.groups.push_back(std::move(group));
         }
 
         // 刷入最后一个批次

@@ -1,0 +1,9 @@
+{
+    "ctm": {
+        "ctm_version": 1,
+        "textures": [
+            "yuushya:block_/blindwall/blue_blindwall_ctm"
+        ],
+        "type": "CTM"
+    }
+}

@@ -1,0 +1,71 @@
+Texture not found: create:fluid/chocolate_still
+Texture not found: create:fluid/chocolate_flow
+Texture not found: create:fluid/honey_still
+Texture not found: create:fluid/honey_flow
+Texture not found: alexscaves:block/acid_still
+Texture not found: alexscaves:block/acid_flowing
+计算顶点键: 166.613 ms
+排序顶点键: 1347.78 ms
+去重顶点: 283.287 ms
+更新面索引: 6.4253 ms
+总去重时间: 1804.1 ms
+原始顶点数: 23393068, 去重后顶点数: 3395277, 减少率: 85.486%
+GreedyMesh Step1 normals: 3.5243 ms
+GreedyMesh Step2 adjacency: 142.102 ms
+GreedyMesh Step3 sort vert pairs: 81.4712 ms
+GreedyMesh Step5 grouping (UF): 66.3088 ms
+GreedyMesh: 原始面数 489653, 处理后面数 310474, UV坐标数 756518
+GreedyMesh Step7 merging: 6413.68 ms
+GreedyMesh total: 6867.85 ms
+计算顶点键: 27.8437 ms
+排序顶点键: 293.537 ms
+去重顶点: 61.0999 ms
+更新面索引: 3.4157 ms
+总去重时间: 385.896 ms
+原始顶点数: 6350118, 去重后顶点数: 1058988, 减少率: 83.3233%
+GreedyMesh Step1 normals: 2.1797 ms
+GreedyMesh Step2 adjacency: 57.4087 ms
+GreedyMesh Step3 sort vert pairs: 19.7319 ms
+GreedyMesh Step5 grouping (UF): 27.8145 ms
+GreedyMesh: 原始面数 253532, 处理后面数 160103, UV坐标数 397944
+GreedyMesh Step7 merging: 7010.57 ms
+GreedyMesh total: 7181.94 ms
+计算顶点键: 38.9873 ms
+排序顶点键: 406.318 ms
+去重顶点: 90.2392 ms
+更新面索引: 4.0249 ms
+总去重时间: 539.569 ms
+原始顶点数: 8985368, 去重后顶点数: 1356723, 减少率: 84.9008%
+GreedyMesh Step1 normals: 1.704 ms
+GreedyMesh Step2 adjacency: 58.817 ms
+GreedyMesh Step3 sort vert pairs: 27.0134 ms
+GreedyMesh Step5 grouping (UF): 38.327 ms
+GreedyMesh: 原始面数 271444, 处理后面数 164603, UV坐标数 445148
+GreedyMesh Step7 merging: 5614.8 ms
+GreedyMesh total: 5809.45 ms
+计算顶点键: 75.2419 ms
+排序顶点键: 932.89 ms
+去重顶点: 171.068 ms
+更新面索引: 4.4712 ms
+总去重时间: 1183.67 ms
+原始顶点数: 18470620, 去重后顶点数: 2644553, 减少率: 85.6824%
+GreedyMesh Step1 normals: 2.8412 ms
+GreedyMesh Step2 adjacency: 77.6224 ms
+GreedyMesh Step3 sort vert pairs: 55.5263 ms
+GreedyMesh Step5 grouping (UF): 41.1616 ms
+GreedyMesh: 原始面数 344134, 处理后面数 220990, UV坐标数 599573
+GreedyMesh Step7 merging: 6041.15 ms
+GreedyMesh total: 6314.18 ms
+计算顶点键: 3.9696 ms
+排序顶点键: 23.778 ms
+去重顶点: 8.9511 ms
+更新面索引: 1.4552 ms
+总去重时间: 38.1539 ms
+原始顶点数: 830016, 去重后顶点数: 227753, 减少率: 72.5604%
+GreedyMesh Step1 normals: 0.7167 ms
+GreedyMesh Step2 adjacency: 6.9071 ms
+GreedyMesh Step3 sort vert pairs: 3.7091 ms
+GreedyMesh Step5 grouping (UF): 3.1648 ms
+GreedyMesh: 原始面数 34584, 处理后面数 19719, UV坐标数 78880
+GreedyMesh Step7 merging: 702.067 ms
+GreedyMesh total: 726.707 ms

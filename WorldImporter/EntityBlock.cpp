@@ -56,10 +56,13 @@ ModelData YuushyaShowBlockEntity::GenerateModel() const {
         if (colonPos != std::string::npos) blockName = blockName.substr(colonPos + 1);
         ModelData blockModel = GetRandomModelFromCache(ns, blockName);
 
-        // 如果缓存未命中,尝试处理 blockstate 并重新获取模型
-        if (blockModel.vertices.empty() && !blockName.empty()) {
-            ProcessBlockstate(ns, {blockName}); // blockName 应包含方块状态, ns 是命名空间
-            blockModel = GetRandomModelFromCache(ns, blockName); // 再次尝试获取
+        // 批次加载阶段已串行预解析全局调色板。模型阶段缓存冻结后禁止
+        // 惰性 ProcessBlockstate：它会写 Block/Variant/MultipartModelCache，
+        // 与其它模型线程的无锁读取并发时会损坏 unordered_map 堆结构。
+        if (blockModel.vertices.empty() && !blockName.empty() &&
+            !blockstateCachesFrozen.load(std::memory_order_acquire)) {
+            ProcessBlockstate(ns, {blockName});
+            blockModel = GetRandomModelFromCache(ns, blockName);
         }
 
         // 将所有面设置为DO_NOT_CULL,确保不会被贪心合并算法错误剔除
@@ -263,7 +266,9 @@ static ModelData GenerateModelFromTiles(const std::vector<LittleTilesTileEntry>&
         }
 
         ModelData templateModel = GetRandomModelFromCache(ns, blockName);
-        if (templateModel.vertices.empty() && !blockName.empty()) {
+        // 同上：冻结后的模型阶段只读缓存，禁止并发惰性写入。
+        if (templateModel.vertices.empty() && !blockName.empty() &&
+            !blockstateCachesFrozen.load(std::memory_order_acquire)) {
             ProcessBlockstate(ns, { blockName });
             templateModel = GetRandomModelFromCache(ns, blockName);
         }

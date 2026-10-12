@@ -19,6 +19,7 @@
 #include "config.h"
 #include "texture.h"
 #include "GlobalCache.h"
+#include "blocktint.h"
 #pragma once
 
 #define _USE_MATH_DEFINES
@@ -35,10 +36,19 @@ enum  FaceType{
 struct Material {
     std::string name;       // 材质名称
     std::string texturePath;// 纹理路径
+    std::string textureKey; // 模型 textures 中的贴图键(如 all/side/top)，用于按方块 id 重命名
     int8_t  tintIndex;      // tint 索引
+    TintResult tint;        // 解析后的 tint 结果（None 表示不上色）
+    bool tintLocked = false;// tint 已由 CTM 规则(tintIndex/tintBlock)锁定, 不再参与重解析
     MaterialType type;      // 材质类型
     float aspectRatio;      // 动态材质长宽比（高/宽）
-    
+    // 周期 atlas 材质(仅 repeat CTM): 面 UV 落在 atlas 格子里, 且格子按世界
+    // 坐标周期排列。贪心合并时可跨格扩展 UV, 由纹理 REPEAT 回绕。
+    bool  uvAtlas = false;      // 该材质是一张 atlas(非整图贴图)
+    bool  uvPeriodic = false;
+    float uvCellW = 0.0f;   // 一格在 UV 空间的宽度 (1/cols)
+    float uvCellH = 0.0f;   // 一格在 UV 空间的高度 (1/rows)
+
     // 构造函数,默认为普通材质
     Material() : name(""), texturePath(""), tintIndex(-1), type(NORMAL), aspectRatio(1.0f) {}
     Material(const std::string& name, const std::string& path, int8_t tint) 
@@ -56,6 +66,15 @@ struct Face {
     std::array<int, 4> uvIndices;     // 四个 UV 索引
     int materialIndex;                // 材质索引
     FaceType faceDirection;           // 剔除方向
+    int8_t tintIndex = -1;            // 面级 tintindex（-1 表示不染色）
+};
+
+// 共面叠加层配对(如草方块侧面的 overlay 元素):
+// overlayFace 与 baseFace 同位置且最终 UV 一致。导出时若底层存活则删除叠加面,
+// 并把叠加层材质/贴图/tint 登记进 overlay.json,由 Blender 侧材质节点实现叠加。
+struct OverlayPair {
+    int baseFace = -1;
+    int overlayFace = -1;
 };
 
 // 修改 ModelData,使用统一 Face 结构体替换原有的 faces、uvFaces、materialIndices 和 faceDirections
@@ -69,6 +88,9 @@ struct ModelData {
 
     // 材质系统(保持原优化方案)
     std::vector<Material> materials;      // 每个材质包含名称、纹理路径和 tint 索引
+
+    // 共面叠加层配对(见 OverlayPair)
+    std::vector<OverlayPair> overlayPairs;
 };
 
 // 自定义顶点键:用整数表示,精度保留到小数点后6位
@@ -88,8 +110,11 @@ struct UVKey {
 };
 
 // 自定义顶点键
+// 注意: 必须包含 UV 索引。CTM overlay 会在同一方块面上叠加多个 tile
+// (顶点/材质相同, 仅 UV 不同), 只按顶点+材质去重会把它们误删(缺角/缺边)。
 struct FaceKey {
     std::array<int, 4> sortedVerts;
+    std::array<int, 4> sortedUVs;   // 与 sortedVerts 一一对应
     int materialIndex;
     
     // C++20: 使用<=>运算符简化比较操作
@@ -120,6 +145,9 @@ struct FaceKeyHasher {
         // 使用C++20的ranges功能来简化遍历
         for (int v : k.sortedVerts) {
             seed ^= std::hash<int>()(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        for (int u : k.sortedUVs) {
+            seed ^= std::hash<int>()(u) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
         }
         return seed;
     }
@@ -168,12 +196,23 @@ ModelData ProcessModelJson(const std::string& namespaceName,
     const std::string& blockId,
     int rotationX, int rotationY,bool uvlock, int randomIndex = 0, const std::string& blockstateName="");
 
+// 按方块 id 重命名模型中的材质（方块id 或 方块id#贴图键~贴图名，详见 model.cpp）
+void RenameBlockMaterials(ModelData& model,
+    const std::string& namespaceName,
+    const std::string& baseBlockId);
+
+// 取贴图路径的文件名部分并去掉扩展名（textures/minecraft/block/oak_log.png -> oak_log）
+std::string MaterialTextureBasename(const std::string& texturePath);
+
 // 模型合并
 ModelData MergeModelData(const ModelData& data1, const ModelData& data2);
 
 ModelData MergeFluidModelData(const ModelData& data1, const ModelData& data2);
 
-void MergeModelsDirectly(ModelData& data1, const ModelData& data2);
+// Optional destination-owned lookup for repeated appends; reset it whenever
+// the destination materials are replaced/reordered.
+void MergeModelsDirectly(ModelData& data1, const ModelData& data2,
+    std::unordered_map<std::string, int>* materialLookup = nullptr);
 
 // 使用C++20的span来改进参数传递(避免复制)
 void ApplyPositionOffset(ModelData& model, int x, int y, int z);
@@ -194,7 +233,9 @@ nlohmann::json GetModelJson(const std::string& namespaceName,
     const std::string& modelPath);
 nlohmann::json LoadParentModel(const std::string& namespaceName,
     const std::string& blockId,
-    nlohmann::json& currentModelJson);
+    nlohmann::json& currentModelJson,
+    std::unordered_set<std::string>* visiting = nullptr,
+    int depth = 0);
 nlohmann::json MergeModelJson(const nlohmann::json& parentModelJson,
     const nlohmann::json& currentModelJson);
 

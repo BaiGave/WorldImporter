@@ -30,7 +30,6 @@ struct Config {
     std::vector<std::string> resourcepacksPaths; // 资源包路径
     std::unordered_set<std::string> lod1Blocks; // LOD1级别使用原始模型的方块列表
     std::string selectedDimension; // 当前选择的维度ID
-    std::string solidBlocksFile;  // 固体方块列表文件路径
     std::string fluidsFile; //流体列表文件路径
     int minX, minY, minZ, maxX, maxY, maxZ; // 坐标范围
     int chunkXStart, chunkXEnd, chunkZStart, chunkZEnd; // 区块坐标范围
@@ -45,6 +44,7 @@ struct Config {
     bool exportLightBlockOnly;//仅导出光源方块
     float lightBlockSize; //光源方块半径大小
     bool allowDoubleFace;//允许重叠面
+    float overlayLayerStep; //共面叠加层(原版 overlay / CTM overlay)的逐层外移步长, 避免 Blender 下 z-fighting
     bool activeLOD; //使用LOD
     bool isLODAutoCenter; //是否自动计算LOD中心坐标
     int LODCenterX; //LOD中心坐标X
@@ -60,10 +60,12 @@ struct Config {
     bool activeLOD4; // 是否启用LOD4
     bool useBiomeColors; // 是否启用群系颜色叠加
     bool useRandomBlockModels; // 是否使用随机方块模型
+    bool importEntities; // 导出区域内生物/实体元数据
 
     bool exportFullModel;  // 是否完整导入
     int partitionSize; //分割大小
     size_t maxTasksPerBatch; //每批次区块任务数量上限
+    int modelThreads; //模型生成线程数(默认1，自动模式可提高)
 
     int decimalPlaces; //lod群系颜色值小数精度 #待做
     bool importByBlockType;  // 是否按方块种类导入 #待做
@@ -76,7 +78,6 @@ struct Config {
         modsPath(""),
         resourcepacksPaths({}),
         selectedDimension("minecraft:overworld"),
-        solidBlocksFile("config\\jsons\\solids.json"),
         fluidsFile("config\\jsons\\fluids.json"),
         minX(0), minY(0), minZ(0), maxX(0), maxY(0), maxZ(0),
         status(0),
@@ -89,6 +90,7 @@ struct Config {
         exportLightBlockOnly(false),
         lightBlockSize(0.05f),
         allowDoubleFace(false),
+        overlayLayerStep(0.003f),
         isLODAutoCenter(true),
         LODCenterX(0),
         LODCenterZ(0),
@@ -105,11 +107,12 @@ struct Config {
         lod1Blocks({}),
         useBiomeColors(true),
         useRandomBlockModels(true),
-        
+        importEntities(false),
 
         exportFullModel(false),
         partitionSize(4),
         maxTasksPerBatch(32768),
+        modelThreads(1),
 
         decimalPlaces(2),
         importByBlockType(false),

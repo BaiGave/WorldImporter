@@ -137,16 +137,26 @@ int GetBiomeId(int blockX, int blockY, int blockZ) {
     // 将方块的Y坐标转换为子区块索引
     int sectionY;
     blockYToSectionY(blockY, sectionY);
+    int adjustedSectionY = AdjustSectionY(sectionY); // 与 ProcessSection 存储 key 一致
 
     // 创建缓存键
-    auto blockKey = std::make_tuple(chunkX, chunkZ, sectionY);
+    auto blockKey = std::make_tuple(chunkX, chunkZ, adjustedSectionY);
 
     // 检查 SectionCache 中是否存在对应的区块数据,如果没有则加载
-    if (sectionCache.find(blockKey) == sectionCache.end()) {
-        LoadAndCacheBlockData(chunkX, chunkZ);
+    // 注意: 必须加锁访问 sectionCache, 且不能用 operator[] 插入(多线程并发写 unordered_map 会崩溃)
+    {
+        std::shared_lock<std::shared_mutex> sc_lock(sectionCacheMutex);
+        if (!globalPaletteFrozen.load(std::memory_order_acquire) &&
+            sectionCache.find(blockKey) == sectionCache.end()) {
+            sc_lock.unlock();
+            LoadAndCacheBlockData(chunkX, chunkZ);
+        }
     }
 
-    const auto& biomeData = sectionCache[blockKey].biomeData;
+    std::shared_lock<std::shared_mutex> sc_lock(sectionCacheMutex);
+    auto secIt = sectionCache.find(blockKey);
+    if (secIt == sectionCache.end()) return 0;
+    const auto& biomeData = secIt->second.biomeData;
 
     int biomeX = mod16(blockX) / 4;
     int biomeY = mod16(blockY) / 4;
@@ -233,6 +243,21 @@ std::string Biome::GetColormapData(const std::string& namespaceName, const std::
 
 BiomeColors Biome::ParseBiomeColors(const nlohmann::json& biomeJson) {
     BiomeColors colors;
+
+    // 空/无效 json 保护: 避免访问不存在的 effects 键抛异常, 导致生物群系注册失败
+    if (biomeJson.is_null() || biomeJson.empty() || !biomeJson.contains("effects")) {
+        // 使用默认生物群系颜色(中性绿/蓝)
+        colors.grass = 0x7CBD6B;
+        colors.foliage = 0x7CBD6B;
+        colors.dryFoliage = 0x7CBD6B;
+        colors.water = 0x3F76E4;
+        colors.waterFog = 0x3F76E4;
+        colors.sky = 0x78A7FF;
+        colors.fog = 0xC0D8FF;
+        colors.adjTemperature = 0.5f;
+        colors.adjDownfall = 0.5f;
+        return colors;
+    }
 
     auto safeIntVal = [](const nlohmann::json& j, const std::string& k, int def) -> int {
         if (!j.contains(k)) return def;
@@ -404,15 +429,19 @@ int Biome::GetBiomeColor(int blockX, int blockY, int blockZ, BiomeColorType colo
             int sectionY;
             blockYToSectionY(blockY, sectionY);
 
-            // 创建缓存键
-            auto blockKey = std::make_tuple(chunkX, chunkZ, sectionY);
+            // sectionCache 使用 AdjustSectionY(sectionY) 作为键；必须与
+            // ProcessSection/ GetBlockId 保持一致，否则这里会误判区块未加载，
+            // 在模型线程中触发 LoadAndCacheBlockData，造成并发写缓存和堆损坏。
+            int adjustedSectionY = AdjustSectionY(sectionY);
+            auto blockKey = std::make_tuple(chunkX, chunkZ, adjustedSectionY);
 
-            // 检查 SectionCache 中是否存在对应的区块数据,否则加载
-            if (sectionCache.find(blockKey) == sectionCache.end()) {
-                LoadAndCacheBlockData(chunkX, chunkZ);
-            }
-
-            const auto& biomeData = sectionCache[blockKey].biomeData;
+            // 模型阶段批次及一圈边界已完整预加载。此处只读，缺失时使用默认色；
+            // 绝不能在模型线程里惰性 LoadAndCacheBlockData，否则会与 GetBlockId/
+            // GetSkyLight 的高频无锁读取并发写 sectionCache，触发堆损坏。
+            std::shared_lock<std::shared_mutex> sc_lock(sectionCacheMutex);
+            auto secIt = sectionCache.find(blockKey);
+            if (secIt == sectionCache.end()) continue;
+            const auto& biomeData = secIt->second.biomeData;
 
             // 计算在子区块内的坐标,注意与生物群系数据排列有关
             int biomeX = mod16(curX) / 4;

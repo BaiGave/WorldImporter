@@ -1,0 +1,9 @@
+{
+    "ctm": {
+        "ctm_version": 1,
+        "textures": [
+            "yuushya:block_/framed_bricks_ctm"
+        ],
+        "type": "CTM"
+    }
+}

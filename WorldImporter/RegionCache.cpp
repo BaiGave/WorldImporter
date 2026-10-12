@@ -3,11 +3,19 @@
 #include "config.h"
 #include <sstream>
 #include <fstream>
+#include <iostream>
 #include <filesystem> // 用于检测目录是否存在
 #include <cstdint> // 用于 uint8_t, uint32_t
 #include <vector>
 #include "locutil.h"
-std::unordered_map<std::pair<int, int>, std::vector<char>, pair_hash> regionCache(1024);
+std::map<std::pair<int, int>, std::shared_ptr<const std::vector<char>>> regionCache;
+std::mutex regionCacheMutex;
+
+// 区域缓存总字节数(受 regionCacheMutex 保护)
+static size_t regionCacheBytes = 0;
+// 区域缓存上限:1 GiB。超过时整体清空,避免大范围导入时内存持续膨胀。
+// 安全性:清空只释放缓存持有的数据,调用方通过 shared_ptr 已持有的数据仍然有效。
+static const size_t REGION_CACHE_MAX_BYTES = 1024ull * 1024ull * 1024ull;
 
 // 将维度ID(如 minecraft:overworld)拆分为命名空间和名称两部分
 static void SplitDimensionId(const std::string& sel, std::string& ns, std::string& name) {
@@ -93,6 +101,22 @@ static std::string GetRegionDirectory() {
     return base + "/region";
 }
 
+// 维度目录在一次运行内不变,缓存结果避免每个区块都重复扫描文件系统
+// (旧实现:HasChunk 每区块调用一次 GetRegionDirectory,含多次 stat/目录遍历)
+static std::string GetRegionDirectoryCached() {
+    static std::mutex dirMutex;
+    static std::string cachedDir;
+    static std::string cachedDimension;
+    static bool cached = false;
+    std::lock_guard<std::mutex> lock(dirMutex);
+    if (!cached || cachedDimension != config.selectedDimension) {
+        cachedDir = GetRegionDirectory();
+        cachedDimension = config.selectedDimension;
+        cached = true;
+    }
+    return cachedDir;
+}
+
 //读取.mca文件到内存
 std::vector<char> ReadFileToMemory(const std::string& regionDirPath, int regionX, int regionZ) {
     // 构造区域文件的路径
@@ -107,9 +131,16 @@ std::vector<char> ReadFileToMemory(const std::string& regionDirPath, int regionX
         return {};  // 返回空vector表示失败
     }
 
-    // 将文件内容读取到文件数据中
-    std::vector<char> fileData;
-    fileData.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    // Read the region in one bulk operation, not one stream iterator per byte.
+    file.seekg(0, std::ios::end);
+    const auto length = file.tellg();
+    if (length <= 0) return {};
+    file.seekg(0, std::ios::beg);
+    std::vector<char> fileData(static_cast<size_t>(length));
+    if (!file.read(fileData.data(), static_cast<std::streamsize>(fileData.size()))) {
+        std::cerr << "错误: 区域文件读取不完整!" << std::endl;
+        return {};
+    }
     if (fileData.empty()) {
         std::cerr << "错误: 文件为空或读取失败!" << std::endl;
         return {};  // 返回空vector表示失败
@@ -120,30 +151,44 @@ std::vector<char> ReadFileToMemory(const std::string& regionDirPath, int regionX
 }
 
 
-const std::vector<char>& GetRegionFromCache(int regionX, int regionZ) {
+std::shared_ptr<const std::vector<char>> GetRegionFromCache(int regionX, int regionZ) {
     auto regionKey = std::make_pair(regionX, regionZ);
+    std::lock_guard<std::mutex> lock(regionCacheMutex);
     auto it = regionCache.find(regionKey);
-    if (it == regionCache.end()) {
-        std::string regionDir = GetRegionDirectory();
-        std::vector<char> fileData = ReadFileToMemory(regionDir, regionX, regionZ);
-        auto result = regionCache.emplace(regionKey, std::move(fileData));
-        it = result.first;
+    if (it != regionCache.end()) {
+        return it->second;
     }
-    return it->second;
+
+    std::string regionDir = GetRegionDirectoryCached();
+    std::vector<char> fileData = ReadFileToMemory(regionDir, regionX, regionZ);
+
+    // 超过上限时整体清空(调用方持有的 shared_ptr 不受影响)
+    if (!fileData.empty() && regionCacheBytes + fileData.size() > REGION_CACHE_MAX_BYTES) {
+        std::cout << "[RegionCache] 缓存达到上限(" << (REGION_CACHE_MAX_BYTES / 1024 / 1024)
+                  << " MB),已清空 " << regionCache.size() << " 个区域文件缓存" << std::endl;
+        regionCache.clear();
+        regionCacheBytes = 0;
+    }
+
+    auto dataPtr = std::make_shared<const std::vector<char>>(std::move(fileData));
+    regionCacheBytes += dataPtr->size();
+    regionCache.emplace(regionKey, dataPtr);
+    return dataPtr;
 }
 
 // 新增:判断指定 chunk 是否存在于 region 文件中
 bool HasChunk(int chunkX, int chunkZ) {
     int regionX, regionZ;
     chunkToRegion(chunkX, chunkZ, regionX, regionZ);
-    std::string regionDir = GetRegionDirectory();
+    std::string regionDir = GetRegionDirectoryCached();
     std::ostringstream filePathStream;
     filePathStream << regionDir << "/r." << regionX << "." << regionZ << ".mca";
     std::string filePath = filePathStream.str();
     if (!std::filesystem::exists(filePath)) {
         return false;
     }
-    const auto& data = GetRegionFromCache(regionX, regionZ);
+    auto dataPtr = GetRegionFromCache(regionX, regionZ);
+    const auto& data = *dataPtr;
     int localX = chunkX - regionX * 32;
     int localZ = chunkZ - regionZ * 32;
     if (localX < 0 || localX >= 32 || localZ < 0 || localZ >= 32) {

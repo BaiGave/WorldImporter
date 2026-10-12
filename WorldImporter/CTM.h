@@ -14,6 +14,7 @@
 //   horizontal   按左右连接选 tile(书架等)
 //   vertical     按上下连接选 tile
 //   ctm          完整 47 tile 标准连接(制图台等)
+//   repeat       按世界坐标 + 面方向循环平铺 tile(网格纹理/条木等)
 //
 // 烘焙时机:
 //   在区块导出阶段,逐方块逐面根据世界邻居关系选择/合成 CTM 贴图,
@@ -34,9 +35,12 @@ enum class CtmMethod {
     Ctm,                // 完整 47 tile 标准连接
     Horizontal,         // 水平连接(左右)
     Vertical,           // 垂直连接(上下)
-    Random,             // 随机(第一阶段仅退化处理)
-    OverlayHorizontal,  // 叠加水平(第一阶段仅退化处理)
-    Repeat,             // 重复平铺(第一阶段仅退化处理)
+    Random,             // 按坐标确定性随机
+    Fixed,              // 固定替换贴图
+    Top,                // 与主轴正方向邻居连接时替换侧面
+    Overlay,            // 标准 17 tile 叠加层
+    OverlayHorizontal,  // 叠加水平
+    Repeat,             // 重复平铺
     Unknown             // 未知方法,不处理
 };
 
@@ -44,12 +48,30 @@ enum class CtmMethod {
 struct CtmRule {
     std::string ns;                     // 命名空间,例如 minecraft
     std::string baseDir;                // tile 所在目录(相对 namespace),例如 optifine/ctm/glass/glass
-    std::vector<std::string> matchBlocks;  // matchBlocks 值,可能含 _stained_glass 通配
+    std::vector<std::string> matchBlocks;  // matchBlocks 的完整 ns:block 名
     std::vector<std::string> matchTiles;   // matchTiles 值
+    std::vector<std::string> matchTileNamespaces; // 每个 matchTiles 对应的纹理命名空间
     CtmMethod method = CtmMethod::None;
     std::vector<int> tiles;             // tile 编号列表
     std::vector<std::string> faces;     // faces 过滤(sides/all/north,...)
     std::string connect;                // connect=block / 空
+    int width = 0;                      // repeat 专用: tile 网格宽
+    int height = 0;                     // repeat 专用: tile 网格高
+    std::string orient;                 // orient 模式(texture / none / state-axis 等)
+    std::string symmetry = "none";      // random: none / opposite / all
+    std::vector<int> weights;           // random: 可选权重
+    int randomLoops = 0;                // random: 随机循环扰动
+    bool linked = false;                // random: 同列方块共用随机值
+    bool innerSeams = false;            // 连接时是否保留内接缝
+    std::vector<std::string> connectBlocks; // overlay 邻居方块过滤
+    std::vector<std::string> connectTiles;  // overlay 邻居贴图过滤
+    std::string layer;                  // overlay 图层
+    int tintIndex = -1;                 // tintIndex 数字值(命名值见 tintIndexName)
+    std::string tintIndexName;          // tintIndex 非数字时的原名, 如 grass / stone
+    std::string tintBlock;              // tintBlock 完整方块 id(含命名空间), 空=用当前方块
+    bool hasTint = false;               // properties 是否显式声明了 tintIndex / tintBlock
+    std::unordered_map<int, int> ctmOverrides; // ctm.N 自定义替换
+    std::string resourceCondition;      // Continuity 资源条件
     std::string propertiesPath;         // properties 文件相对路径,用于调试
 };
 
@@ -73,9 +95,11 @@ void InitializeCtmRules();
 
 // 按命名空间+方块名+贴图名查找匹配的 CTM 规则。返回 nullptr 表示无匹配。
 // textureName 为不含扩展名和 namespace 的贴图路径,例如 "block/glass"。
-const CtmRule* FindCtmRule(const std::string& ns,
+const CtmRule* FindCtmRule(const std::string& blockNs,
                            const std::string& blockName,
-                           const std::string& textureName);
+                           const std::string& textureNs,
+                           const std::string& textureName,
+                           const std::string& faceName = "");
 
 // 判断给定面方向是否在规则的 faces 过滤内。faceName 为 down/up/north/south/west/east。
 bool CtmRuleMatchesFace(const CtmRule& rule, const std::string& faceName);

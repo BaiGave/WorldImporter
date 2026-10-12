@@ -1,0 +1,40 @@
+{
+    "fluids": [
+        {
+            "name": "minecraft:lava"
+
+        },
+        
+
+        {
+            "name": "alexscaves:acid",
+            "flow_texture": "_flowing",
+            "still_texture": "_still"
+        },
+        {
+            "name": "create:honey",
+            "folder": "fluid"
+        },
+        {
+            "name": "create:chocolate",
+            "folder": "fluid"
+        },
+
+
+        {
+            "name": "minecraft:water",
+            "folder": "block",
+            "property": "waterlogged",
+            "liquid_blocks": [
+                "minecraft:bubble_column",
+                "minecraft:kelp",
+                "minecraft:kelp_plant",
+                "minecraft:seagrass",
+                "minecraft:tall_seagrass"
+            ]
+        }
+
+
+
+    ]
+}
