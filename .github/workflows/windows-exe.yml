@@ -1,0 +1,131 @@
+# Build Release WorldImporter.exe on Windows (MSVC + vcpkg static).
+# Prefer x64-windows-static so zlib/libzip are linked in; no zip.dll/z.dll needed beside the exe.
+name: Windows Release EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - ci/windows-exe
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup CMake 3.30+
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.30.5"
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: |
+          $root = "C:/vcpkg-wi"
+          if (-not (Test-Path "$root/vcpkg.exe")) {
+            git clone --depth 1 https://github.com/microsoft/vcpkg.git $root
+            & "$root/bootstrap-vcpkg.bat" -disableMetrics
+          }
+          "VCPKG_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Configure (Release / Ninja / vcpkg static)
+        shell: pwsh
+        run: |
+          # Static triplet + /MT so zlib/libzip (and CRT) land inside the exe.
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows-static `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+            -DBUILD_TESTING=OFF `
+            -DWI_BUILD_CTM_TESTS=OFF
+
+      - name: Build Release
+        shell: pwsh
+        run: cmake --build build --parallel
+
+      - name: Stage runnable package (exe + optional DLLs)
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "build/WorldImporter.exe",
+            "build/Release/WorldImporter.exe"
+          )
+          $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) {
+            $exe = (Get-ChildItem -Path build -Recurse -Filter WorldImporter.exe | Select-Object -First 1).FullName
+          }
+          if (-not $exe) { throw "WorldImporter.exe not found under build/" }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item $exe dist/WorldImporter.exe -Force
+
+          # Fallback: if anything still dynamically links zlib/libzip, copy those DLLs next to the exe.
+          $vcpkgBin = Join-Path $env:VCPKG_ROOT "installed/x64-windows/bin"
+          $vcpkgStaticUnused = Join-Path $env:VCPKG_ROOT "installed/x64-windows-static/bin"
+          $dllNames = @("zip.dll", "z.dll", "zlib1.dll", "zlib.dll", "bz2.dll", "libzip.dll")
+          foreach ($name in $dllNames) {
+            foreach ($dir in @($vcpkgBin, $vcpkgStaticUnused, "build", "build/Release")) {
+              $src = Join-Path $dir $name
+              if (Test-Path $src) {
+                Copy-Item $src "dist/$name" -Force
+                Write-Host "Staged DLL: $src"
+              }
+            }
+          }
+
+          Write-Host "=== dist contents ==="
+          Get-ChildItem dist | Format-Table Name, Length, LastWriteTime
+
+          Write-Host "=== dumpbin /DEPENDENTS ==="
+          $dump = & dumpbin /DEPENDENTS dist/WorldImporter.exe 2>&1 | Out-String
+          Write-Host $dump
+
+          $bad = @("zip.dll", "z.dll", "zlib1.dll", "zlib.dll", "libzip.dll", "bz2.dll")
+          $dumpLower = $dump.ToLowerInvariant()
+          $missing = @()
+          foreach ($d in $bad) {
+            if ($dumpLower -match [regex]::Escape($d.ToLowerInvariant())) {
+              if (-not (Test-Path "dist/$d")) {
+                # Common alias: PE imports z.dll but vcpkg ships zlib1.dll
+                $aliases = @{
+                  "z.dll" = @("zlib1.dll", "zlib.dll", "z.dll")
+                  "zlib1.dll" = @("zlib1.dll", "z.dll", "zlib.dll")
+                }
+                $foundAlias = $false
+                if ($aliases.ContainsKey($d)) {
+                  foreach ($a in $aliases[$d]) {
+                    if (Test-Path "dist/$a") { $foundAlias = $true; break }
+                  }
+                }
+                if (-not $foundAlias) { $missing += $d }
+              }
+            }
+          }
+          if ($missing.Count -gt 0) {
+            throw "EXE still imports $($missing -join ', ') but those DLLs were not staged next to it. Prefer static triplet."
+          }
+
+          $len = (Get-Item dist/WorldImporter.exe).Length
+          Write-Host "WorldImporter.exe size: $len bytes"
+          if ($len -lt 2000000) {
+            Write-Host "::warning::EXE is under 2MB; static zlib/libzip usually yield a larger binary. Check DEPENDENTS above."
+          }
+
+      - name: Upload WorldImporter Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: WorldImporter-windows-x64
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30

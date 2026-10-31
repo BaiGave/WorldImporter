@@ -1,8 +1,13 @@
-#include "ObjExporter.h"
+#include "objExporter.h"
+#include <algorithm>
+#include <cassert>
 #include <chrono>
+#include <cstdio>
 #include <fstream>
+#include <set>
 #include <sstream>
 #include <locale>
+#include <limits>
 #include <filesystem>
 #include <system_error>
 
@@ -18,7 +23,6 @@ extern "C" {
 // Windows平台使用sprintf_s
 #define safe_sprintf sprintf_s
 #elif defined(__unix__) || defined(__APPLE__)
-#include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -83,56 +87,48 @@ std::string getExecutableDir() {
     }
 }
 
-// 辅助函数:计算数值转换为字符串后的长度
-template <typename T>
-int calculateStringLength(T value, int precision = 6) {
-    char buffer[64];
-    return snprintf(buffer, sizeof(buffer), "%.*f", precision, static_cast<double>(value));
+namespace {
+// 材质名规则：<命名空间>:<方块>#<贴图键>~<贴图名>[@<tint 后缀>]
+// "~" 是"贴图名"的分隔符，所以截断标记不能再用 "~" 当前缀，改用名字里不会出现的 "!"。
+uint32_t Fnv1a32(const std::string& text) {
+    uint32_t hash = 2166136261u;
+    for (unsigned char c : text) {
+        hash ^= c;
+        hash *= 16777619u;
+    }
+    return hash;
 }
 
-// 快速计算整数的字符串长度(正数)
-inline int calculateIntLength(int value) {
-    if (value == 0) return 1;
-    int length = 0;
-    bool is_negative = value < 0;
-    value = abs(value); // 取绝对值
-    while (value != 0) {
-        value /= 10;
-        length++;
-    }
-    if (is_negative) {
-        length++; // 负数需要额外的符号位
-    }
-    return length;
+// 按 UTF-8 字符边界截到不超过 maxBytes 字节（避免切出半个汉字/emoji）。
+std::string Utf8Prefix(const std::string& text, size_t maxBytes) {
+    if (text.size() <= maxBytes) return text;
+    size_t cut = maxBytes;
+    while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80) --cut;
+    return text.substr(0, cut);
 }
-// 快速计算浮点数转换为 "%.6f" 格式后的字符串长度(数学估算)
-inline int calculateFloatStringLength(float value) {
-    if (value == floor(value)) {  // 整数
-        return calculateIntLength(static_cast<int>(value));
+} // namespace
+
+// Blender 材质名上限 63 字节，超长会被 Blender 静默截断，tint.json / overlay.json /
+// doubleSided.json 的键就对不上。截断规则（与插件侧帧存储配合）：
+//   1) 完整保留第一个 "~" 之前的部分（<命名空间>:<方块>#<贴图键>），分类器靠它认方块；
+//   2) 把后面的贴图名整段换成 "~!<8 位哈希>"，哈希由完整名算出，tint 变体不会撞；
+//   3) 头部自己也超长（极罕见）时才按 UTF-8 边界切头部。
+// "!" 是截断标记：现有材质名只用到 ": # ~ @ / _ . -"，不会误认成贴图名。
+std::string BlenderSafeName(const std::string& n) {
+    if (n.size() <= 63) return n;
+
+    char hash[9];
+    std::snprintf(hash, sizeof(hash), "%08X", Fnv1a32(n));
+
+    const size_t tilde = n.find('~');
+    const std::string head = (tilde == std::string::npos) ? std::string() : n.substr(0, tilde);
+    // 后缀 "~!" + 8 位哈希 = 10 字节，头部最多留 53 字节。
+    if (!head.empty() && head.size() <= 53) {
+        return head + "~!" + hash;
     }
-    else {
-        const bool negative = value < 0.0f;
-        const double absValue = std::abs(static_cast<double>(value));
-
-        // 处理特殊情况:0.0
-        if (absValue < 1e-7) {
-            return negative ? 9 : 8; // "-0.000000" 或 "0.000000"
-        }
-
-        // 计算整数部分位数
-        int integerDigits;
-        if (absValue < 1.0) {
-            integerDigits = 1; // 例如 0.123456 -> "0.123456"
-        }
-        else {
-            integerDigits = static_cast<int>(std::floor(std::log10(absValue))) + 1;
-        }
-
-        // 总长度 = 符号位 + 整数部分 + 小数点 + 6位小数
-        return (negative ? 1 : 0) + integerDigits + 1 + 6;
-    }
-
+    return Utf8Prefix(n, 53) + "~!" + hash;
 }
+
 // 快速整数转字符串(正数版)
 inline char* fast_itoa_positive(uint32_t value, char* ptr) {
     char* start = ptr;
@@ -165,6 +161,16 @@ inline char* fast_itoa(int value, char* ptr) {
 
 // 快速浮点转字符串(固定6位小数)
 inline char* fast_ftoa(float value, char* ptr) {
+    // 非有限值(NaN/Inf):统一写 0,避开 floor()/整数转换的未定义行为
+    if (!std::isfinite(value)) {
+        *ptr++ = '0';
+        return ptr;
+    }
+    // 超出定点缩放安全范围:走 snprintf 兜底,避免 int64 溢出
+    if (std::fabs(value) >= 1.0e12f) {
+        int written = snprintf(ptr, 64, "%.6f", static_cast<double>(value));
+        return ptr + (written > 0 ? written : 0);
+    }
     if (value == floor(value)) {  // 检查是否是整数
         return fast_itoa(static_cast<int>(value), ptr);
     }
@@ -175,11 +181,6 @@ inline char* fast_ftoa(float value, char* ptr) {
         if (negative) {
             *ptr++ = '-';
             value = -value;
-        }
-
-        if (std::isinf(value)) {
-            memcpy(ptr, "inf", 3);
-            return ptr + 3;
         }
 
         int64_t scaled = static_cast<int64_t>(std::round(value * scale));
@@ -206,47 +207,11 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
     std::string objFilePath = exeDir + objName + ".obj";
     std::string mtlFilePath = mtlFileName.empty() ? (objName + ".mtl") : (mtlFileName + ".mtl");
 
-    size_t totalSize = 0;
-    // 文件头部分
-    totalSize += snprintf(nullptr, 0, "mtllib %s\n", mtlFilePath.c_str());
-    std::string modelName = objName.substr(objName.find_last_of("//") + 1);
-    totalSize += snprintf(nullptr, 0, "o %s\n\n", modelName.c_str());
-
-    // 预计算顶点注释行的长度
-    totalSize += snprintf(nullptr, 0, "# Vertices (%zu)\n", data.vertices.size() / 3);
-
-    // 预计算所有浮点数的字符串长度(顶点数据)
-    std::vector<int> vertexLengths(data.vertices.size());
-    for (size_t i = 0; i < data.vertices.size(); ++i) {
-        vertexLengths[i] = calculateFloatStringLength(data.vertices[i]);
-    }
-
-    const size_t vertexCount = data.vertices.size() / 3;
-#pragma omp parallel for reduction(+:totalSize)
-    for (size_t i = 0; i < vertexCount; ++i) {
-        const size_t base = i * 3;
-        const int lenX = vertexLengths[base];
-        const int lenY = vertexLengths[base + 1];
-        const int lenZ = vertexLengths[base + 2];
-        totalSize += 2 + lenX + 1 + lenY + 1 + lenZ + 1; // "v " + x + " " + y + " " + z + "\n"
-    }
-
-    //预计算UV注释行的长度
-    totalSize += snprintf(nullptr, 0, "\n# UVs (%zu)\n", data.uvCoordinates.size() / 2);
-
-    // 预计算UV数据长度
-    std::vector<int> uvLengths(data.uvCoordinates.size());
-    for (size_t i = 0; i < data.uvCoordinates.size(); ++i) {
-        uvLengths[i] = calculateFloatStringLength(data.uvCoordinates[i]);
-    }
-
-    const size_t uvCount = data.uvCoordinates.size() / 2;
-#pragma omp parallel for reduction(+:totalSize)
-    for (size_t i = 0; i < uvCount; ++i) {
-        const size_t base = i * 2;
-        const int lenU = uvLengths[base];
-        const int lenV = uvLengths[base + 1];
-        totalSize += 3 + lenU + 1 + lenV + 1; // "vt " + u + " " + v + "\n"
+    // 提取模型名称(取路径最后一段;兼容 / 与 \ 分隔符)
+    std::string modelName = objName;
+    size_t sepPos = objName.find_last_of("/\\");
+    if (sepPos != std::string::npos) {
+        modelName = objName.substr(sepPos + 1);
     }
 
     // 面数据分组计算
@@ -259,44 +224,44 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         }
     }
 
-    //预计算面注释行的长度
-    totalSize += snprintf(nullptr, 0, "\n# Faces (%zu)\n", totalFaces);
-
-    // 预计算材质组内每个材质对应的usemtl行以及各个面的长度
-    std::vector<size_t> usemtlLengths(data.materials.size());
-#pragma omp parallel for
-    for (int matIndex = 0; matIndex < data.materials.size(); ++matIndex) {
-        usemtlLengths[matIndex] = 8 + data.materials[matIndex].name.size() + 1; // "usemtl " + name + "\n"
-    }
-
-#pragma omp parallel for reduction(+:totalSize)
-    for (int matIndex = 0; matIndex < materialGroups.size(); ++matIndex) {
-        const auto& faces = materialGroups[matIndex];
-        if (faces.empty()) continue;
-        size_t localSize = usemtlLengths[matIndex];
-        for (const size_t faceIdx : faces) {
-            size_t faceLength = 3; // "f " + '\n'
-            const auto& vertexIndices = data.faces[faceIdx].vertexIndices;
-            const auto& uvIndices = data.faces[faceIdx].uvIndices;
-            for (int i = 0; i < 4; ++i) {
-                const int vIdx = vertexIndices[i] + 1;
-                const int uvIdx = uvIndices[i] + 1;
-                faceLength += calculateIntLength(vIdx) + calculateIntLength(uvIdx) + 2; // 对应 '/' 和空格
-            }
-            localSize += faceLength;
-        }
-        totalSize += localSize;
-    }
-
-    // 分配缓冲区(+1为安全冗余)
-    std::vector<char> buffer(totalSize + 1);
+    // Grow on demand instead of reserving worst-case space for every model line.
+    // This keeps large models proportional to their actual formatted size and
+    // avoids formatting floats and counting face-index digits in a sizing pass.
+    std::vector<char> buffer(64 * 1024);
     char* ptr = buffer.data();
+    const auto ensureSpace = [&](size_t extra) {
+        const size_t used = static_cast<size_t>(ptr - buffer.data());
+        if (extra <= buffer.size() - used) return;
+        if (extra > buffer.max_size() - used) {
+            throw std::length_error("OBJ buffer exceeds maximum size");
+        }
+        const size_t grownSize = buffer.size() <= buffer.max_size() / 2
+            ? buffer.size() * 2 : buffer.max_size();
+        buffer.resize((std::max)(grownSize, used + extra));
+        ptr = buffer.data() + used;
+    };
+    const auto appendFormatted = [&](const char* format, const auto&... args) {
+        const int length = snprintf(nullptr, 0, format, args...);
+        if (length < 0) {
+            throw std::runtime_error("Unable to format OBJ header");
+        }
+        ensureSpace(static_cast<size_t>(length) + 1); // snprintf's terminating NUL
+        ptr += snprintf(ptr, buffer.size() - (ptr - buffer.data()), format, args...);
+    };
+
+    // A finite float has at most 39 integer digits; sign, decimal point, six
+    // decimals and snprintf's NUL fit in 48 bytes. 64 also covers fast_ftoa's
+    // integer/nonfinite branches and its 64-byte snprintf fallback unchanged.
+    constexpr size_t floatSpace = 64;
+    constexpr size_t indexDigits = std::numeric_limits<int>::digits10 + 1;
+    constexpr size_t faceSpace = 2 + 4 * (2 * indexDigits + 2) + 1;
 
     // 开始填充缓冲区
-    ptr += snprintf(ptr, buffer.size() - (ptr - buffer.data()), "mtllib %s\n", mtlFilePath.c_str());
-    ptr += snprintf(ptr, buffer.size() - (ptr - buffer.data()), "o %s\n\n", modelName.c_str());
-    ptr += snprintf(ptr, buffer.size() - (ptr - buffer.data()), "# Vertices (%zu)\n", data.vertices.size() / 3);
+    appendFormatted("mtllib %s\n", mtlFilePath.c_str());
+    appendFormatted("o %s\n\n", modelName.c_str());
+    appendFormatted("# Vertices (%zu)\n", data.vertices.size() / 3);
     for (size_t i = 0; i < data.vertices.size(); i += 3) {
+        ensureSpace(3 * floatSpace + 5); // "v " + x + ' ' + y + ' ' + z + '\n'
         memcpy(ptr, "v ", 2);
         ptr += 2;
         ptr = fast_ftoa(data.vertices[i], ptr);
@@ -307,8 +272,9 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         *ptr++ = '\n';
     }
 
-    ptr += snprintf(ptr, buffer.size() - (ptr - buffer.data()), "\n# UVs (%zu)\n", data.uvCoordinates.size() / 2);
+    appendFormatted("\n# UVs (%zu)\n", data.uvCoordinates.size() / 2);
     for (size_t i = 0; i < data.uvCoordinates.size(); i += 2) {
+        ensureSpace(2 * floatSpace + 5); // "vt " + u + ' ' + v + '\n'
         memcpy(ptr, "vt ", 3);
         ptr += 3;
         ptr = fast_ftoa(data.uvCoordinates[i], ptr);
@@ -317,12 +283,13 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         *ptr++ = '\n';
     }
 
-    ptr += snprintf(ptr, buffer.size() - (ptr - buffer.data()), "\n# Faces (%zu)\n", totalFaces);
+    appendFormatted("\n# Faces (%zu)\n", totalFaces);
     for (size_t matIndex = 0; matIndex < materialGroups.size(); ++matIndex) {
         const auto& faces = materialGroups[matIndex];
         if (faces.empty()) continue;
-        ptr += snprintf(ptr, buffer.size() - (ptr - buffer.data()), "usemtl %s\n", data.materials[matIndex].name.c_str());
+        appendFormatted("usemtl %s\n", BlenderSafeName(data.materials[matIndex].name).c_str());
         for (const size_t faceIdx : faces) {
+            ensureSpace(faceSpace); // "f " + four positive int/int pairs with spaces + '\n'
             memcpy(ptr, "f ", 2);
             ptr += 2;
             for (int i = 0; i < 4; ++i) {
@@ -340,45 +307,46 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         }
     }
 
+    const size_t writtenSize = static_cast<size_t>(ptr - buffer.data());
+    assert(writtenSize <= buffer.size());
+
     // 使用跨平台方式写入文件
     try {
 #ifdef _WIN32
-        // Windows平台使用内存映射文件
+        // Windows平台使用标准文件IO
         std::ofstream file(objFilePath, std::ios::binary | std::ios::trunc);
         if (!file) {
             throw std::runtime_error("无法创建文件: " + objFilePath);
         }
 
         // 一次性写入全部数据
-        file.write(buffer.data(), totalSize);
+        file.write(buffer.data(), writtenSize);
         file.close();
 #elif defined(__unix__) || defined(__APPLE__)
         // Unix/Linux/macOS平台
-        int fd = open(objFilePath.c_str(), O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+        int fd = open(objFilePath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
         if (fd == -1) {
             throw std::runtime_error("无法创建文件: " + objFilePath + ", 错误: " + std::to_string(errno));
         }
         
-        // 设置文件大小
-        if (ftruncate(fd, totalSize) == -1) {
-            close(fd);
-            throw std::runtime_error("无法设置文件大小: " + objFilePath);
+        // Normally one write; retry interrupted/partial writes and cap requests
+        // at ssize_t's limit for very large models. No mmap copy or sync flush.
+        size_t offset = 0;
+        while (offset < writtenSize) {
+            const size_t count = (std::min)(writtenSize - offset,
+                static_cast<size_t>((std::numeric_limits<ssize_t>::max)()));
+            const ssize_t result = write(fd, buffer.data() + offset, count);
+            if (result < 0 && errno == EINTR) continue;
+            if (result <= 0) {
+                const int error = result < 0 ? errno : EIO;
+                close(fd);
+                throw std::system_error(error, std::generic_category(), "无法写入文件: " + objFilePath);
+            }
+            offset += static_cast<size_t>(result);
         }
-        
-        // 映射文件到内存
-        void* mappedData = mmap(NULL, totalSize, PROT_WRITE, MAP_SHARED, fd, 0);
-        if (mappedData == MAP_FAILED) {
-            close(fd);
-            throw std::runtime_error("无法映射文件: " + objFilePath);
+        if (close(fd) == -1) {
+            throw std::system_error(errno, std::generic_category(), "无法关闭文件: " + objFilePath);
         }
-        
-        // 拷贝数据到映射内存
-        memcpy(mappedData, buffer.data(), totalSize);
-        
-        // 同步并释放资源
-        msync(mappedData, totalSize, MS_SYNC);
-        munmap(mappedData, totalSize);
-        close(fd);
 #else
         // 其他平台回退到标准文件IO
         std::ofstream file(objFilePath, std::ios::binary | std::ios::trunc);
@@ -387,7 +355,7 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         }
         
         // 一次性写入全部数据
-        file.write(buffer.data(), totalSize);
+        file.write(buffer.data(), writtenSize);
         file.close();
 #endif
     }
@@ -403,11 +371,11 @@ void createObjFile(const ModelData& data, const std::string& objName, const std:
     std::string objFilePath = exeDir + objName + ".obj";
     std::string mtlFilePath = mtlFileName.empty() ? (objName + ".mtl") : (mtlFileName + ".mtl");
 
-    // 提取模型名称
-    std::string name;
-    size_t commentPos = objName.find("//");
-    if (commentPos != std::string::npos) {
-        name = objName.substr(commentPos + 2);
+    // 提取模型名称(取路径最后一段;兼容 / 与 \ 分隔符)
+    std::string name = objName;
+    size_t sepPos = objName.find_last_of("/\\");
+    if (sepPos != std::string::npos) {
+        name = objName.substr(sepPos + 1);
     }
 
     // 使用流缓冲区进行拼接,减少IO操作次数
@@ -419,11 +387,14 @@ void createObjFile(const ModelData& data, const std::string& objName, const std:
     oss << "o " << name << "\n\n";
     // 写入顶点数据(每3个元素一个顶点)
     oss << "# Vertices (" << data.vertices.size() / 3 << ")\n";
+    // 固定 6 位小数: 默认精度只有 6 位有效数字, 坐标上千时会把几何双面的微小偏移抹掉
+    oss << std::fixed << std::setprecision(6);
     for (size_t i = 0; i < data.vertices.size(); i += 3) {
         oss << "v " << data.vertices[i] << " "
             << data.vertices[i + 1] << " "
             << data.vertices[i + 2] << "\n";
     }
+    oss << std::defaultfloat;
     oss << "\n";
 
     // 写入UV坐标(每2个元素一个UV)
@@ -450,7 +421,7 @@ void createObjFile(const ModelData& data, const std::string& objName, const std:
         const auto& faces = materialGroups[matIndex];
         if (faces.empty()) continue;
 
-        oss << "usemtl " << data.materials[matIndex].name << "\n";
+        oss << "usemtl " << BlenderSafeName(data.materials[matIndex].name) << "\n";
         for (const size_t faceIdx : faces) {
             oss << "f ";
             for (int i = 0; i < 4; ++i) {
@@ -473,7 +444,7 @@ void createObjFile(const ModelData& data, const std::string& objName, const std:
     }
 }
 
-void CreateSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMaterials, const std::string& mtlFileName, const std::unordered_map<std::string, int8_t>& uniqueTints) {
+void CreateSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMaterials, const std::string& mtlFileName, const std::unordered_map<std::string, TintResult>& uniqueTints) {
     std::string exeDir = getExecutableDir();
     std::string fullMtlPath = exeDir + mtlFileName + ".mtl";
 
@@ -481,9 +452,10 @@ void CreateSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMate
     if (mtlFile.is_open()) {
         for (const auto& uM : uniqueMaterials) {
             const std::string& textureName = uM.first;
+            RegisterMaterialFullName(textureName);
             std::string texturePath = uM.second;
 
-            mtlFile << "newmtl " << textureName << "\n";
+            mtlFile << "newmtl " << BlenderSafeName(textureName) << "\n";
 
             // 处理材质类型
             if (texturePath == "None") {
@@ -495,6 +467,15 @@ void CreateSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMate
                 mtlFile << "Ke 0.900000 0.900000 0.900000\n";
                 mtlFile << "Ni 1.500000\n";
                 mtlFile << "illum 2\n";
+            }
+            // 缺失纹理不写虚假的 .png 引用，避免 Blender 显示紫色材质。
+            else if (texturePath.empty()) {
+                mtlFile << "Ns 90.000000\n";
+                mtlFile << "Kd 1.000000 1.000000 1.000000\n";
+                mtlFile << "Ks 0.000000 0.000000 0.000000\n";
+                mtlFile << "Ke 0.000000 0.000000 0.000000\n";
+                mtlFile << "Ni 1.500000\n";
+                mtlFile << "illum 1\n";
             }
             // 处理纯颜色材质(支持流体格式:color#r g b-流体名 和普通格式:color#r g b=)
             else if (texturePath.find("color#") != std::string::npos) {
@@ -546,7 +527,7 @@ void CreateSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMate
                     texturePath += ".png";
                 }
                 mtlFile << "map_Kd " << texturePath << "\n";
-                mtlFile << "map_d " << texturePath << "\n";
+                // Only emit map_d for a distinct opacity texture; Crafter uses map_Kd's alpha.
             }
 
             mtlFile << "\n";
@@ -555,6 +536,340 @@ void CreateSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMate
     }
     else {
         std::cerr << "Failed to create .mtl file: " << mtlFileName << std::endl;
+    }
+
+    CreateTintJsonFile(uniqueTints);
+}
+
+namespace {
+    float SrgbChannelToLinear(uint32_t channel) {
+        float s = static_cast<float>(channel & 0xFF) / 255.0f;
+        return (s <= 0.04045f) ? (s / 12.92f) : std::pow((s + 0.055f) / 1.055f, 2.4f);
+    }
+}
+
+// 输出 tint.json（材质名 -> {kind, color?}；无 kind 表示不上色），供 Blender 插件按接口接线
+void CreateTintJsonFile(const std::unordered_map<std::string, TintResult>& uniqueTints) {
+    if (uniqueTints.empty()) return;
+
+    nlohmann::json root = nlohmann::json::object();
+    for (const auto& entry : uniqueTints) {
+        const TintResult& tint = entry.second;
+        nlohmann::json value = nlohmann::json::object();
+        if (tint.on() && (tint.kind == TintKind::Fixed || config.useBiomeColors)) {
+            value["kind"] = TintKindName(tint.kind);
+            if (tint.kind == TintKind::Fixed) {
+                nlohmann::json color = nlohmann::json::array();
+                color.push_back(SrgbChannelToLinear((tint.color >> 16) & 0xFF));
+                color.push_back(SrgbChannelToLinear((tint.color >> 8) & 0xFF));
+                color.push_back(SrgbChannelToLinear(tint.color & 0xFF));
+                value["color"] = std::move(color);
+            }
+        }
+        root[BlenderSafeName(entry.first)] = std::move(value);
+    }
+
+    std::string path = getExecutableDir() + "tint.json";
+    std::ofstream file(path, std::ios::binary);
+    if (file.is_open()) {
+        file << root.dump(2);
+        file.close();
+    }
+    else {
+        std::cerr << "Failed to create tint.json: " << path << std::endl;
+    }
+}
+
+// ---------- materials.json：Blender 可见名 -> 完整材质名 ----------
+// Blender 材质名超过 63 字节会被截断，截断后名字里的贴图名/尾部信息就丢了。
+// 这里把"被截断的那些"记下来，插件导入时按可见名查回原名（用于分类，且存进节点帧）。
+namespace {
+    std::mutex g_materialFullNameMutex;
+    std::unordered_map<std::string, std::string> g_materialFullNames;
+}
+
+void RegisterMaterialFullName(const std::string& fullName) {
+    const std::string safeName = BlenderSafeName(fullName);
+    if (safeName == fullName) return; // 没被截断就不需要记
+    std::lock_guard<std::mutex> lock(g_materialFullNameMutex);
+    g_materialFullNames.emplace(safeName, fullName);
+}
+
+// 输出 materials.json（{可见名: 完整名}）。实体导出在区域导出之后跑，这里读旧文件合并，
+// 避免两次写出互相覆盖。
+void WriteMaterialsJson() {
+    std::unordered_map<std::string, std::string> names;
+    {
+        std::lock_guard<std::mutex> lock(g_materialFullNameMutex);
+        names = g_materialFullNames;
+    }
+    if (names.empty()) return;
+
+    const std::string path = getExecutableDir() + "materials.json";
+    nlohmann::json root = nlohmann::json::object();
+    {
+        std::ifstream in(path, std::ios::binary);
+        if (in) {
+            try { in >> root; } catch (...) { root = nlohmann::json::object(); }
+        }
+    }
+    if (!root.is_object()) root = nlohmann::json::object();
+    for (const auto& entry : names) root[entry.first] = entry.second;
+
+    std::ofstream out(path, std::ios::binary);
+    if (out.is_open()) {
+        out << root.dump(2);
+        std::cout << "■ materials.json: " << root.size() << " 个超长材质名映射" << std::endl;
+    }
+    else {
+        std::cerr << "Failed to create materials.json: " << path << std::endl;
+    }
+}
+
+// tint 诊断：tint.json 里写出的群系色型，必须都有对应的 biomeTex 图；
+// 缺图时 Blender 侧拿不到颜色，只会得到白色（表现就是树叶发灰）。
+void CheckBiomeTexCoverage(const std::unordered_map<std::string, TintResult>& uniqueTints,
+                           const ModelData* mergedModel) {
+    if (!config.useBiomeColors) return; // 关掉群系色时这些 kind 本来就不写进 tint.json
+
+    std::set<int> needed;
+    auto addTint = [&needed](const TintResult& tint) {
+        if (tint.on() && tint.kind != TintKind::Fixed) needed.insert(static_cast<int>(tint.kind));
+    };
+    for (const auto& entry : uniqueTints) addTint(entry.second);
+    if (mergedModel != nullptr) {
+        for (const auto& material : mergedModel->materials) addTint(material.tint);
+    }
+    if (needed.empty()) return;
+
+    auto fileName = [](TintKind kind) -> const char* {
+        switch (kind) {
+        case TintKind::Grass: return "grass.png";
+        case TintKind::Foliage: return "foliage.png";
+        case TintKind::DryFoliage: return "dry_foliage.png";
+        case TintKind::Water: return "water.png";
+        case TintKind::WaterFog: return "waterFog.png";
+        case TintKind::Fog: return "fog.png";
+        case TintKind::Sky: return "sky.png";
+        default: return nullptr;
+        }
+    };
+
+    const std::string dir = getExecutableDir() + "biomeTex/";
+    std::vector<std::string> missing;
+    for (const int kind : needed) {
+        const char* file = fileName(static_cast<TintKind>(kind));
+        if (file == nullptr) continue;
+        std::error_code error;
+        if (!std::filesystem::exists(dir + file, error)) missing.push_back(file);
+    }
+
+    if (missing.empty()) {
+        std::cout << "■ tint 诊断 | 群系色型 " << needed.size() << " 种, biomeTex 齐全" << std::endl;
+        return;
+    }
+    std::cerr << "⚠ tint 诊断 | biomeTex 缺图(" << missing.size() << "/" << needed.size() << "):";
+    for (const auto& file : missing) std::cerr << " " << file;
+    std::cerr << "\n    → 对应材质在 Blender 里取不到群系色（会发白/发灰），请检查群系数据是否导出成功"
+              << std::endl;
+}
+
+// ---------- overlay.json：base 材质 -> 叠加层序列 ----------
+namespace {
+    std::mutex g_overlayMutex;
+    std::unordered_map<std::string, std::vector<OverlayLayerInfo>> g_overlaySequences;
+    std::unordered_set<std::string> g_overlayWarned;
+}
+
+void RegisterOverlaySequence(const std::string& baseName,
+    const std::vector<OverlayLayerInfo>& overlays) {
+    if (baseName.empty() || overlays.empty()) return;
+
+    // 同一序列内按首次出现去重，保持绘制顺序
+    std::vector<OverlayLayerInfo> deduped;
+    for (const auto& layer : overlays) {
+        bool exists = false;
+        for (const auto& existing : deduped) {
+            if (existing.name == layer.name) { exists = true; break; }
+        }
+        if (!exists) deduped.push_back(layer);
+    }
+    if (deduped.empty()) return;
+
+    std::lock_guard<std::mutex> lock(g_overlayMutex);
+    auto it = g_overlaySequences.find(baseName);
+    if (it == g_overlaySequences.end()) {
+        g_overlaySequences.emplace(baseName, std::move(deduped));
+        return;
+    }
+
+    // 同一 base 材质只允许一组叠加序列；不一致时保留首组并告警一次
+    const auto& kept = it->second;
+    bool same = kept.size() == deduped.size();
+    if (same) {
+        for (size_t i = 0; i < kept.size(); ++i) {
+            if (kept[i].name != deduped[i].name) { same = false; break; }
+        }
+    }
+    if (same) return;
+    if (g_overlayWarned.insert(baseName).second) {
+        std::cerr << "[WARN] 材质 " << baseName
+            << " 出现多组叠加序列, 保留首组, 忽略后续" << std::endl;
+    }
+}
+
+void CreateOverlayJsonFile() {
+    nlohmann::json root = nlohmann::json::object();
+    {
+        std::lock_guard<std::mutex> lock(g_overlayMutex);
+        if (g_overlaySequences.empty()) return;
+        for (const auto& entry : g_overlaySequences) {
+            nlohmann::json list = nlohmann::json::array();
+            for (const auto& layer : entry.second) {
+                nlohmann::json value = nlohmann::json::object();
+                value["name"] = layer.name;
+                value["texture"] = layer.texturePath;
+                if (layer.tint.on() && (layer.tint.kind == TintKind::Fixed || config.useBiomeColors)) {
+                    value["kind"] = TintKindName(layer.tint.kind);
+                    if (layer.tint.kind == TintKind::Fixed) {
+                        nlohmann::json color = nlohmann::json::array();
+                        color.push_back(SrgbChannelToLinear((layer.tint.color >> 16) & 0xFF));
+                        color.push_back(SrgbChannelToLinear((layer.tint.color >> 8) & 0xFF));
+                        color.push_back(SrgbChannelToLinear(layer.tint.color & 0xFF));
+                        value["color"] = std::move(color);
+                    }
+                }
+                list.push_back(std::move(value));
+            }
+            root[BlenderSafeName(entry.first)] = std::move(list);
+        }
+    }
+
+    std::string path = getExecutableDir() + "overlay.json";
+    std::ofstream file(path, std::ios::binary);
+    if (file.is_open()) {
+        file << root.dump(2);
+        file.close();
+        std::cout << "■ overlay.json: " << root.size() << " 个材质带叠加层" << std::endl;
+    }
+    else {
+        std::cerr << "Failed to create overlay.json: " << path << std::endl;
+    }
+}
+
+// overlay.json 里引用到的全部材质名（base 与各层 name），供材质剪枝时保留
+std::unordered_set<std::string> GetOverlayReferencedMaterialNames() {
+    std::unordered_set<std::string> names;
+    std::lock_guard<std::mutex> lock(g_overlayMutex);
+    for (const auto& entry : g_overlaySequences) {
+        names.insert(entry.first);
+        for (const auto& layer : entry.second) names.insert(layer.name);
+    }
+    return names;
+}
+
+// ---------- doubleSided.json：使用了双面几何的材质名数组 ----------
+// 登记发生在导出收尾(分组拼接 / 全模型合并)之后, tint 变体展开早已完成,
+// 所以这里的材质名可能带 @grass 之类的后缀, 登记时统一剥掉。
+std::string StripTintSuffix(const std::string& name) {
+    const size_t at = name.find('@');
+    return (at == std::string::npos) ? name : name.substr(0, at);
+}
+
+namespace {
+    std::mutex g_doubleSidedMutex;
+    // 基础材质全名 -> 是否已登记(用 set 去重, 同一 tint 变体只留一条)
+    std::unordered_set<std::string> g_doubleSidedMaterials;
+    // 基础材质全名 -> 各类 UV 关系的对数: [0]=Same [1]=Mirror [2]=Other
+    std::unordered_map<std::string, std::array<unsigned long long, 3>> g_doubleSidedPairKinds;
+    // 基础材质全名 -> 实际合并掉的 Same 对数
+    std::unordered_map<std::string, unsigned long long> g_doubleSidedMergedPairs;
+    // 分组路径下每个分组都会调一次写出函数, 用这个标记保证只有第一次真正落盘
+    bool g_doubleSidedWritten = false;
+}
+
+void RegisterDoubleSidedMaterial(const Material& material) {
+    // 先按 Blender 可见名截断，再剥 @tint 后缀，保证与插件 material_base_name() 的取值一致。
+    const std::string base = StripTintSuffix(BlenderSafeName(material.name));
+    if (base.empty()) return;
+    std::lock_guard<std::mutex> lock(g_doubleSidedMutex);
+    g_doubleSidedMaterials.insert(base);
+}
+
+void RegisterDoubleSidedPairKind(const Material& material, DoubleSidedPairKind kind, bool merged) {
+    const std::string base = StripTintSuffix(BlenderSafeName(material.name));
+    if (base.empty()) return;
+    std::lock_guard<std::mutex> lock(g_doubleSidedMutex);
+    if (merged) {
+        ++g_doubleSidedMergedPairs[base];
+        return;
+    }
+    const size_t idx = static_cast<size_t>(kind);
+    if (idx < 3) ++g_doubleSidedPairKinds[base][idx];
+}
+
+// 输出 doubleSided.json（对象格式，兼容旧插件的数组时代读取）：
+//   materials   : 使用了双面几何的材质基础全名数组；
+//   samePairs   : 材质 -> 同材质且 UV 一一对应（可安全合并）的对数；
+//   mirrorPairs : 材质 -> 同材质但 UV 镜像（两面各自正常，不能合并）的对数；
+//   otherPairs  : 材质 -> 材质/UV 区域不同的对数；
+//   mergedPairs : 材质 -> 本次实际合并掉的 Same 对数（开关关闭时为空）。
+// 供 Blender 侧决定是否关闭背面剔除，同时让插件端知道哪些材质是同向/镜像双面。
+// 注意: 分组路径下每个分组都会调用一次, 所以整体只落盘一次(以第一次的清单为准)。
+void CreateDoubleSidedJsonFile() {
+    // 先按顺序取走并清空累加器, 再把结果写出(避免长时间持锁)
+    std::vector<std::string> names;
+    std::unordered_map<std::string, std::array<unsigned long long, 3>> kinds;
+    std::unordered_map<std::string, unsigned long long> merged;
+    {
+        std::lock_guard<std::mutex> lock(g_doubleSidedMutex);
+        if (g_doubleSidedWritten) return;
+        g_doubleSidedWritten = true;
+        names.assign(g_doubleSidedMaterials.begin(), g_doubleSidedMaterials.end());
+        kinds = g_doubleSidedPairKinds;
+        merged = g_doubleSidedMergedPairs;
+        g_doubleSidedMaterials.clear();
+        g_doubleSidedPairKinds.clear();
+        g_doubleSidedMergedPairs.clear();
+    }
+    // 排序让输出稳定, 便于跨次导出比对
+    std::sort(names.begin(), names.end());
+
+    nlohmann::json root = nlohmann::json::object();
+    root["materials"] = nlohmann::json::array();
+    for (const auto& name : names) root["materials"].push_back(name);
+
+    const char* kindKeys[3] = { "samePairs", "mirrorPairs", "otherPairs" };
+    for (int ki = 0; ki < 3; ++ki) {
+        nlohmann::json table = nlohmann::json::object();
+        std::vector<std::string> matNames;
+        for (const auto& entry : kinds) {
+            if (entry.second[static_cast<size_t>(ki)] > 0) matNames.push_back(entry.first);
+        }
+        std::sort(matNames.begin(), matNames.end());
+        for (const auto& name : matNames) table[name] = kinds[name][static_cast<size_t>(ki)];
+        root[kindKeys[ki]] = std::move(table);
+    }
+    {
+        nlohmann::json table = nlohmann::json::object();
+        std::vector<std::string> matNames;
+        for (const auto& entry : merged) {
+            if (entry.second > 0) matNames.push_back(entry.first);
+        }
+        std::sort(matNames.begin(), matNames.end());
+        for (const auto& name : matNames) table[name] = merged[name];
+        root["mergedPairs"] = std::move(table);
+    }
+
+    const std::string path = getExecutableDir() + "doubleSided.json";
+    std::ofstream file(path, std::ios::binary);
+    if (file.is_open()) {
+        file << root.dump(2);
+        file.close();
+        std::cout << "■ doubleSided.json: " << names.size() << " 个材质使用双面几何" << std::endl;
+    }
+    else {
+        std::cerr << "Failed to create doubleSided.json: " << path << std::endl;
     }
 }
 
@@ -567,9 +882,10 @@ void createMtlFile(const ModelData& data, const std::string& mtlFileName) {
     if (mtlFile.is_open()) {
         for (size_t i = 0; i < data.materials.size(); ++i) {
             const std::string& textureName = data.materials[i].name;
+            RegisterMaterialFullName(textureName);
             std::string texturePath = data.materials[i].texturePath;
 
-            mtlFile << "newmtl " << textureName << "\n";
+            mtlFile << "newmtl " << BlenderSafeName(textureName) << "\n";
 
             // 处理材质类型
             if (texturePath == "None") {
@@ -581,6 +897,15 @@ void createMtlFile(const ModelData& data, const std::string& mtlFileName) {
                 mtlFile << "Ke 0.900000 0.900000 0.900000\n";
                 mtlFile << "Ni 1.500000\n";
                 mtlFile << "illum 2\n";
+            }
+            // 缺失纹理不写虚假的 .png 引用，避免 Blender 显示紫色材质。
+            else if (texturePath.empty()) {
+                mtlFile << "Ns 90.000000\n";
+                mtlFile << "Kd 1.000000 1.000000 1.000000\n";
+                mtlFile << "Ks 0.000000 0.000000 0.000000\n";
+                mtlFile << "Ke 0.000000 0.000000 0.000000\n";
+                mtlFile << "Ni 1.500000\n";
+                mtlFile << "illum 1\n";
             }
             // 处理纯颜色材质(支持流体格式:color#r g b-流体名 和普通格式:color#r g b=)
             else if (texturePath.find("color#") != std::string::npos) {
@@ -631,7 +956,7 @@ void createMtlFile(const ModelData& data, const std::string& mtlFileName) {
                     texturePath += ".png";
                 }
                 mtlFile << "map_Kd " << texturePath << "\n";
-                mtlFile << "map_d " << texturePath << "\n";
+                // Only emit map_d for a distinct opacity texture; Crafter uses map_Kd's alpha.
             }
 
             mtlFile << "\n";

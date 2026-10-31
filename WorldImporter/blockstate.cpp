@@ -1,6 +1,8 @@
-﻿#include "blockstate.h"
+#include "blockstate.h"
+#include "blockposseed.h"
 #include "fileutils.h"
-#include "ObjExporter.h"
+#include "objExporter.h"
+#include "BookModel.h"
 #include <regex>
 #include <random>
 #include <numeric>
@@ -9,15 +11,18 @@
 #include <sstream>
 #include <mutex>
 #include <shared_mutex>
+#include <unordered_set>
 
 std::unordered_map<std::string, std::unordered_map<std::string, ModelData>> BlockModelCache;
 
 std::unordered_map<std::string,std::unordered_map<std::string,std::vector<WeightedModelData>>> VariantModelCache;
 
-std::unordered_map<std::string,std::unordered_map<std::string,std::vector<std::vector<WeightedModelData>>>> MultipartModelCache;
+std::unordered_map<std::string,std::unordered_map<std::string,std::vector<MultipartGroup>>> MultipartModelCache;
 
 // 将互斥锁类型更改为 std::shared_mutex
 std::shared_mutex blockstateCachesMutex;
+std::atomic<bool> blockstateCachesFrozen{false};
+thread_local std::optional<int> g_activeChunkDataVersion;
 
 // --------------------------------------------------------------------------------
 // 条件匹配函数
@@ -223,30 +228,62 @@ nlohmann::json GetBlockstateJson(const std::string& namespaceName, const std::st
 }
 
 // --------------------------------------------------------------------------------
+// --------------------------------------------------------------------------------
+// 与游戏一致的加权变体挑选
+// --------------------------------------------------------------------------------
+// 种子(Mth.getSeed)与随机数(LegacyRandomSource)放在 blockposseed.h 里，
+// 便于单元测试直接检查这份实现本身。
+namespace {
+// 按权重累加把 [0, totalWeight) 的索引映射到具体模型（原版 WeightedList 的选择器）
+const ModelData* PickByIndex(const std::vector<WeightedModelData>& models, int index) {
+    int cumulative = 0;
+    for (const auto& wm : models) {
+        cumulative += wm.weight;
+        if (index < cumulative) return &wm.model;
+    }
+    return models.empty() ? nullptr : &models.front().model;
+}
+
+int TotalWeight(const std::vector<WeightedModelData>& models) {
+    int total = 0;
+    for (const auto& wm : models) total += wm.weight;
+    return total;
+}
+} // namespace
+
 // 方块状态 JSON 处理
 // --------------------------------------------------------------------------------
-ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::string& blockId) {
-    std::shared_lock<std::shared_mutex> lock(blockstateCachesMutex); // 使用 shared_lock 进行读操作
-    // 先检查主缓存
-    if (BlockModelCache.count(namespaceName) &&
-        BlockModelCache[namespaceName].count(blockId)) {
-        return BlockModelCache[namespaceName][blockId];
+ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::string& blockId,
+                                  std::optional<long long> posSeed) {
+    // 加载阶段持锁，模型阶段缓存冻结后直接并发只读，避免每个方块一次 shared_mutex。
+    std::shared_lock<std::shared_mutex> lock(blockstateCachesMutex, std::defer_lock);
+    if (!blockstateCachesFrozen.load(std::memory_order_acquire)) lock.lock();
+    // 并发读取必须使用 const find，不能调用 unordered_map::operator[]。
+    // 即便 key 已存在，非 const operator[] 也不保证可被多个线程同时调用。
+    auto blockNsIt = BlockModelCache.find(namespaceName);
+    if (blockNsIt != BlockModelCache.end()) {
+        auto blockIt = blockNsIt->second.find(blockId);
+        if (blockIt != blockNsIt->second.end()) return blockIt->second;
     }
-    
+
     // 检查 variant 缓存
-    if (VariantModelCache.count(namespaceName) &&
-        VariantModelCache[namespaceName].count(blockId)) {
-        auto& models = VariantModelCache[namespaceName][blockId];
+    auto variantNsIt = VariantModelCache.find(namespaceName);
+    if (variantNsIt != VariantModelCache.end()) {
+        auto variantIt = variantNsIt->second.find(blockId);
+        if (variantIt != variantNsIt->second.end()) {
+        const auto& models = variantIt->second;
         int totalWeight = 0;
         for (const auto& wm : models) {
             totalWeight += wm.weight;
         }
 
         if (totalWeight > 0) {
-            if (config.useRandomBlockModels) {
-                thread_local static std::mt19937 gen(std::random_device{}()); // 使用 thread_local 随机数生成器
+            const VariantSeedMode mode = config.variantSeedMode;
+            if (mode == VariantSeedMode::Random) {
+                // 旧行为：真随机（每次导出结果都不同），仅作兼容保留
+                thread_local static std::mt19937 gen(std::random_device{}());
                 std::uniform_int_distribution<> dis(1, totalWeight);
-                int randomWeight = dis(gen);
+                const int randomWeight = dis(gen);
                 int cumulative = 0;
                 for (const auto& wm : models) {
                     cumulative += wm.weight;
@@ -254,44 +291,99 @@ ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::s
                         return wm.model;
                     }
                 }
-            } else {
-                // 当禁用随机时，总是返回第一个模型
                 return models[0].model;
             }
+            if (mode == VariantSeedMode::Game && posSeed.has_value()) {
+                // 坐标相同则结果相同。1.21.5+ 抽 nextInt；更早版本用 nextLong 取余。
+                LegacyRandom rng(*posSeed);
+                if (UseLegacyVariantPick()) {
+                    return TakeWeightedModel(models, LegacyWeightedIndex(rng, totalWeight));
+                }
+                if (const ModelData* picked = PickByIndex(models, rng.nextInt(totalWeight))) {
+                    return *picked;
+                }
+            }
+            // First 模式，或调用点拿不到坐标（实体方块/create/LOD 等路径）：
+            // 取第一个变体，保证结果依然可复现。
+            return models[0].model;
+        }
         }
     }
 
-    // 检查 multipart 缓存:在 multipart 时只进行一次随机,
-    // 对每个组选取对应位置的模型(如果该位置没有则使用第一个)
-    if (MultipartModelCache.count(namespaceName) &&
-        MultipartModelCache[namespaceName].count(blockId)) {
-        auto& partList = MultipartModelCache[namespaceName][blockId];
+    // 检查 multipart 缓存
+    auto multipartNsIt = MultipartModelCache.find(namespaceName);
+    if (multipartNsIt != MultipartModelCache.end()) {
+        auto multipartIt = multipartNsIt->second.find(blockId);
+        if (multipartIt == multipartNsIt->second.end()) return ModelData();
+        const auto& partList = multipartIt->second;
 
-        // 计算所有组中模型数的最大值作为随机索引的范围
+        // 计算所有组中模型数的最大值（Random 旧行为需要它作为索引范围）
         size_t maxCount = 0;
-        for (const auto& parts : partList) {
-            if (parts.size() > maxCount) {
-                maxCount = parts.size();
+        for (const auto& group : partList) {
+            if (group.models.size() > maxCount) {
+                maxCount = group.models.size();
             }
         }
         if (maxCount == 0) {
             return ModelData();
         }
 
-        int selectedIndex = 0;
-        if (config.useRandomBlockModels) {
-            thread_local static std::mt19937 gen_multi(std::random_device{}()); // 为 multipart 使用单独的 thread_local 生成器
-            std::uniform_int_distribution<> dis(0, maxCount - 1);
-            selectedIndex = dis(gen_multi);
-        }
-
         ModelData merged;
-        for (auto& parts : partList) {
-            int index = selectedIndex;
-            if (index >= parts.size()) {
-                index = 0; // 如果当前组中没有该位置的模型,则默认选第一个
+        if (config.variantSeedMode == VariantSeedMode::Game && posSeed.has_value()) {
+            // 只有 apply 写成数组的分组是 WeightedVariants（会消耗随机数），
+            // 对象形式是 SingleVariant（不消耗）——消费序列错一位，后面所有组都会错位。
+            LegacyRandom rng(*posSeed);
+            if (UseLegacyVariantPick()) {
+                // 1.18.2..1.21.4：先 nextLong 得到 l，每个加权部件用新的 Random(l)。
+                const long long partSeed = rng.nextLong();
+                for (const auto& group : partList) {
+                    if (group.models.empty()) continue;
+                    if (!group.weighted) {
+                        merged = MergeModelData(merged, group.models.front().model);
+                        continue;
+                    }
+                    const int total = TotalWeight(group.models);
+                    if (total <= 0) continue;
+                    LegacyRandom part(partSeed);
+                    const int slot = SelectWeightedSlot(
+                        LegacyWeightedIndex(part, total),
+                        static_cast<int>(group.models.size()),
+                        [&](int i) { return group.models[static_cast<size_t>(i)].weight; });
+                    if (slot < 0) continue; // 该部件没有面
+                    merged = MergeModelData(merged, group.models[static_cast<size_t>(slot)].model);
+                }
+            } else {
+                // 1.21.5+：同一个随机流按分组顺序逐组 nextInt。
+                for (const auto& group : partList) {
+                    if (group.models.empty()) continue;
+                    const ModelData* picked = &group.models.front().model;
+                    if (group.weighted) {
+                        const int total = TotalWeight(group.models);
+                        if (total > 0) {
+                            if (const ModelData* byIndex = PickByIndex(group.models, rng.nextInt(total))) {
+                                picked = byIndex;
+                            }
+                        }
+                    }
+                    merged = MergeModelData(merged, *picked);
+                }
             }
-            merged = MergeModelData(merged, parts[index].model);
+        } else {
+            // First / 无坐标 / Random：沿用"一个索引套用到所有组"的旧结构
+            int selectedIndex = 0;
+            if (config.variantSeedMode == VariantSeedMode::Random) {
+                thread_local static std::mt19937 gen_multi(std::random_device{}());
+                std::uniform_int_distribution<> dis(0, static_cast<int>(maxCount) - 1);
+                selectedIndex = dis(gen_multi);
+            }
+            for (const auto& group : partList) {
+                if (group.models.empty()) continue;
+                size_t index = static_cast<size_t>(selectedIndex);
+                if (index >= group.models.size()) {
+                    index = 0; // 如果当前组中没有该位置的模型,则默认选第一个
+                }
+                merged = MergeModelData(merged, group.models[index].model);
+            }
         }
         return merged;
     }
@@ -300,30 +392,191 @@ ModelData GetRandomModelFromCache(const std::string& namespaceName, const std::s
     return ModelData();
 }
 
+std::vector<ModelData> GetAllModelsFromCache(const std::string& namespaceName, const std::string& blockId) {
+    std::vector<ModelData> result;
+
+    // 加载阶段持锁，模型阶段缓存冻结后直接并发只读
+    std::shared_lock<std::shared_mutex> lock(blockstateCachesMutex, std::defer_lock);
+    if (!blockstateCachesFrozen.load(std::memory_order_acquire)) lock.lock();
+
+    auto blockNsIt = BlockModelCache.find(namespaceName);
+    if (blockNsIt != BlockModelCache.end()) {
+        auto blockIt = blockNsIt->second.find(blockId);
+        if (blockIt != blockNsIt->second.end()) {
+            result.push_back(blockIt->second);
+            return result;
+        }
+    }
+
+    auto variantNsIt = VariantModelCache.find(namespaceName);
+    if (variantNsIt != VariantModelCache.end()) {
+        auto variantIt = variantNsIt->second.find(blockId);
+        if (variantIt != variantNsIt->second.end()) {
+            for (const auto& wm : variantIt->second) {
+                result.push_back(wm.model);
+            }
+            return result;
+        }
+    }
+
+    auto multipartNsIt = MultipartModelCache.find(namespaceName);
+    if (multipartNsIt != MultipartModelCache.end()) {
+        auto multipartIt = multipartNsIt->second.find(blockId);
+        if (multipartIt != multipartNsIt->second.end()) {
+            ModelData merged;
+            for (const auto& group : multipartIt->second) {
+                if (!group.models.empty()) {
+                    merged = MergeModelData(merged, group.models[0].model);
+                }
+            }
+            if (!merged.vertices.empty()) {
+                result.push_back(merged);
+            }
+        }
+    }
+
+    return result;
+}
+
 // 此方法会处理对应的json文件 
 // 然后计算出方块的模型数据存储在BlockModelCache / VariantModelCache / MultipartModelCache 里面
 // 你可以使用 GetRandomModelFromCache 方法来获取模型
+// 快速解析 "k=v,k=v" 形式的字符串（替代正则/stringstream，热路径）
+static void ParseConditionInto(const std::string& input, std::unordered_map<std::string, std::string>& out) {
+    size_t i = 0;
+    while (i < input.size()) {
+        size_t comma = input.find(',', i);
+        size_t end = (comma == std::string::npos) ? input.size() : comma;
+        size_t eq = input.find('=', i);
+        if (eq != std::string::npos && eq < end && eq > i && end > eq + 1) {
+            out[input.substr(i, eq - i)] = input.substr(eq + 1, end - eq - 1);
+        }
+        i = end + 1;
+    }
+}
+
+// variant key 的所有键值对是否都满足 condition（等价于旧的
+// IsSubset(ParseKeyValuePairs(SortedVariantKey(variant)), ParseKeyValuePairs(SortedVariantKey(condition)))）
+static bool VariantKeyMatches(const std::string& variantKey,
+    const std::unordered_map<std::string, std::string>& conditionMap) {
+    size_t i = 0;
+    while (i < variantKey.size()) {
+        size_t comma = variantKey.find(',', i);
+        size_t end = (comma == std::string::npos) ? variantKey.size() : comma;
+        size_t eq = variantKey.find('=', i);
+        if (eq != std::string::npos && eq < end) {
+            auto it = conditionMap.find(variantKey.substr(i, eq - i));
+            if (it == conditionMap.end()) return false;
+            if (it->second != variantKey.substr(eq + 1, end - eq - 1)) return false;
+        }
+        i = end + 1;
+    }
+    return true;
+}
+
+// 宽松匹配:condition 里有的属性必须一致,condition 里没有的属性不限制
+static bool VariantKeyAgrees(const std::string& variantKey,
+    const std::unordered_map<std::string, std::string>& conditionMap) {
+    size_t i = 0;
+    while (i < variantKey.size()) {
+        size_t comma = variantKey.find(',', i);
+        size_t end = (comma == std::string::npos) ? variantKey.size() : comma;
+        size_t eq = variantKey.find('=', i);
+        if (eq != std::string::npos && eq < end) {
+            auto it = conditionMap.find(variantKey.substr(i, eq - i));
+            if (it != conditionMap.end() && it->second != variantKey.substr(eq + 1, end - eq - 1)) return false;
+        }
+        i = end + 1;
+    }
+    return true;
+}
+
+// ---------- 树叶的自然枯萎（distance / persistent）不参与求值 ----------
+// 动画用不到枯萎，但资源包常按这两个属性拆 variant：匹配条件里没有它们时
+// 要么落空，要么落到"枯萎/透明"的那一档，看起来就是树叶整片消失。
+// 这里把这两个属性从两边都忽略掉，再按"最不枯萎"的偏好挑一个固定 variant。
+
+// 取 variant 键里某个属性的值，没有则返回空串
+static std::string VariantPairValue(const std::string& variantKey, const std::string& name) {
+    size_t i = 0;
+    while (i <= variantKey.size()) {
+        size_t comma = variantKey.find(',', i);
+        size_t end = (comma == std::string::npos) ? variantKey.size() : comma;
+        const std::string pair = variantKey.substr(i, end - i);
+        const size_t eq = pair.find('=');
+        if (eq != std::string::npos && pair.substr(0, eq) == name) return pair.substr(eq + 1);
+        if (comma == std::string::npos) break;
+        i = comma + 1;
+    }
+    return {};
+}
+
+// 去掉 variant 键里的 distance / persistent 两段，其余原样保留
+static std::string StripLeafDecayPairs(const std::string& variantKey) {
+    std::string out;
+    size_t i = 0;
+    while (i <= variantKey.size()) {
+        size_t comma = variantKey.find(',', i);
+        size_t end = (comma == std::string::npos) ? variantKey.size() : comma;
+        const std::string pair = variantKey.substr(i, end - i);
+        const size_t eq = pair.find('=');
+        const std::string name = (eq == std::string::npos) ? pair : pair.substr(0, eq);
+        if (name != "distance" && name != "persistent") {
+            if (!out.empty()) out += ",";
+            out += pair;
+        }
+        if (comma == std::string::npos) break;
+        i = comma + 1;
+    }
+    return out;
+}
+
+// 挑一个树叶 variant：忽略枯萎属性后匹配；命中多个时优先
+// persistent=true（玩家放置、永不枯萎），其次 distance 最小（离树干最近、最不透明）。
+// 找到时写入 outKey 并返回 true。注意 vanilla 的 variant 键就是空串，所以不能用
+// 空串表示"没找到"。
+static bool SelectLeafVariant(const nlohmann::json& variants,
+    const std::unordered_map<std::string, std::string>& conditionMap,
+    std::string& outKey) {
+    bool found = false;
+    int bestRank = 3;        // 0=persistent=true, 1=有 distance, 2=其它
+    int bestDistance = 1 << 20;
+    for (auto& variant : variants.items()) {
+        const std::string key = variant.key();
+        if (!VariantKeyMatches(StripLeafDecayPairs(key), conditionMap)) continue;
+        const std::string persistent = VariantPairValue(key, "persistent");
+        const std::string distanceText = VariantPairValue(key, "distance");
+        int distance = 1 << 20;
+        if (!distanceText.empty()) {
+            try { distance = std::stoi(distanceText); } catch (...) { distance = 1 << 20; }
+        }
+        int rank = 2;
+        if (persistent == "true") rank = 0;
+        else if (distance < (1 << 20)) rank = 1;
+        if (!found || rank < bestRank || (rank == bestRank && distance < bestDistance)) {
+            outKey = key;
+            bestRank = rank;
+            bestDistance = distance;
+            found = true;
+        }
+    }
+    return found;
+}
+
 void ProcessBlockstate(const std::string& namespaceName, const std::vector<std::string>& blockIds) {
     for (const auto& blockId : blockIds) {
         // 解析 blockId 和条件
-        static const std::regex blockIdRegex(R"(^(.*?)\[(.*)\]$)");
-        std::smatch match;
         std::string baseBlockId = blockId;
         std::string condition;
         std::unordered_map<std::string, std::string> blockConditions;
         std::string blockstateName = namespaceName + ":" + blockId;
 
-        if (std::regex_match(blockId, match, blockIdRegex)) {
-            baseBlockId = match.str(1);
-            condition = match.str(2);
-
-            static const std::regex conditionRegex(R"((\w+)=([^,]+))");
-            auto conditionsBegin = std::sregex_iterator(condition.begin(), condition.end(), conditionRegex);
-            auto conditionsEnd = std::sregex_iterator();
-
-            for (auto i = conditionsBegin; i != conditionsEnd; ++i) {
-                std::smatch submatch = *i;
-                blockConditions[submatch[1].str()] = submatch[2].str();
+        if (!blockId.empty() && blockId.back() == ']') {
+            size_t lb = blockId.find('[');
+            if (lb != std::string::npos) {
+                baseBlockId = blockId.substr(0, lb);
+                condition = blockId.substr(lb + 1, blockId.size() - lb - 2);
+                ParseConditionInto(condition, blockConditions);
             }
         }
 
@@ -340,17 +593,48 @@ void ProcessBlockstate(const std::string& namespaceName, const std::vector<std::
 
         // 处理 variants
         if (blockstateJson.contains("variants")) {
+            // 树叶：distance / persistent（自然枯萎）不做求值，忽略这两个属性后固定挑一个
+            // "最不枯萎"的 variant。资源包按枯萎程度拆 variant 时（条件里没有这两个属性），
+            // 否则会匹配落空或者选中透明/枯萎的那一档，树叶看起来就整片消失了。
+            const bool isLeaves = blockstateName.find("leaves") != std::string::npos;
+            bool leafChosen = false;
+            std::string leafKey;
+            if (isLeaves) {
+                leafChosen = SelectLeafVariant(blockstateJson["variants"], blockConditions, leafKey);
+                if (!leafChosen && !blockstateJson["variants"].empty()) {
+                    // 连忽略枯萎都匹配不到：退回第一个 variant，至少别整个消失
+                    leafKey = blockstateJson["variants"].begin().key();
+                    leafChosen = true;
+                }
+            }
+            // 存档里的状态可能缺少属性(旧版本保存、模组后来新增属性),
+            // 游戏读取时缺的属性取默认值。没有完全匹配的 variant 时,
+            // 取第一个在已有属性上都一致的 variant,避免方块整个消失。
+            std::string fallbackKey;
+            if (!isLeaves && !condition.empty()) {
+                bool anyMatch = false;
+                for (auto& variant : blockstateJson["variants"].items()) {
+                    if (VariantKeyMatches(variant.key(), blockConditions)) { anyMatch = true; break; }
+                }
+                if (!anyMatch) {
+                    for (auto& variant : blockstateJson["variants"].items()) {
+                        if (VariantKeyAgrees(variant.key(), blockConditions)) { fallbackKey = variant.key(); break; }
+                    }
+                }
+            }
             for (auto& variant : blockstateJson["variants"].items()) {
                 std::string variantKey = variant.key();
-                std::string normalizedCondition = SortedVariantKey(condition);
-                std::string normalizedVariantKey = SortedVariantKey(variantKey);
+                bool matched;
+                if (isLeaves) {
+                    matched = (leafChosen && variantKey == leafKey);
+                }
+                else {
+                    matched = condition.empty() || VariantKeyMatches(variantKey, blockConditions)
+                        || (!fallbackKey.empty() && variantKey == fallbackKey);
+                }
 
-                // 解析为键值对
-                auto conditionMap = ParseKeyValuePairs(normalizedCondition);
-                auto variantMap = ParseKeyValuePairs(normalizedVariantKey);
-
-                // 判断条件:variantMap 的所有键值对需存在于 conditionMap 中
-                if (condition.empty() || IsSubset(variantMap, conditionMap)) {
+                // 判断条件:variant 的所有键值对需存在于 condition 中
+                if (matched) {
                     int rotationX = 0, rotationY = 0;
                     bool uvlock = false;
 
@@ -407,6 +691,10 @@ void ProcessBlockstate(const std::string& namespaceName, const std::vector<std::
                             }
 
                         }
+                        // 以方块 id 为主重命名材质（每个方块独立材质）
+                        for (auto& wm : weightedModels) {
+                            RenameBlockMaterials(wm.model, namespaceName, baseBlockId);
+                        }
                         // 存入缓存
                         {
                             std::unique_lock<std::shared_mutex> lock(blockstateCachesMutex); // 使用 unique_lock 进行写操作
@@ -427,7 +715,9 @@ void ProcessBlockstate(const std::string& namespaceName, const std::vector<std::
                             }
 
                             mergedModel = ProcessModelJson(modelNamespace, modelId, rotationX, rotationY, uvlock, 0, blockstateName);
-                           
+                            RenameBlockMaterials(mergedModel, namespaceName, baseBlockId);
+                            // 讲台有书和附魔台的书由方块实体绘制，补进方块模型
+                            AppendBlockEntityBook(namespaceName, blockId, mergedModel);
                             {
                                 std::unique_lock<std::shared_mutex> lock(blockstateCachesMutex); // 使用 unique_lock 进行写操作
                                 BlockModelCache[namespaceName][blockId] = mergedModel;
@@ -453,7 +743,7 @@ void ProcessBlockstate(const std::string& namespaceName, const std::vector<std::
 
             if (useMultipartModelCache) {
                 // 存储所有 multipart 项的模型组,每项都作为列表处理
-                std::vector<std::vector<WeightedModelData>> multipartModelsList;
+                std::vector<MultipartGroup> multipartModelsList;
                 for (const auto& item : multipart) {
                     if (!item.contains("apply"))
                         continue;
@@ -526,7 +816,18 @@ void ProcessBlockstate(const std::string& namespaceName, const std::vector<std::
                     }
 
                     if (!multipartModels.empty()) {
-                        multipartModelsList.push_back(multipartModels);
+                        // 记下该分组的 apply 是不是数组：原版里数组=WeightedVariants
+                        // （取模型时消耗一次随机数），对象=SingleVariant（不消耗）。
+                        MultipartGroup group;
+                        group.models = std::move(multipartModels);
+                        group.weighted = item["apply"].is_array();
+                        multipartModelsList.push_back(std::move(group));
+                    }
+                }
+                // 以方块 id 为主重命名材质（每个方块独立材质）
+                for (auto& group : multipartModelsList) {
+                    for (auto& wm : group.models) {
+                        RenameBlockMaterials(wm.model, namespaceName, baseBlockId);
                     }
                 }
                 // 存入 MultipartModelCache
@@ -579,6 +880,8 @@ void ProcessBlockstate(const std::string& namespaceName, const std::vector<std::
                         mergedModel = MergeModelData(mergedModel, selectedModels[i]);
                     }
                 }
+                // 以方块 id 为主重命名材质（每个方块独立材质）
+                RenameBlockMaterials(mergedModel, namespaceName, baseBlockId);
                 {
                     std::unique_lock<std::shared_mutex> lock(blockstateCachesMutex); // 使用 unique_lock 进行写操作
                     BlockModelCache[namespaceName][blockId] = mergedModel;
@@ -592,6 +895,10 @@ void ProcessBlockstate(const std::string& namespaceName, const std::vector<std::
 
 void ProcessBlockstateForBlocks(const std::vector<Block>& blocks) {
     std::unordered_map<std::string, std::vector<std::string>> namespaceToBlockIdsMap;
+    // ChunkLoader 会在每个批次传入整个全局调色板。记录已尝试项，避免同一方块
+    // 在数百个批次中反复解析和重复打印错误。
+    static std::mutex attemptedMutex;
+    static std::unordered_set<std::string> attemptedBlockstates;
 
     // 将 Block 列表按命名空间分组
     for (const auto& block : blocks) {
@@ -600,13 +907,23 @@ void ProcessBlockstateForBlocks(const std::vector<Block>& blocks) {
         namespaceToBlockIdsMap[namespaceName].push_back(blockId);
     }
 
-    // 处理每个命名空间下的方块 ID
+    // 逐方块处理并隔离异常。新版或模组中的单个非标准 JSON 不能中断
+    // 同一命名空间后续所有方块，否则会产生大批缺失模型/紫色方块。
     for (const auto& entry : namespaceToBlockIdsMap) {
         const std::string& namespaceName = entry.first;
-        const std::vector<std::string>& blockIds = entry.second;
-
-        ProcessBlockstate(namespaceName, blockIds);
-       
+        for (const auto& blockId : entry.second) {
+            const std::string attemptedKey = namespaceName + "\n" + blockId;
+            {
+                std::lock_guard<std::mutex> lock(attemptedMutex);
+                if (!attemptedBlockstates.insert(attemptedKey).second) continue;
+            }
+            try {
+                ProcessBlockstate(namespaceName, {blockId});
+            } catch (const std::exception& e) {
+                std::cerr << "Error processing blockstate " << namespaceName << ":"
+                          << blockId << ": " << e.what() << std::endl;
+            }
+        }
     }
 
 }

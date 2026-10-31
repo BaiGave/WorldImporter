@@ -1,3 +1,30 @@
 /.vs
 /WorldImporter/x64/Release
 /x64/Release
+*.log
+*.obj
+*.mtl
+*.dll
+*.bak
+/WorldImporter/compare_*/
+/WorldImporter/fixed_*/
+/diff.html
+/build/
+/WorldImporter/build/
+/build-*/
+/temp/
+/test-bbs-runtime/
+/AGENTS.md
+/build-bbs_err.txt
+*.err.txt
+
+# ========== 发布产物 ==========
+# 仓库里只保留源码树下这一份 exe（部署时拷进 Crafter 插件）；
+# 各 build 目录里的编译产物、测试语料里的副本不再入库。
+*.exe
+!WorldImporter/WorldImporter.exe
+
+# ========== 手工测试语料 ==========
+# wi_test_full 是体积大、且含第三方资源包贴图的手工测试资源，本地保留、不入库。
+# 说明与恢复方式见 docs/test-corpus.md；自动化测试不依赖它（用例自带合成贴图）。
+/wi_test_full/

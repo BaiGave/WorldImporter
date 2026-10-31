@@ -1,4 +1,5 @@
 #include "init.h"
+#include "fileutils.h"
 #include "RegionModelExporter.h"
 #include "logutil.h"
 #include <thread>
@@ -49,7 +50,7 @@ void init() {
     { CrafterLog::StageTimer t("清理纹理文件夹"); DeleteTexturesFolder(); }
     {
         CrafterLog::StageTimer t("加载配置 config.json");
-        config = LoadConfig("config\\config.json");
+        config = LoadConfig(JoinPath("config", "config.json"));
     }
     std::cout << "  配置摘要: worldPath=" << config.worldPath
               << " | status=" << config.status
@@ -60,7 +61,6 @@ void init() {
 
     // 配置加载完成后，再初始化缓存
     { CrafterLog::StageTimer t("初始化全部缓存"); InitializeAllCaches(); }
-    { CrafterLog::StageTimer t("加载固体方块表"); LoadSolidBlocks(config.solidBlocksFile); }
     { CrafterLog::StageTimer t("加载流体方块表"); LoadFluidBlocks(config.fluidsFile); }
     { CrafterLog::StageTimer t("注册流体纹理"); RegisterFluidTextures(); }
     { CrafterLog::StageTimer t("初始化全局方块调色板"); InitializeGlobalBlockPalette(); }

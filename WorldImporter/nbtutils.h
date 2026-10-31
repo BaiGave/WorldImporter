@@ -152,6 +152,8 @@ NbtTagPtr getBlockStates(const NbtTagPtr& sectionTag);
 
 // 读取 block_states 的 palette 数据
 std::vector<std::string> getBlockPalette(const NbtTagPtr& blockStatesTag);
+// 解析方块状态(旧 Name/Properties、26.3+ id/properties 与默认状态简写)
+std::string ParseBlockStateTag(const NbtTagPtr& blockTag);
 
 // 解析 block_states 的 data 数据
 std::vector<int> getBlockStatesData(const NbtTagPtr& blockStatesTag, const std::vector<std::string>& blockPalette);

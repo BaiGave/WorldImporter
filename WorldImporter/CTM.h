@@ -14,6 +14,7 @@
 //   horizontal   按左右连接选 tile(书架等)
 //   vertical     按上下连接选 tile
 //   ctm          完整 47 tile 标准连接(制图台等)
+//   repeat       按世界坐标 + 面方向循环平铺 tile(网格纹理/条木等)
 //
 // 烘焙时机:
 //   在区块导出阶段,逐方块逐面根据世界邻居关系选择/合成 CTM 贴图,
@@ -22,6 +23,8 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <array>
+#include "include/json.hpp"
 
 // 前向声明:模型数据
 struct ModelData;
@@ -34,9 +37,12 @@ enum class CtmMethod {
     Ctm,                // 完整 47 tile 标准连接
     Horizontal,         // 水平连接(左右)
     Vertical,           // 垂直连接(上下)
-    Random,             // 随机(第一阶段仅退化处理)
-    OverlayHorizontal,  // 叠加水平(第一阶段仅退化处理)
-    Repeat,             // 重复平铺(第一阶段仅退化处理)
+    Random,             // 按坐标确定性随机
+    Fixed,              // 固定替换贴图
+    Top,                // 与主轴正方向邻居连接时替换侧面
+    Overlay,            // 标准 17 tile 叠加层
+    OverlayHorizontal,  // 叠加水平
+    Repeat,             // 重复平铺
     Unknown             // 未知方法,不处理
 };
 
@@ -44,12 +50,30 @@ enum class CtmMethod {
 struct CtmRule {
     std::string ns;                     // 命名空间,例如 minecraft
     std::string baseDir;                // tile 所在目录(相对 namespace),例如 optifine/ctm/glass/glass
-    std::vector<std::string> matchBlocks;  // matchBlocks 值,可能含 _stained_glass 通配
+    std::vector<std::string> matchBlocks;  // matchBlocks 的完整 ns:block 名
     std::vector<std::string> matchTiles;   // matchTiles 值
+    std::vector<std::string> matchTileNamespaces; // 每个 matchTiles 对应的纹理命名空间
     CtmMethod method = CtmMethod::None;
     std::vector<int> tiles;             // tile 编号列表
     std::vector<std::string> faces;     // faces 过滤(sides/all/north,...)
     std::string connect;                // connect=block / 空
+    int width = 0;                      // repeat 专用: tile 网格宽
+    int height = 0;                     // repeat 专用: tile 网格高
+    std::string orient;                 // orient 模式(texture / none / state-axis 等)
+    std::string symmetry = "none";      // random: none / opposite / all
+    std::vector<int> weights;           // random: 可选权重
+    int randomLoops = 0;                // random: 随机循环扰动
+    bool linked = false;                // random: 同列方块共用随机值
+    bool innerSeams = false;            // 连接时是否保留内接缝
+    std::vector<std::string> connectBlocks; // overlay 邻居方块过滤
+    std::vector<std::string> connectTiles;  // overlay 邻居贴图过滤
+    std::string layer;                  // overlay 图层
+    int tintIndex = -1;                 // tintIndex 数字值(命名值见 tintIndexName)
+    std::string tintIndexName;          // tintIndex 非数字时的原名, 如 grass / stone
+    std::string tintBlock;              // tintBlock 完整方块 id(含命名空间), 空=用当前方块
+    bool hasTint = false;               // properties 是否显式声明了 tintIndex / tintBlock
+    std::unordered_map<int, int> ctmOverrides; // ctm.N 自定义替换
+    std::string resourceCondition;      // Continuity 资源条件
     std::string propertiesPath;         // properties 文件相对路径,用于调试
 };
 
@@ -69,13 +93,25 @@ namespace GlobalCache {
 // 解析所有已缓存的 ctmProperties,构建规则索引。在所有资源合并完成后调用一次。
 void InitializeCtmRules();
 
+// 展开各命名空间的图集目录映射(assets/<ns>/atlases/*.json 里 type=directory 的
+// source/prefix 声明), 供 matchTiles 解析虚拟贴图路径。
+// key 形如 "modid:namespace:相对 atlases/ 的路径"。
+void LoadAtlasDirPrefixes(const std::unordered_map<std::string, nlohmann::json>& atlasJson);
+
+// 根据 textureIndex 建"贴图名解析表"(某路径在资源包里是否真实存在)。
+// 必须在 InitializeCtmRules 之前调用一次: 规则解析与匹配都查这张内存表,
+// 避免在持有 cacheMutex 时回头访问 textureIndex 造成自锁。
+void BuildTileNameAliasTable();
+
 // ========= 查询 =========
 
 // 按命名空间+方块名+贴图名查找匹配的 CTM 规则。返回 nullptr 表示无匹配。
 // textureName 为不含扩展名和 namespace 的贴图路径,例如 "block/glass"。
-const CtmRule* FindCtmRule(const std::string& ns,
+const CtmRule* FindCtmRule(const std::string& blockNs,
                            const std::string& blockName,
-                           const std::string& textureName);
+                           const std::string& textureNs,
+                           const std::string& textureName,
+                           const std::string& faceName = "");
 
 // 判断给定面方向是否在规则的 faces 过滤内。faceName 为 down/up/north/south/west/east。
 bool CtmRuleMatchesFace(const CtmRule& rule, const std::string& faceName);
@@ -96,5 +132,32 @@ void ApplyCtmToBlockModel(ModelData& model,
 
 // 是否有任何 CTM 规则被加载(用于快速跳过 CTM 处理)
 bool HasCtmRules();
+
+// Register a synthetic Continuity-compact (5-tile) CTM rule after InitializeCtmRules.
+// Used by ModCT for Athena blockstate loaders and Fusion pieced mcmeta.
+// tilePngs[i] must be PNG bytes for compact roles:
+//   0=unconnected, 1=fully connected, 2=vertical, 3=horizontal, 4=corner-gap
+// matchBlocks may be empty (tile-only match). matchTilePath is normalized (no .png / textures/).
+bool RegisterSyntheticCompactCtmRule(
+    const std::string& ruleNs,
+    const std::string& baseDir,
+    const std::vector<std::string>& matchBlocks,
+    const std::string& matchTileNs,
+    const std::string& matchTilePath,
+    const std::array<std::vector<unsigned char>, 5>& tilePngs);
+
+// Generic synthetic CTM rule (vertical / horizontal / repeat / compact).
+// tilePngs indexed in Continuity tile order for the method.
+// For Repeat, width/height set the grid; tiles.size() should be width*height.
+bool RegisterSyntheticCtmRule(
+    CtmMethod method,
+    const std::string& ruleNs,
+    const std::string& baseDir,
+    const std::vector<std::string>& matchBlocks,
+    const std::string& matchTileNs,
+    const std::string& matchTilePath,
+    const std::vector<std::vector<unsigned char>>& tilePngs,
+    int width = 0,
+    int height = 0);
 
 #endif // CTM_H

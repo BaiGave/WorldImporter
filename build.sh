@@ -18,6 +18,7 @@ MINGW_BASE="/c/Users/Administrator/AppData/Local/Microsoft/WinGet/Packages/Brech
 # 源码列表 (对应 .vcxproj 中的 ClCompile 项)
 SOURCES=(
     biome.cpp
+    legacybiomes.cpp
     block.cpp
     blockstate.cpp
     chunk.cpp
@@ -41,6 +42,7 @@ SOURCES=(
     ModelDeduplicator.cpp
     nbtutils.cpp
     ObjExporter.cpp
+    PaintingExporter.cpp
     RegionCache.cpp
     RegionModelExporter.cpp
     SpecialBlock.cpp

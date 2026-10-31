@@ -3,6 +3,7 @@
 // C++ 标准库头文件
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cctype>
 #include <cstdint>
 #include <regex>
@@ -11,6 +12,7 @@
 #include <tuple>
 #include <unordered_map>
 #include <shared_mutex>
+#include <optional>
 #include <unordered_set>
 #include <vector>
 
@@ -20,7 +22,7 @@
 #include "chunk.h"
 #include "nbtutils.h"
 #include "hashutils.h"
-#include "Fluid.h"
+#include "fluid.h"
 #include "GlobalCache.h"
 extern Config config;
 
@@ -47,12 +49,15 @@ extern std::unordered_map<std::pair<int, int>, std::vector<std::shared_ptr<Entit
 extern std::unordered_map<std::pair<int, int>, std::unordered_map<std::string, std::vector<int>>, pair_hash> heightMapCache;
 extern std::unordered_map<std::tuple<int, int, int>, SectionCacheEntry, triple_hash> sectionCache;
 
+NbtTagPtr GetBlockEntityNbt(int blockX, int blockY, int blockZ);
+
 struct Block {
     std::string name;
+    std::string fluidName;
     int8_t level;
     bool air;
 
-    Block(const std::string& name) : name(name), level(-1), air(true) {
+    Block(const std::string& name) : name(name), fluidName(""), level(-1), air(true) {
         // 用 string_view 减少 substr 拷贝,仅对 baseName 做一次 std::string 构造
         std::string_view fullName(name);
         size_t bracketPos = fullName.find('[');
@@ -91,20 +96,31 @@ struct Block {
             for (const auto& fluidEntry : fluidDefinitions) {
                 const FluidInfo& info = fluidEntry.second;
                 if (info.liquid_blocks.count(baseName)) {
-                    level = 0;
-                    fluidProcessed = true;
-                    break;
+                    // liquid_blocks 表示通常自带流体的方块(海草/海带等)，但部分
+                    // 旧配置也把可含水方块(珊瑚等)放进了列表。若存档明确写了
+                    // waterlogged=false，必须尊重状态，不能强制生成水模型。
+                    bool explicitlyDry = false;
+                    if (!info.property.empty()) {
+                        auto propertyIt = states.find(info.property);
+                        explicitlyDry = propertyIt != states.end() && propertyIt->second == "false";
+                    }
+                    if (!explicitlyDry) {
+                        fluidName = fluidEntry.first;
+                        level = 0;
+                        fluidProcessed = true;
+                        break;
+                    }
                 }
             }
         }
         // 阶段2:检查流体属性(如waterlogged)
         for (const auto& fluidEntry : fluidDefinitions) {
-            const std::string& fluidName = fluidEntry.first;
             const FluidInfo& info = fluidEntry.second;
 
             if (!info.property.empty() &&
                 states.count(info.property) &&
                 states[info.property] == "true") {
+                if (fluidName.empty()) fluidName = fluidEntry.first;
                 level = 0;
                 fluidProcessed = true;
                 break;
@@ -118,6 +134,7 @@ struct Block {
             const auto& it = fluidDefinitions.find(baseName);
             if (it != fluidDefinitions.end()) {
                 const FluidInfo& info = it->second;
+                fluidName = it->first;
                 std::string levelProp = info.level_property.empty() ?
                     "level" : info.level_property;
 
@@ -132,12 +149,14 @@ struct Block {
             }
         }
 
-        // 原有空气判断逻辑
-        air = (solidBlocks.find(baseName) == solidBlocks.end());
+        // 真正的"空气"判定：仅三种空气方块。是否遮挡由运行时自建的遮挡表决定
+        // (见 Occlusion.h)，不再依赖手工维护的固体方块名单。
+        air = (baseName == "minecraft:air" || baseName == "minecraft:cave_air" ||
+               baseName == "minecraft:void_air");
 
 
     }
-    Block(const std::string& name, bool air) : name(name), level(-1), air(air) {}
+    Block(const std::string& name, bool air) : name(name), fluidName(""), level(-1), air(air) {}
 
     // 方法:获取命名空间部分
     std::string GetNamespace() const {
@@ -160,6 +179,14 @@ struct Block {
 
         // 如果有方括号,返回方括号之前的部分
         return name.substr(0, bracketPos);
+    }
+
+    bool HasFluid() const {
+        return level >= 0 && !fluidName.empty();
+    }
+
+    bool IsPureFluid() const {
+        return HasFluid() && GetNameAndNameSpaceWithoutState() == fluidName;
     }
     // 保留命名空间和基础名字,只处理状态键值对
     std::string GetModifiedNameWithNamespace() const {
@@ -217,7 +244,7 @@ struct Block {
             std::transform(key.begin(), key.end(), key.begin(), ::tolower); // 转换为小写
 
             // 修改这里：保留waterlogged属性，只过滤distance和persistent
-            if (key != "distance" && key != "persistent") {
+            if ((key != "distance" && key != "persistent") || name.find("leaves") == std::string::npos) {
                 filteredPairs.push_back(pairStr);
             }
         }
@@ -291,7 +318,7 @@ struct Block {
                 // 判断是否需要保留该键值对
                 bool keep = true;
                 // 修改这里：保留waterlogged属性，只过滤distance和persistent
-                if (key == "distance" || key == "persistent") {
+                if ((key == "distance" || key == "persistent") && name.find("leaves") != std::string::npos) {
                     keep = false; // 移除这些键
                 }
 
@@ -373,7 +400,7 @@ struct Block {
             std::transform(key.begin(), key.end(), key.begin(), ::tolower); // 转换为小写
 
             // 修改这里：保留waterlogged属性，只过滤distance和persistent
-            if (key != "distance" && key != "persistent") {
+            if ((key != "distance" && key != "persistent") || name.find("leaves") == std::string::npos) {
                 filteredPairs.push_back(pairStr);
             }
         }
@@ -412,6 +439,9 @@ struct SectionCacheEntry {
 };
 
 extern std::vector<Block> globalBlockPalette;
+// 全局方块名->调色板索引映射。与 globalBlockPalette 配套，必须全局唯一一份，
+// 由 globalPaletteMutex 保护（ProcessSection 与 ProcessEntityBlocks 并发注册）。
+extern std::unordered_map<std::string, int> globalBlockMap;
 extern std::unordered_map<std::tuple<int, int, int>, SectionCacheEntry, triple_hash> sectionCache;
 extern std::unordered_map<std::pair<int, int>, std::unordered_map<std::string, std::vector<int>>, pair_hash> heightMapCache;
 
@@ -421,23 +451,29 @@ extern std::shared_mutex sectionCacheMutex;
 // 保护 EntityBlockCache 与 heightMapCache 的读写
 extern std::shared_mutex chunkAuxCacheMutex;
 
+// 保护 globalBlockPalette 与 globalBlockMap (ProcessSection 并发注册)
+extern std::mutex globalPaletteMutex;
+// 模型生成阶段调色板只读，可绕过每方块一次的互斥锁。
+extern std::atomic<bool> globalPaletteFrozen;
+
 // 高度图类型
 static const std::vector<std::string> mapTypes = {"MOTION_BLOCKING", "MOTION_BLOCKING_NO_LEAVES",   "OCEAN_FLOOR", "WORLD_SURFACE"};
 
 void LoadAndCacheBlockData(int chunkX, int chunkZ);
 
+// 区块 NBT 根上的 DataVersion。没有该标签时返回 nullopt（变体挑选按 1.21.5+）。
+std::optional<int> GetChunkDataVersion(int chunkX, int chunkZ);
+
 void UpdateSkyLightNeighborFlags();
 
 int GetBlockId(int blockX, int blockY, int blockZ);
 
-// 获取方块ID时同时获取相邻方块的air状态,返回当前方块ID
-int GetBlockIdWithNeighbors(int blockX, int blockY, int blockZ,bool* neighborIsAir = nullptr,int* fluidLevels = nullptr);
+// 获取方块ID时同时获取六个方向"邻居是否不遮挡"（true = 该方向的面应渲染），返回当前方块ID
+int GetBlockIdWithNeighbors(int blockX, int blockY, int blockZ, bool* neighborIsAir = nullptr);
 
 int GetSkyLight(int blockX, int blockY, int blockZ);
 
 int GetBlockLight(int blockX, int blockY, int blockZ);
-
-int GetLevel(int blockX, int blockY, int blockZ);
 
 int GetHeightMapY(int blockX, int blockZ, const std::string& heightMapType);
 

@@ -5,6 +5,7 @@
 #include <sstream>
 #include <iostream>
 #include <algorithm>
+#include <cctype>
 #include "include/json.hpp"
 Config LoadConfig(const std::string& configFile) {
     Config config;
@@ -44,6 +45,22 @@ Config LoadConfig(const std::string& configFile) {
     config.exportLightBlockOnly = j.value("exportLightBlockOnly", config.exportLightBlockOnly);
     config.lightBlockSize = j.value("lightBlockSize", config.lightBlockSize);
     config.allowDoubleFace = j.value("allowDoubleFace", config.allowDoubleFace);
+    // 是否生成几何双面: 零厚度贴片保留正反两面(关掉则朝向相反的重合面只留一张)
+    config.doubleSidedGeometry = j.value("doubleSidedGeometry", config.doubleSidedGeometry);
+    // 只合并"同材质且 UV 一一对应"的双面对(镜像 UV 的对保留两张面, 否则背面会变镜像)
+    config.mergeSameDoubleSided = j.value("mergeSameDoubleSided", config.mergeSameDoubleSided);
+    // 只合并"同贴图但 UV 方向不同"的对(同向由 mergeSameDoubleSided 控制)
+    config.mergeMirrorDoubleSided = j.value("mergeMirrorDoubleSided", config.mergeMirrorDoubleSided);
+    // 几何双面的反面外移量(米): 0 = 严格共面只换索引; 上限 0.05 避免看得出错位
+    config.doubleSidedFaceOffset = std::clamp(j.value("doubleSidedFaceOffset", config.doubleSidedFaceOffset), 0.0f, 0.05f);
+    // 叠加层外移步长: 过小会在 Eevee 下 z-fighting, 过大在近景会看到层间错位
+    config.overlayLayerStep = std::clamp(j.value("overlayLayerStep", config.overlayLayerStep), 0.0002f, 0.05f);
+    // matchTiles 以 '_' 结尾时是否再做前缀族匹配(关掉只保留剥掉下划线后的精确匹配)
+    config.ctmPrefixMatchTiles = j.value("ctmPrefixMatchTiles", config.ctmPrefixMatchTiles);
+    // ConnectedTexturesMod 的 .png.mcmeta: auto 仅在 mods 里有 ctm 模组时启用, on 始终, off 从不
+    config.mcmetaCtm = j.value("mcmetaCtm", config.mcmetaCtm);
+    // 模组方块是否复用同一张贴图已有的材质(原版方块之间始终不合并)
+    config.mergeModTextures = j.value("mergeModTextures", config.mergeModTextures);
     config.isLODAutoCenter = j.value("isLODAutoCenter", config.isLODAutoCenter);
     config.LODCenterX = j.value("LODCenterX", config.LODCenterX);
     config.LODCenterZ = j.value("LODCenterZ", config.LODCenterZ);
@@ -58,7 +75,23 @@ Config LoadConfig(const std::string& configFile) {
     config.activeLOD3 = j.value("activeLOD3", config.activeLOD3);
     config.activeLOD4 = j.value("activeLOD4", config.activeLOD4);
     config.useBiomeColors = j.value("useBiomeColors", config.useBiomeColors);
-    config.useRandomBlockModels = j.value("useRandomBlockModels", config.useRandomBlockModels);
+    config.biomeBlendRadius = std::clamp(j.value("biomeBlendRadius", config.biomeBlendRadius), 0, 32);
+    // 加权变体挑选方式。旧开关 useRandomBlockModels 已被 variantSeedMode 取代，
+    // 这里只作为老配置文件的兼容回退读取：显式 false 等价于 First，其余默认 Game
+    // （与游戏一致，且导出可复现）。
+    if (j.contains("variantSeedMode") && j["variantSeedMode"].is_string()) {
+        const std::string mode = j["variantSeedMode"].get<std::string>();
+        if (mode == "random") config.variantSeedMode = VariantSeedMode::Random;
+        else if (mode == "first" || mode == "off") config.variantSeedMode = VariantSeedMode::First;
+        else config.variantSeedMode = VariantSeedMode::Game;
+    } else if (j.contains("useRandomBlockModels") && j["useRandomBlockModels"].is_boolean() &&
+               !j["useRandomBlockModels"].get<bool>()) {
+        config.variantSeedMode = VariantSeedMode::First;
+    }
+    // 原版 OffsetType 植物随机位移(草/花/蕨等); 关掉后植物都回到格子中心
+    config.plantOffset = j.value("plantOffset", config.plantOffset);
+    config.importEntities = j.value("importEntities", config.importEntities);
+    config.exportEntityModels = j.value("exportEntityModels", config.exportEntityModels);
     
     // 读取LOD1级别使用原始模型的方块列表
     /*格式：
@@ -76,13 +109,26 @@ Config LoadConfig(const std::string& configFile) {
     }
 
     config.exportFullModel = j.value("exportFullModel", config.exportFullModel);
-    config.partitionSize = j.value("partitionSize", config.partitionSize);
-    
-    // 读取每批次的区块任务数量上限（如果存在）
-    config.maxTasksPerBatch = j.value("maxTasksPerBatch", config.maxTasksPerBatch);
+    config.downloadPlayerSkins = j.value("downloadPlayerSkins", config.downloadPlayerSkins);
+    // 对旧配置和手写配置做安全兜底；Python 自动模式仍写入同一批字段。
+    config.partitionSize = std::clamp(j.value("partitionSize", config.partitionSize), 1, 64);
+
+    // 读取每批次的区块任务数量上限（如果存在），避免 0 或异常大值导致
+    // 分批失效、整数溢出或一次加载整个世界。
+    const size_t requestedMaxTasks = j.value("maxTasksPerBatch", config.maxTasksPerBatch);
+    config.maxTasksPerBatch = std::clamp<size_t>(requestedMaxTasks, 1, 262144);
+    config.modelThreads = std::clamp(j.value("modelThreads", config.modelThreads), 1, 32);
 
 
     config.selectedDimension = j.value("selectedDimension", config.selectedDimension);
+
+    // OptiFine 格式 CTM(.properties): 只接受 auto/on/off, 其它值当 auto
+    {
+        std::string mode = j.value("optifineCtm", config.optifineCtm);
+        for (char& c : mode)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        config.optifineCtm = (mode == "on" || mode == "off") ? mode : "auto";
+    }
 
     // 区块对齐处理
     if (config.useChunkPrecision) {

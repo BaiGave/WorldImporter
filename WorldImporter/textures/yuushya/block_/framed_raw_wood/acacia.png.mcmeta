@@ -1,0 +1,9 @@
+{
+    "ctm": {
+        "ctm_version": 1,
+        "textures": [
+            "yuushya:block_/framed_raw_wood/acacia_ctm"
+        ],
+        "type": "CTM"
+    }
+}

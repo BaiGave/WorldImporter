@@ -1,2 +1,11 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Generated data tables. Regenerate instead of editing; marked so GitHub collapses
+# the diff and excludes them from language statistics.
+#   WorldImporter/EntityModelData.inc     <- tools/entity_models/gen_entity_models.py
+#   WorldImporter/default_block_states.inc <- tools/gen_default_block_states.py
+#   WorldImporter/legacybiomes.inc        <- tests/legacybiomes/gen_legacy_biomes.py
+WorldImporter/EntityModelData.inc      linguist-generated=true
+WorldImporter/default_block_states.inc linguist-generated=true
+WorldImporter/legacybiomes.inc         linguist-generated=true

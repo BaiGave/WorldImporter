@@ -1,9 +1,11 @@
 #pragma once
 #include <string>
+#include <vector>
 #include <unordered_map>
 #include <map>
 #include <mutex>
 #include <shared_mutex>
+#include <cstdint>
 #include "include/json.hpp"
 
 enum class BiomeColorType {
@@ -25,6 +27,9 @@ struct BiomeColors {
     int sky = 0;
     int water = 0;
     int waterFog = 0;
+    // grass_color_modifier == swamp. Export uses BiomeSwampGrassColor per column.
+    // grass stays the baked 0x6A7039 so LOD / GetColor keep the previous colour.
+    bool swampGrass = false;
 
     // 色图计算参数
     float adjTemperature = 0.0f;
@@ -82,6 +87,7 @@ private:
     static std::shared_mutex registryMutex; // 改用读写锁
     static int CalculateColorFromColormap(const std::string& filePath,float temperature,float downfall);
     static BiomeColors ParseBiomeColors(const nlohmann::json& biomeJson);
+    static void FillBiomeExportLut(std::vector<int> (&colors)[7], std::vector<uint8_t>& swamp);
 
 
     // 禁止实例化
@@ -90,3 +96,13 @@ private:
 
 // 通过坐标获取生物群系ID
 int GetBiomeId(int blockX, int blockY, int blockZ);
+
+// Vanilla BiomeManager / LinearCongruentialGenerator / swamp noise / tint average.
+// Pure functions: no world access. Vectors live in tests/biome_blend_tests.cpp.
+int64_t BiomeObfuscateSeed(int64_t worldSeed);
+int64_t BiomeLcgNext(int64_t seed, int64_t salt);
+double BiomeFiddledDistance(int64_t zoomSeed, int qx, int qy, int qz, double dx, double dy, double dz);
+void BiomeChosenQuart(int64_t zoomSeed, int x, int y, int z, int& qx, int& qy, int& qz);
+double BiomeSwampNoise(int blockX, int blockZ);
+int BiomeSwampGrassColor(int blockX, int blockZ);
+int BiomeBlendTint(const int* colors, int count);

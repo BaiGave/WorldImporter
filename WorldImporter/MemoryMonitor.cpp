@@ -132,7 +132,10 @@ void MonitorTask(
     std::shared_mutex* heightMapCacheMutex
 ) {
     while (monitoring_active) {
-        std::this_thread::sleep_for(std::chrono::seconds(10));
+        // 分段睡眠,使 StopMonitoring 能快速结束线程(最坏 100ms 延迟)
+        for (int i = 0; i < 100 && monitoring_active; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
         if (!monitoring_active) break;
 
         size_t section_cache_size_bytes = 0;
@@ -172,6 +175,11 @@ void StartMonitoring(
         return; // 已经在监控
     }
     monitoring_active = true;
+    // 防御:若上一个监控线程尚未 join(异常路径),先回收,
+    // 避免 std::thread 析构时 joinable 导致 std::terminate
+    if (monitor_thread.joinable()) {
+        monitor_thread.join();
+    }
     // 传递指针和引用给线程函数
     monitor_thread = std::thread(MonitorTask, &sectionCache, &sectionCacheMutexRef, &entityBlockCache, &entityBlockCacheMutexRef, &heightMapCache, &heightMapCacheMutexRef);
     std::cout << "Memory monitoring started." << std::endl;

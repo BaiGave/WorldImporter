@@ -77,7 +77,6 @@ std::string readUtf8String(const std::vector<char>& data, size_t& index) {
     index += 2;
     if (index + length > data.size()) {
         return "";
-        throw std::out_of_range("Not enough data to read string content");
     }
     std::string str(data.begin() + index, data.begin() + index + length);
     index += length;
@@ -141,7 +140,7 @@ NbtTagPtr readTagPayload(const std::vector<char>& data, size_t& index, TagType t
             (static_cast<uint8_t>(data[index + 2]) << 8) |
             static_cast<uint8_t>(data[index + 3]);
         index += 4;
-        if (index + length > data.size()) throw std::out_of_range("Not enough data for TAG_Byte_Array payload");
+        if (length < 0 || static_cast<uint64_t>(length) > data.size() - index) throw std::out_of_range("Not enough data for TAG_Byte_Array payload");
         tag->payload.insert(tag->payload.end(), data.begin() + index, data.begin() + index + length);
         index += length;
         break;
@@ -154,6 +153,7 @@ NbtTagPtr readTagPayload(const std::vector<char>& data, size_t& index, TagType t
 
     case TagType::LIST: {
         // 读取元素类型和长度
+        if (index + 5 > data.size()) throw std::out_of_range("Not enough data for TAG_List header");  // 边界校验
         TagType listType = static_cast<TagType>(data[index++]);
         int32_t length = 0;
         for (int i = 0; i < 4; ++i) {
@@ -185,7 +185,7 @@ NbtTagPtr readTagPayload(const std::vector<char>& data, size_t& index, TagType t
             (static_cast<uint8_t>(data[index + 2]) << 8) |
             static_cast<uint8_t>(data[index + 3]);
         index += 4;
-        if (index + (4 * length) > data.size()) throw std::out_of_range("Not enough data for TAG_Int_Array payload");
+        if (length < 0 || static_cast<uint64_t>(length) > (data.size() - index) / 4) throw std::out_of_range("Not enough data for TAG_Int_Array payload");
         for (int i = 0; i < length; ++i) {
             for (int j = 0; j < 4; ++j) {
                 tag->payload.push_back(data[index++]);
@@ -200,7 +200,7 @@ NbtTagPtr readTagPayload(const std::vector<char>& data, size_t& index, TagType t
             (static_cast<uint8_t>(data[index + 2]) << 8) |
             static_cast<uint8_t>(data[index + 3]);
         index += 4;
-        if (index + (8 * length) > data.size()) throw std::out_of_range("Not enough data for TAG_Long_Array payload");
+        if (length < 0 || static_cast<uint64_t>(length) > (data.size() - index) / 8) throw std::out_of_range("Not enough data for TAG_Long_Array payload");
         for (int i = 0; i < length; ++i) {
             for (int j = 0; j < 8; ++j) {
                 tag->payload.push_back(data[index++]);
@@ -231,8 +231,10 @@ NbtTagPtr readTag(const std::vector<char>& data, size_t& index) {
     }
 
     // 读取标签名称(大端序16位无符号长度)
+    if (index + 2 > data.size()) throw std::out_of_range("Not enough data for tag name length");  // 边界校验
     uint16_t nameLength = (static_cast<uint8_t>(data[index]) << 8) | static_cast<uint8_t>(data[index + 1]);
     index += 2;
+    if (index + nameLength > data.size()) throw std::out_of_range("Not enough data for tag name");  // 边界校验
     std::string name(data.begin() + index, data.begin() + index + nameLength);
     index += nameLength;
 
@@ -293,7 +295,7 @@ NbtTagPtr readTag(const std::vector<char>& data, size_t& index) {
             (static_cast<uint8_t>(data[index + 2]) << 8) |
             static_cast<uint8_t>(data[index + 3]);
         index += 4;
-        if (index + length > data.size()) throw std::out_of_range("Not enough data for TAG_Byte_Array payload");
+        if (length < 0 || static_cast<uint64_t>(length) > data.size() - index) throw std::out_of_range("Not enough data for TAG_Byte_Array payload");
         tag->payload.insert(tag->payload.end(), data.begin() + index, data.begin() + index + length);
         index += length;
         break;
@@ -306,6 +308,7 @@ NbtTagPtr readTag(const std::vector<char>& data, size_t& index) {
 
     case TagType::LIST: {
         // 读取元素类型和长度
+        if (index + 5 > data.size()) throw std::out_of_range("Not enough data for TAG_List header");  // 边界校验
         TagType listType = static_cast<TagType>(data[index++]);
         int32_t length = 0;
         for (int i = 0; i < 4; ++i) {
@@ -337,7 +340,7 @@ NbtTagPtr readTag(const std::vector<char>& data, size_t& index) {
             (static_cast<uint8_t>(data[index + 2]) << 8) |
             static_cast<uint8_t>(data[index + 3]);
         index += 4;
-        if (index + (4 * length) > data.size()) throw std::out_of_range("Not enough data for TAG_Int_Array payload");
+        if (length < 0 || static_cast<uint64_t>(length) > (data.size() - index) / 4) throw std::out_of_range("Not enough data for TAG_Int_Array payload");
         for (int i = 0; i < length; ++i) {
             for (int j = 0; j < 4; ++j) {
                 tag->payload.push_back(data[index++]);
@@ -352,7 +355,7 @@ NbtTagPtr readTag(const std::vector<char>& data, size_t& index) {
             (static_cast<uint8_t>(data[index + 2]) << 8) |
             static_cast<uint8_t>(data[index + 3]);
         index += 4;
-        if (index + (8 * length) > data.size()) throw std::out_of_range("Not enough data for TAG_Long_Array payload");
+        if (length < 0 || static_cast<uint64_t>(length) > (data.size() - index) / 8) throw std::out_of_range("Not enough data for TAG_Long_Array payload");
         for (int i = 0; i < length; ++i) {
             for (int j = 0; j < 8; ++j) {
                 tag->payload.push_back(data[index++]);
@@ -497,8 +500,11 @@ std::vector<int> readIntArray(const std::vector<char>& payload) {
         // 例如:throw std::runtime_error("Invalid payload size for int array conversion.");
     }
     for (size_t i = 0; i < payload.size(); i += 4) {
-        int value = (payload[i] << 24) | (payload[i + 1] << 16) | (payload[i + 2] << 8) | (payload[i + 3]);
-        result.push_back(value);
+        uint32_t value = (static_cast<uint32_t>(static_cast<unsigned char>(payload[i])) << 24) |
+            (static_cast<uint32_t>(static_cast<unsigned char>(payload[i + 1])) << 16) |
+            (static_cast<uint32_t>(static_cast<unsigned char>(payload[i + 2])) << 8) |
+             static_cast<uint32_t>(static_cast<unsigned char>(payload[i + 3]));
+        result.push_back(static_cast<int32_t>(value));
     }
     return result;
 }
@@ -752,6 +758,88 @@ NbtTagPtr getBlockStates(const NbtTagPtr& sectionTag) {
 
 
 
+// 26.3+ 的默认方块状态表(由 tools/gen_default_block_states.py 从官方 blocks.json 报告生成)
+static const std::unordered_map<std::string, std::string>& DefaultBlockStates() {
+    static const std::unordered_map<std::string, std::string> table = {
+#include "default_block_states.inc"
+    };
+    return table;
+}
+
+static std::string TagString(const NbtTagPtr& tag) {
+    return std::string(tag->payload.begin(), tag->payload.end());
+}
+
+// 把方块状态补全为 "ns:id[k:v,...]":
+// 缺省的属性用该方块的默认值填充(26.3 对默认状态只存裸 id;旧格式也可能省略)。
+static std::string WithDefaultProperties(const std::string& id, std::string props) {
+    auto& table = DefaultBlockStates();
+    auto it = table.find(id.find(':') == std::string::npos ? "minecraft:" + id : id);
+    if (it != table.end()) {
+        size_t pos = 0;
+        const std::string& defs = it->second;
+        while (pos < defs.size()) {
+            size_t comma = defs.find(',', pos);
+            if (comma == std::string::npos) comma = defs.size();
+            std::string kv = defs.substr(pos, comma - pos);
+            std::string key = kv.substr(0, kv.find(':'));
+            bool present = false;
+            size_t p = 0;
+            while (p < props.size()) {
+                size_t c = props.find(',', p);
+                if (c == std::string::npos) c = props.size();
+                if (props.compare(p, key.size() + 1, key + ":") == 0) { present = true; break; }
+                p = c + 1;
+            }
+            if (!present) props += (props.empty() ? "" : ",") + kv;
+            pos = comma + 1;
+        }
+    }
+    return props.empty() ? id : id + "[" + props + "]";
+}
+
+// 解析单个方块状态标签。支持:
+//  - 旧格式 {Name, Properties}
+//  - 26.3+ 格式 {id, properties}
+//  - 26.3+ 默认状态简写: 裸 STRING,或混合列表中的 {"": STRING}
+std::string ParseBlockStateTag(const NbtTagPtr& blockTag) {
+    if (!blockTag) return {};
+    if (blockTag->type == TagType::STRING) {
+        return WithDefaultProperties(TagString(blockTag), {});
+    }
+    if (blockTag->type != TagType::COMPOUND) return {};
+
+    auto readProps = [](const NbtTagPtr& propertiesTag) {
+        std::string propertiesStr;
+        if (propertiesTag && propertiesTag->type == TagType::COMPOUND) {
+            for (const auto& property : propertiesTag->children) {
+                if (property->type == TagType::STRING) {
+                    if (!propertiesStr.empty()) propertiesStr += ",";
+                    propertiesStr += property->name + ":" + TagString(property);
+                }
+            }
+        }
+        return propertiesStr;
+    };
+
+    auto nameTag = getChildByName(blockTag, "Name");
+    if (nameTag && nameTag->type == TagType::STRING) {
+        std::string blockName = TagString(nameTag);
+        // 旧格式同样可能省略默认属性(如 Arnis 写裸 grass_block / snow),
+        // 游戏读取时会用默认值补全,这里保持一致。
+        return WithDefaultProperties(blockName, readProps(getChildByName(blockTag, "Properties")));
+    }
+    auto idTag = getChildByName(blockTag, "id");
+    if (idTag && idTag->type == TagType::STRING) {
+        return WithDefaultProperties(TagString(idTag), readProps(getChildByName(blockTag, "properties")));
+    }
+    auto shortTag = getChildByName(blockTag, "");
+    if (shortTag && shortTag->type == TagType::STRING) {
+        return WithDefaultProperties(TagString(shortTag), {});
+    }
+    return {};
+}
+
 // 读取 block_states 的 palette 数据
 std::vector<std::string> getBlockPalette(const NbtTagPtr& blockStatesTag) {
     std::vector<std::string> blockPalette;
@@ -760,31 +848,8 @@ std::vector<std::string> getBlockPalette(const NbtTagPtr& blockStatesTag) {
     auto paletteTag = getChildByName(blockStatesTag, "palette");
     if (paletteTag && paletteTag->type == TagType::LIST) {
         for (const auto& blockTag : paletteTag->children) {
-            if (blockTag->type == TagType::COMPOUND) {
-                // 解析每个 TAG_Compound
-                std::string blockName;
-                auto nameTag = getChildByName(blockTag, "Name");
-                if (nameTag && nameTag->type == TagType::STRING) {
-                    blockName = std::string(nameTag->payload.begin(), nameTag->payload.end());
-                }
-
-                // 检查是否有 Properties,拼接后缀
-                auto propertiesTag = getChildByName(blockTag, "Properties");
-                if (propertiesTag && propertiesTag->type == TagType::COMPOUND) {
-                    std::string propertiesStr;
-                    for (const auto& property : propertiesTag->children) {
-                        if (property->type == TagType::STRING) {
-                            propertiesStr += property->name + ":" + std::string(property->payload.begin(), property->payload.end()) + ",";
-                        }
-                    }
-                    if (!propertiesStr.empty()) {
-                        propertiesStr.pop_back();  // 移除最后一个逗号
-                        blockName += "[" + propertiesStr + "]";
-                    }
-                }
-
-                blockPalette.push_back(blockName);
-            }
+            // 必须逐项占位,否则 data 索引会错位
+            blockPalette.push_back(ParseBlockStateTag(blockTag));
         }
     }
     return blockPalette;
@@ -813,7 +878,10 @@ std::vector<int> getBlockStatesData(const NbtTagPtr& blockStatesTag, const std::
 
     // 根据调色板中方块状态的数量决定每个状态占用的位数
     size_t numBlockStates = blockPalette.size();
-    int bitsPerState = (numBlockStates <= 16) ? 4 : static_cast<int>(std::ceil(std::log2(numBlockStates)));
+    int bitsPerState = (numBlockStates <= 16) ? 4 : static_cast<int>(std::ceil(std::log2(static_cast<double>(numBlockStates))));
+    // 防御异常数据:位数限制在 [1, 32],避免位移运算未定义行为
+    if (bitsPerState < 1) bitsPerState = 1;
+    if (bitsPerState > 32) bitsPerState = 32;
     int statesPerLong = 64 / bitsPerState;  // 每个 long 能存储的状态数
 
     // 将 payload 数据转换为 long 数组,并根据需要反转字节顺序

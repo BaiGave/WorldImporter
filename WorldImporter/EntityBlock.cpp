@@ -1,12 +1,218 @@
 #include "EntityBlock.h"
 #include "RegionModelExporter.h"  // 包含必要的头文件,确保相关函数可用
-#include "blockstate.h"         // 为了调用 ProcessBlockstate
+#include "blockstate.h"
+#include "blocktint.h"         // 为了调用 ProcessBlockstate
+#include "showblockrandom.h"
 #include <span>                  // 为了 std::span (C++20)
 #include <iostream>            // 为了 std::cout, std::cerr (如果尚未包含)
 #include <map>
 #include <vector>
 #include <string>
+#include <cstdint>
+#include <optional>
+#include <shared_mutex>
 
+// blockstate.cpp 中的非静态定义。放进匿名命名空间会变成内部链接。
+extern std::shared_mutex blockstateCachesMutex;
+
+namespace {
+
+// 面序与游戏 getQuads 一致：DOWN, UP, NORTH, SOUTH, WEST, EAST, 无 cullface。
+const FaceType kShowSides[6] = {DOWN, UP, NORTH, SOUTH, WEST, EAST};
+
+bool IsShowSide(FaceType dir, int side) {
+    if (side >= 0 && side < 6) return dir == kShowSides[side];
+    return dir == DO_NOT_CULL || dir == UNKNOWN;
+}
+
+// 只保留该面的面片，顶点/UV 压成被引用的子集，材质表原样保留。
+ModelData ExtractSideFaces(const ModelData& src, int side) {
+    ModelData out;
+    out.materials = src.materials;
+
+    std::vector<int> faceMap(src.faces.size(), -1);
+    out.faces.reserve(src.faces.size());
+    for (size_t i = 0; i < src.faces.size(); ++i) {
+        if (!IsShowSide(src.faces[i].faceDirection, side)) continue;
+        faceMap[i] = static_cast<int>(out.faces.size());
+        out.faces.push_back(src.faces[i]);
+    }
+
+    const int vertCount = static_cast<int>(src.vertices.size() / 3);
+    const int uvCount = static_cast<int>(src.uvCoordinates.size() / 2);
+    std::vector<char> vertUsed(vertCount, 0);
+    std::vector<char> uvUsed(uvCount, 0);
+    for (const Face& face : out.faces) {
+        for (int k = 0; k < 4; ++k) {
+            const int vi = face.vertexIndices[k];
+            if (vi >= 0 && vi < vertCount) vertUsed[vi] = 1;
+            const int ui = face.uvIndices[k];
+            if (ui >= 0 && ui < uvCount) uvUsed[ui] = 1;
+        }
+    }
+
+    std::vector<int> vertMap(vertCount, -1);
+    out.vertices.reserve(static_cast<size_t>(vertCount) * 3);
+    for (int i = 0; i < vertCount; ++i) {
+        if (!vertUsed[i]) continue;
+        vertMap[i] = static_cast<int>(out.vertices.size() / 3);
+        out.vertices.push_back(src.vertices[static_cast<size_t>(i) * 3]);
+        out.vertices.push_back(src.vertices[static_cast<size_t>(i) * 3 + 1]);
+        out.vertices.push_back(src.vertices[static_cast<size_t>(i) * 3 + 2]);
+    }
+    std::vector<int> uvMap(uvCount, -1);
+    out.uvCoordinates.reserve(static_cast<size_t>(uvCount) * 2);
+    for (int i = 0; i < uvCount; ++i) {
+        if (!uvUsed[i]) continue;
+        uvMap[i] = static_cast<int>(out.uvCoordinates.size() / 2);
+        out.uvCoordinates.push_back(src.uvCoordinates[static_cast<size_t>(i) * 2]);
+        out.uvCoordinates.push_back(src.uvCoordinates[static_cast<size_t>(i) * 2 + 1]);
+    }
+
+    for (Face& face : out.faces) {
+        for (int k = 0; k < 4; ++k) {
+            const int vi = face.vertexIndices[k];
+            face.vertexIndices[k] = (vi >= 0 && vi < vertCount && vertMap[vi] >= 0) ? vertMap[vi] : 0;
+            const int ui = face.uvIndices[k];
+            face.uvIndices[k] = (ui >= 0 && ui < uvCount && uvMap[ui] >= 0) ? uvMap[ui] : 0;
+        }
+    }
+
+    for (const OverlayPair& pair : src.overlayPairs) {
+        if (pair.baseFace < 0 || pair.overlayFace < 0) continue;
+        if (pair.baseFace >= static_cast<int>(faceMap.size()) ||
+            pair.overlayFace >= static_cast<int>(faceMap.size())) continue;
+        const int base = faceMap[pair.baseFace];
+        const int overlay = faceMap[pair.overlayFace];
+        if (base < 0 || overlay < 0) continue;
+        out.overlayPairs.push_back(OverlayPair{base, overlay});
+    }
+    return out;
+}
+
+bool ShowSlotsUniform(const std::array<std::vector<int>, 7>& picks) {
+    for (int i = 1; i < 7; ++i) {
+        if (picks[i] != picks[0]) return false;
+    }
+    return true;
+}
+
+void AppendShowPiece(ModelData& merged, bool& any, ModelData piece) {
+    if (piece.faces.empty()) return;
+    if (!any) {
+        merged = std::move(piece);
+        any = true;
+    } else {
+        merged = MergeModelData(merged, piece);
+    }
+}
+
+const ModelData& VariantModelAt(const std::vector<WeightedModelData>& models, int slot) {
+    if (slot < 0 || slot >= static_cast<int>(models.size())) return models.front().model;
+    return models[static_cast<size_t>(slot)].model;
+}
+
+ModelData AssembleVariant(const std::vector<WeightedModelData>& models,
+                          const std::array<std::vector<int>, 7>& picks) {
+    if (ShowSlotsUniform(picks)) {
+        const int slot = picks[0].empty() ? 0 : picks[0][0];
+        return VariantModelAt(models, slot);
+    }
+    ModelData merged;
+    bool any = false;
+    for (int side = 0; side < 7; ++side) {
+        const int slot = picks[side].empty() ? 0 : picks[side][0];
+        AppendShowPiece(merged, any, ExtractSideFaces(VariantModelAt(models, slot), side));
+    }
+    return merged;
+}
+
+const ModelData* MultipartModelAt(const std::vector<MultipartGroup>& groups,
+                                  const std::array<std::vector<int>, 7>& picks,
+                                  int side, size_t groupIndex) {
+    if (groupIndex >= groups.size() || groups[groupIndex].models.empty()) return nullptr;
+    int slot = 0;
+    if (side >= 0 && side < 7 && groupIndex < picks[side].size()) slot = picks[side][groupIndex];
+    const auto& models = groups[groupIndex].models;
+    if (slot < 0 || slot >= static_cast<int>(models.size())) slot = 0;
+    return &models[static_cast<size_t>(slot)].model;
+}
+
+ModelData AssembleMultipart(const std::vector<MultipartGroup>& groups,
+                            const std::array<std::vector<int>, 7>& picks) {
+    if (ShowSlotsUniform(picks)) {
+        ModelData merged;
+        for (size_t g = 0; g < groups.size(); ++g) {
+            const ModelData* model = MultipartModelAt(groups, picks, 0, g);
+            if (!model) continue;
+            merged = MergeModelData(merged, *model);
+        }
+        return merged;
+    }
+    ModelData merged;
+    bool any = false;
+    for (int side = 0; side < 7; ++side) {
+        for (size_t g = 0; g < groups.size(); ++g) {
+            const ModelData* model = MultipartModelAt(groups, picks, side, g);
+            if (!model) continue;
+            AppendShowPiece(merged, any, ExtractSideFaces(*model, side));
+        }
+    }
+    return merged;
+}
+
+// rng 为空时走原来的 GetRandomModelFromCache（First / Random 不变）。
+ModelData PickShowContentModel(const std::string& ns, const std::string& blockName,
+                               std::optional<LegacyRandom>& rng) {
+    if (!rng) return GetRandomModelFromCache(ns, blockName);
+
+    std::shared_lock<std::shared_mutex> lock(blockstateCachesMutex, std::defer_lock);
+    if (!blockstateCachesFrozen.load(std::memory_order_acquire)) lock.lock();
+
+    auto blockNsIt = BlockModelCache.find(ns);
+    if (blockNsIt != BlockModelCache.end()) {
+        auto blockIt = blockNsIt->second.find(blockName);
+        if (blockIt != blockNsIt->second.end()) return blockIt->second;
+    }
+
+    auto variantNsIt = VariantModelCache.find(ns);
+    if (variantNsIt != VariantModelCache.end()) {
+        auto variantIt = variantNsIt->second.find(blockName);
+        if (variantIt != variantNsIt->second.end() && !variantIt->second.empty()) {
+            ShowRandEntry entry;
+            entry.kind = ShowRandEntry::Variant;
+            entry.weights.reserve(variantIt->second.size());
+            for (const auto& wm : variantIt->second) entry.weights.push_back(wm.weight);
+            const auto picks = ShowRandPickEntry(entry, *rng);
+            return AssembleVariant(variantIt->second, picks);
+        }
+    }
+
+    auto multipartNsIt = MultipartModelCache.find(ns);
+    if (multipartNsIt != MultipartModelCache.end()) {
+        auto multipartIt = multipartNsIt->second.find(blockName);
+        if (multipartIt != multipartNsIt->second.end()) {
+            ShowRandEntry entry;
+            entry.kind = ShowRandEntry::Multipart;
+            entry.groups.reserve(multipartIt->second.size());
+            for (const auto& group : multipartIt->second) {
+                if (!group.weighted) {
+                    entry.groups.emplace_back();
+                    continue;
+                }
+                std::vector<int> weights;
+                weights.reserve(group.models.size());
+                for (const auto& wm : group.models) weights.push_back(wm.weight);
+                entry.groups.push_back(std::move(weights));
+            }
+            const auto picks = ShowRandPickEntry(entry, *rng);
+            return AssembleMultipart(multipartIt->second, picks);
+        }
+    }
+    return ModelData();
+}
+
+} // namespace
 
 void EntityBlock::PrintDetails() const {
     std::cout << "EntityBlock - ID: " << id << ", X: " << x << ", Y: " << y << ", Z: " << z << std::endl;
@@ -27,8 +233,33 @@ void YuushyaShowBlockEntity::PrintDetails() const {
     }
 }
 
+// 方块名形如 "yuushya:showblock[facing=east,lit=0]"(属性分隔符也可能是 ':'),
+// 返回 Direction.toYRot(): south=0, west=90, north=180, east=270; 无 facing 时为 0。
+float ShowBlockFacingYRot(const std::string& blockName) {
+    const size_t bracket = blockName.find('[');
+    if (bracket == std::string::npos) return 0.0f;
+    size_t pos = bracket + 1;
+    while (pos < blockName.size()) {
+        size_t end = blockName.find_first_of(",]", pos);
+        if (end == std::string::npos) end = blockName.size();
+        const std::string kv = blockName.substr(pos, end - pos);
+        const size_t sep = kv.find_first_of("=:");
+        if (sep != std::string::npos && kv.compare(0, sep, "facing") == 0) {
+            const std::string v = kv.substr(sep + 1);
+            if (v == "west") return 90.0f;
+            if (v == "north") return 180.0f;
+            if (v == "east") return 270.0f;
+            return 0.0f;
+        }
+        pos = end + 1;
+    }
+    return 0.0f;
+}
+
 ModelData YuushyaShowBlockEntity::GenerateModel() const {
     ModelData mainModel;
+    std::optional<LegacyRandom> showRng;
+    if (config.variantSeedMode == VariantSeedMode::Game) showRng.emplace(BlockPosSeed(x, y, z));
     for (const auto& block : blocks) {
         int id = block.blockid;
         // 位置偏移(除以16转换到模型空间)
@@ -54,12 +285,23 @@ ModelData YuushyaShowBlockEntity::GenerateModel() const {
         // 获取模型数据
         size_t colonPos = blockName.find(':');
         if (colonPos != std::string::npos) blockName = blockName.substr(colonPos + 1);
-        ModelData blockModel = GetRandomModelFromCache(ns, blockName);
+        ModelData blockModel = PickShowContentModel(ns, blockName, showRng);
 
-        // 如果缓存未命中,尝试处理 blockstate 并重新获取模型
-        if (blockModel.vertices.empty() && !blockName.empty()) {
-            ProcessBlockstate(ns, {blockName}); // blockName 应包含方块状态, ns 是命名空间
-            blockModel = GetRandomModelFromCache(ns, blockName); // 再次尝试获取
+        // 批次加载阶段已串行预解析全局调色板。模型阶段缓存冻结后禁止
+        // 惰性 ProcessBlockstate：它会写 Block/Variant/MultipartModelCache，
+        // 与其它模型线程的无锁读取并发时会损坏 unordered_map 堆结构。
+        if (blockModel.vertices.empty() && !blockName.empty() &&
+            !blockstateCachesFrozen.load(std::memory_order_acquire)) {
+            ProcessBlockstate(ns, {blockName});
+            blockModel = PickShowContentModel(ns, blockName, showRng);
+        }
+
+        // 展台内嵌方块统一加 yuushya:showblock# 前缀，材质名归属到展台方块，
+        // 原方块 id 保留在 # 之后供贴图查找。
+        // GetRandomModelFromCache 返回拷贝，改名不会写回缓存。
+        for (auto& mat : blockModel.materials) {
+            if (mat.name.rfind("yuushya:showblock#", 0) != 0)
+                mat.name = "yuushya:showblock#" + mat.name;
         }
 
         // 将所有面设置为DO_NOT_CULL,确保不会被贪心合并算法错误剔除
@@ -76,6 +318,17 @@ ModelData YuushyaShowBlockEntity::GenerateModel() const {
         // 合并模型
         if (mainModel.vertices.empty()) mainModel = blockModel;
         else MergeModelsDirectly(mainModel, blockModel);
+    }
+    // 展示方块自身的 facing: Yuushya ShowBlockModel 先绕方块中心按 Y 轴旋转
+    // -facing.toYRot() (south=0, west=90, north=180, east=270), 再对每个内容方块做
+    // 缩放/平移/旋转, 所以整体旋转放在最后。
+    if (!mainModel.vertices.empty()) {
+        const int selfId = GetBlockId(x, y, z);
+        const float yRot = selfId < 0 ? 0.0f : ShowBlockFacingYRot(GetBlockById(selfId).name);
+        if (yRot != 0.0f) {
+            ApplyRotationToVertices(std::span<float>(mainModel.vertices.data(), mainModel.vertices.size()),
+                0.0f, -yRot, 0.0f);
+        }
     }
     ApplyPositionOffset(mainModel, x, y, z); // 最终整体偏移
     return mainModel;
@@ -217,7 +470,9 @@ ModelData CreateCube(float minX, float minY, float minZ, float maxX, float maxY,
         {SOUTH, {20, 21, 22, 23}, {20, 21, 22, 23}}
     };
 
-    // 根据 EntityBlock.h 中的注释, faceStates 的顺序是 EAST, WEST, UP, DOWN, SOUTH, NORTH
+    // faceStates order after ParseLittleTilesTiles nibble split:
+    //   [0]=UP [1]=DOWN [2]=SOUTH [3]=NORTH [4]=EAST [5]=WEST
+    // (matches CreativeCore Facing pack DOWN,UP,NORTH,SOUTH,WEST,EAST via byte/nibble extract)
     std::map<FaceType, LittleFaceState> stateMap;
     if (faceStates.size() >= 6) {
         stateMap[FaceType::UP] = static_cast<LittleFaceState>(faceStates[0]);
@@ -263,7 +518,9 @@ static ModelData GenerateModelFromTiles(const std::vector<LittleTilesTileEntry>&
         }
 
         ModelData templateModel = GetRandomModelFromCache(ns, blockName);
-        if (templateModel.vertices.empty() && !blockName.empty()) {
+        // 同上：冻结后的模型阶段只读缓存，禁止并发惰性写入。
+        if (templateModel.vertices.empty() && !blockName.empty() &&
+            !blockstateCachesFrozen.load(std::memory_order_acquire)) {
             ProcessBlockstate(ns, { blockName });
             templateModel = GetRandomModelFromCache(ns, blockName);
         }
@@ -274,6 +531,20 @@ static ModelData GenerateModelFromTiles(const std::vector<LittleTilesTileEntry>&
             dummyMaterial.name = "dummy";
             dummyMaterial.texturePath = "None";
             templateModel.materials.push_back(dummyMaterial);
+        }
+
+        // LittleTiles color tint (ARGB). -1 = ColorUtils default / no tint.
+        if (!tile.color.empty() && tile.color[0] != -1) {
+            const uint32_t argb = static_cast<uint32_t>(tile.color[0]);
+            TintResult fixed;
+            fixed.kind = TintKind::Fixed;
+            fixed.color = argb & 0xFFFFFFu;
+            for (auto& mat : templateModel.materials) {
+                if (mat.tintLocked) continue;
+                mat.tint = fixed;
+                mat.tintLocked = true;
+                mat.name += TintSuffix(fixed);
+            }
         }
 
         for (const auto& boxData : tile.boxDataList) {

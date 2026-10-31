@@ -3,6 +3,9 @@
 #include "MemoryMonitor.h" // 包含内存监控头文件
 #include "block.h"         // 包含 block.h 以访问缓存及其互斥锁的 extern 声明
 #include "TaskMonitor.h"   // 包含任务监控器头文件
+#include "EntityExporter.h"
+#include "EntityModelExporter.h"
+#include "PaintingExporter.h"
 
 Config config;  // 定义全局变量
 
@@ -30,6 +33,13 @@ int main() {
             // 如果是 1,导出区域内所有方块模型
             RegionModelExporter::ExportModels("region_models");
         }
+        if (config.status == 1 && config.exportEntityModels) {
+            EntityModelExporter::Export("entities");
+        }
+        if (config.importEntities) {
+            EntityExporter::Export("entities.json");
+        }
+        PaintingExporter::Export();
         auto end_time = high_resolution_clock::now();
         auto duration = duration_cast<milliseconds>(end_time - start_time);
         cout << "Total time: " << duration.count() << " milliseconds" << endl;

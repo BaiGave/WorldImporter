@@ -1,12 +1,17 @@
 #include "texture.h"
 #include "fileutils.h"
+#include "include/stb_image.h"
 #include <Windows.h>   
 #include <iostream>
 #include <fstream>
 #include <chrono>
+#include <shared_mutex>
+#include <unordered_map>
 
 std::unordered_map<std::string, std::string> texturePathCache; // 定义材质路径缓存
+std::mutex texturePathCacheMutex;
 std::unordered_map<std::string, TextureDimension> textureDimensionCache; // 定义材质尺寸缓存
+std::mutex textureDimensionMutex;
 
 // PNG文件头部解析，读取图像尺寸
 bool GetPNGDimensions(const std::vector<unsigned char>& pngData, int& width, int& height) {
@@ -97,6 +102,23 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
             std::cerr << "Texture not found: " << namespaceName << ":" << blockId << std::endl;
             return false;
         }
+
+        // PNG 与 .mcmeta 可能分属不同 jar/资源包(pack 只改贴图、mcmeta 仍用原版)。
+        // 上面只查了与 PNG 同一 cacheKey 的 mcmeta；这里按路径再取一份,保证写出 .mcmeta
+        // 供 Crafter 动态纹理节点使用。
+        if (mcmetaData.empty()) {
+            std::string metaIndexKey = std::string("mcmetas:") + namespaceName + ":" + blockId;
+            auto metaIdx = GlobalCache::mcmetaIndex.find(metaIndexKey);
+            if (metaIdx != GlobalCache::mcmetaIndex.end()) {
+                auto mcmetaIt = GlobalCache::mcmetaCache.find(metaIdx->second);
+                if (mcmetaIt != GlobalCache::mcmetaCache.end()) {
+                    mcmetaData = mcmetaIt->second;
+                    if (mcmetaData.contains("animation")) {
+                        isDynamic = true;
+                    }
+                }
+            }
+        }
     }
 
     // 处理保存路径
@@ -110,10 +132,10 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
     std::string exeDir = exePath.substr(0, pos);
 
     if (savePath.empty()) {
-        savePath = exeDir + "\\textures";
+        savePath = JoinPath(exeDir, "textures");
     }
     else {
-        savePath = exeDir + "\\" + savePath;
+        savePath = JoinPath(exeDir, savePath);
     }
 
     // 创建保存目录（用 W 版支持中文路径）
@@ -127,7 +149,7 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
     std::string fileName = (lastSlashPos == std::string::npos) ? blockId : blockId.substr(lastSlashPos + 1);
 
     // 创建 namespace 目录
-    std::wstring wNsDir = string_to_wstring(savePath + "\\" + namespaceName);
+    std::wstring wNsDir = string_to_wstring(JoinPath(savePath, namespaceName));
     CreateDirectoryW(wNsDir.c_str(), NULL);
 
     // 递归创建子目录
@@ -137,15 +159,15 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
     size_t end;
     while ((end = pathPart.find('/', start)) != std::string::npos) {
         std::string dir = pathPart.substr(start, end - start);
-        wCurrentPath += L"\\" + string_to_wstring(dir);
+        wCurrentPath += PathSepWStr() + string_to_wstring(dir);
         CreateDirectoryW(wCurrentPath.c_str(), NULL);
         start = end + 1;
     }
-    std::wstring wFinalDir = wCurrentPath + L"\\" + string_to_wstring(pathPart.substr(start));
+    std::wstring wFinalDir = wCurrentPath + PathSepWStr() + string_to_wstring(pathPart.substr(start));
     CreateDirectoryW(wFinalDir.c_str(), NULL);
 
     // 保存主 PNG 文件
-    std::string filePath = wstring_to_string(wFinalDir) + "\\" + fileName + ".png";
+    std::string filePath = JoinPath(wstring_to_string(wFinalDir), fileName + ".png");
     std::ofstream outputFile(filePath, std::ios::binary);
     savePath = filePath;
 
@@ -221,7 +243,7 @@ bool SaveTextureToFile(const std::string& namespaceName, const std::string& bloc
 
             if (!pbrTextureData.empty()) {
                 // 保存 PBR 贴图
-                std::string pbrFilePath = wstring_to_string(wFinalDir) + "\\" + fileName + suffix + ".png";
+                std::string pbrFilePath = JoinPath(wstring_to_string(wFinalDir), fileName + suffix + ".png");
                 std::ofstream pbrOutputFile(pbrFilePath, std::ios::binary);
                 if (pbrOutputFile.is_open()) {
                     pbrOutputFile.write(reinterpret_cast<const char*>(pbrTextureData.data()), pbrTextureData.size());
@@ -342,10 +364,59 @@ bool ParseMcmetaFile(const std::string& cacheKey, MaterialType& outType) {
     return ParseMcmetaFile(cacheKey, outType, dummyAspectRatio);
 }
 
+// 按与 SaveTextureToFile 相同的优先级,取"最终生效"贴图的尺寸来算 UV 帧数缩放。
+// mcmeta 可能来自原版 jar,而 PNG 被资源包覆盖(或反过来),两者 cacheKey 不同:
+// 若只用 mcmeta 的 key 查 textureDimensionCache 会 miss,aspectRatio 停在 1,
+// 于是 ANIMATED 材质的 V 不裁到第 0 帧 → 灯笼等 16xN 条带贴图 UV 整体偏到后续帧(框采到发光区)。
+static float AspectRatioFromTextureDimensions(int width, int height) {
+    if (width <= 0 || height <= 0) return 1.0f;
+    if (height > width && height % width == 0) {
+        return static_cast<float>(height / width);
+    }
+    return static_cast<float>(height) / static_cast<float>(width);
+}
+
+static float LookupTextureAspectRatio(const std::string& namespaceName, const std::string& texturePath) {
+    // 1) 已写出的贴图尺寸(SaveTextureToFile 写入, key 是实际命中的 cacheKey)
+    {
+        std::string indexKey = std::string("textures:") + namespaceName + ":" + texturePath;
+        std::string cacheKey;
+        {
+            std::shared_lock<std::shared_mutex> lock(GlobalCache::cacheMutex);
+            auto idxIt = GlobalCache::textureIndex.find(indexKey);
+            if (idxIt != GlobalCache::textureIndex.end()) {
+                cacheKey = idxIt->second;
+            }
+        }
+        if (!cacheKey.empty()) {
+            std::lock_guard<std::mutex> dimLock(textureDimensionMutex);
+            auto dimIt = textureDimensionCache.find(cacheKey);
+            if (dimIt != textureDimensionCache.end()) {
+                return AspectRatioFromTextureDimensions(dimIt->second.width, dimIt->second.height);
+            }
+        }
+    }
+    // 2) 退回: 任意 jar 下同路径的尺寸缓存
+    {
+        std::lock_guard<std::mutex> dimLock(textureDimensionMutex);
+        const std::string suffix = ":" + namespaceName + ":" + texturePath;
+        for (const auto& entry : textureDimensionCache) {
+            if (entry.first.size() >= suffix.size() &&
+                entry.first.compare(entry.first.size() - suffix.size(), suffix.size(), suffix) == 0) {
+                float ar = AspectRatioFromTextureDimensions(entry.second.width, entry.second.height);
+                if (ar > 1.0f) return ar;
+            }
+        }
+    }
+    return 1.0f;
+}
+
 // 检测材质类型
 MaterialType DetectMaterialType(const std::string& namespaceName, const std::string& texturePath, float& outAspectRatio) {
     MaterialType type = NORMAL;
-    outAspectRatio = 1.0f;
+    // 先按实际贴图尺寸定 UV 缩放,再查 mcmeta 定类型。两者解耦,避免 pack PNG / 原版 mcmeta
+    // 分属不同 cacheKey 时 aspectRatio 被丢成 1。
+    outAspectRatio = LookupTextureAspectRatio(namespaceName, texturePath);
     
     {
         std::shared_lock<std::shared_mutex> lock(GlobalCache::cacheMutex);
@@ -353,7 +424,14 @@ MaterialType DetectMaterialType(const std::string& namespaceName, const std::str
         std::string indexKey = std::string("mcmetas:") + namespaceName + ":" + texturePath;
         auto it = GlobalCache::mcmetaIndex.find(indexKey);
         if (it != GlobalCache::mcmetaIndex.end()) {
-            if (ParseMcmetaFile(it->second, type, outAspectRatio)) {
+            MaterialType parsedType = NORMAL;
+            float ignoredAspect = 1.0f;
+            if (ParseMcmetaFile(it->second, parsedType, ignoredAspect)) {
+                type = parsedType;
+                // 若尺寸缓存尚空(极少),退回 mcmeta 路径算出的比例
+                if (outAspectRatio <= 1.0f && ignoredAspect > 1.0f) {
+                    outAspectRatio = ignoredAspect;
+                }
                 return type;
             }
         }
@@ -362,7 +440,13 @@ MaterialType DetectMaterialType(const std::string& namespaceName, const std::str
         for (size_t i = 0; i < GlobalCache::jarOrder.size(); ++i) {
             const std::string& modId = GlobalCache::jarOrder[i];
             std::string cacheKey = modId + ":" + namespaceName + ":" + texturePath;
-            if (ParseMcmetaFile(cacheKey, type, outAspectRatio)) {
+            MaterialType parsedType = NORMAL;
+            float ignoredAspect = 1.0f;
+            if (ParseMcmetaFile(cacheKey, parsedType, ignoredAspect)) {
+                type = parsedType;
+                if (outAspectRatio <= 1.0f && ignoredAspect > 1.0f) {
+                    outAspectRatio = ignoredAspect;
+                }
                 break;
             }
         }
@@ -375,4 +459,101 @@ MaterialType DetectMaterialType(const std::string& namespaceName, const std::str
 MaterialType DetectMaterialType(const std::string& namespaceName, const std::string& texturePath) {
     float aspectRatio;
     return DetectMaterialType(namespaceName, texturePath, aspectRatio);
+}
+
+// --------------------------------------------------------------------------------
+// 纹理像素解码 / 不透明判定（运行时遮挡表使用）
+// --------------------------------------------------------------------------------
+
+// 程序所在目录（供 PNG 磁盘回退使用）
+static std::string GetTextureExeDir() {
+    wchar_t buffer[MAX_PATH];
+    GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+    std::wstring ws(buffer);
+    int len = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string exePath;
+    if (len > 0) {
+        exePath.resize(len - 1);
+        WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, &exePath[0], len, nullptr, nullptr);
+    }
+    size_t pos = exePath.find_last_of("\\/");
+    return (pos == std::string::npos) ? std::string() : exePath.substr(0, pos);
+}
+
+bool LoadTexturePixels(const std::string& namespaceName, const std::string& texturePath,
+    std::vector<unsigned char>& outPixels, int& outWidth, int& outHeight) {
+    outPixels.clear();
+    outWidth = 0;
+    outHeight = 0;
+
+    std::vector<unsigned char> pngData;
+    {
+        std::shared_lock<std::shared_mutex> lock(GlobalCache::cacheMutex);
+        auto indexIt = GlobalCache::textureIndex.find("textures:" + namespaceName + ":" + texturePath);
+        if (indexIt != GlobalCache::textureIndex.end()) {
+            auto textureIt = GlobalCache::textures.find(indexIt->second);
+            if (textureIt != GlobalCache::textures.end()) {
+                pngData = textureIt->second;
+            }
+        }
+    }
+
+    unsigned char* pixels = nullptr;
+    int channels = 0;
+    if (!pngData.empty()) {
+        pixels = stbi_load_from_memory(
+            pngData.data(), static_cast<int>(pngData.size()), &outWidth, &outHeight, &channels, 4);
+    }
+
+    // 回退：读取程序目录下已导出的 PNG（CTM 合成图、内存缓存未命中时）
+    if (!pixels) {
+        const std::string exeDir = GetTextureExeDir();
+        if (!exeDir.empty()) {
+            std::string texFs = texturePath;
+            for (char& ch : texFs) { if (ch == '/') ch = PathSep(); }
+            const std::string filePath =
+                JoinPath(exeDir, "textures", namespaceName, texFs + ".png");
+            pixels = stbi_load(filePath.c_str(), &outWidth, &outHeight, &channels, 4);
+        }
+    }
+
+    if (!pixels || outWidth <= 0 || outHeight <= 0) {
+        if (pixels) stbi_image_free(pixels);
+        return false;
+    }
+    outPixels.assign(pixels, pixels + static_cast<size_t>(outWidth) * outHeight * 4);
+    stbi_image_free(pixels);
+    return true;
+}
+
+bool IsTextureFullyOpaque(const std::string& namespaceName, const std::string& texturePath) {
+    static std::mutex opaqueCacheMutex;
+    static std::unordered_map<std::string, bool> opaqueCache;
+
+    const std::string key = namespaceName + ":" + texturePath;
+    {
+        std::lock_guard<std::mutex> lock(opaqueCacheMutex);
+        auto it = opaqueCache.find(key);
+        if (it != opaqueCache.end()) return it->second;
+    }
+
+    bool opaque = false;
+    std::vector<unsigned char> pixels;
+    int w = 0, h = 0;
+    if (LoadTexturePixels(namespaceName, texturePath, pixels, w, h)) {
+        opaque = true;
+        const size_t count = static_cast<size_t>(w) * h;
+        for (size_t i = 0; i < count; ++i) {
+            if (pixels[i * 4 + 3] < 250) {
+                opaque = false;
+                break;
+            }
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(opaqueCacheMutex);
+        opaqueCache[key] = opaque;
+    }
+    return opaque;
 }

@@ -14,7 +14,7 @@ extern std::unordered_map<std::string, std::unordered_map<std::string, ModelData
 
 extern std::unordered_map<std::string,std::unordered_map<std::string, std::vector<WeightedModelData>>> VariantModelCache; // variant随机模型缓存
 
-extern std::unordered_map<std::string, std::unordered_map<std::string,std::vector<std::vector<WeightedModelData>>>> MultipartModelCache; // multipart部件缓存
+extern std::unordered_map<std::string, std::unordered_map<std::string,std::vector<MultipartGroup>>> MultipartModelCache; // multipart部件缓存
 
 extern std::unordered_map<std::pair<int, int>, std::vector<std::shared_ptr<EntityBlock>>, pair_hash> EntityBlockCache;
 

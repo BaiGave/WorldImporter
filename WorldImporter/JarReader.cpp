@@ -12,9 +12,41 @@ extern "C" {
 #include <vector>
 #include <sstream>
 #include <cstring>
+#include <memory>
+#include <stdexcept>
 #include "include/json.hpp"
 #include "fileutils.h"
+
 namespace {
+// Minecraft reads resource JSON with Gson and stops after the first value, so
+// trailing text (e.g. an extra closing brace) is ignored in game. Do the same.
+nlohmann::json ParseResourceJson(const std::string& content) {
+    nlohmann::json result;
+    nlohmann::detail::json_sax_dom_parser<nlohmann::json> sax(result, true);
+    nlohmann::json::sax_parse(content, &sax, nlohmann::json::input_format_t::json, false);
+    return result;
+}
+}
+namespace {
+    // The archive walk already knows the index. Avoid resolving the name again,
+    // and share one stat/open/read path across text and binary resource types.
+    template<class Buffer>
+    bool readEntryAtIndex(zip_t* archive, zip_uint64_t index, Buffer& content,
+                          bool requireComplete = true) {
+        zip_stat_t stat;
+        if (zip_stat_index(archive, index, 0, &stat) != 0) return false;
+        std::unique_ptr<zip_file_t, decltype(&zip_fclose)> file(
+            zip_fopen_index(archive, index, 0), &zip_fclose);
+        if (!file) return false;
+        content.resize(stat.size);
+        const auto bytesRead = zip_fread(file.get(), content.data(), stat.size);
+        if (requireComplete && bytesRead != static_cast<zip_int64_t>(stat.size)) {
+            content.clear();
+            return false;
+        }
+        return true;
+    }
+
     std::vector<std::string> splitPath(const std::string& path) {
         std::vector<std::string> parts;
         std::stringstream ss(path);
@@ -183,11 +215,15 @@ void JarReader::cacheAllResources(
     std::unordered_map<std::string, std::vector<unsigned char>>& textureCache,
     std::unordered_map<std::string, nlohmann::json>& blockstateCache,
     std::unordered_map<std::string, nlohmann::json>& modelCache,
+    std::unordered_map<std::string, std::string>& modelAssetCache,
     std::unordered_map<std::string, nlohmann::json>& mcmetaCache,
     std::unordered_map<std::string, nlohmann::json>& biomeCache,
     std::unordered_map<std::string, std::vector<unsigned char>>& colormapCache,
     std::unordered_map<std::string, std::string>& ctmPropertiesCache,
-    std::unordered_map<std::string, std::vector<unsigned char>>& ctmTexturesCache)
+    std::unordered_map<std::string, std::vector<unsigned char>>& ctmTexturesCache,
+    std::unordered_map<std::string, nlohmann::json>& atlasCache,
+    std::unordered_map<std::string, nlohmann::json>& paintingVariantCache,
+    size_t rangeIndex, size_t rangeCount)
 {
     if (!zipFile) {
         std::cerr << "Zip file is not open." << std::endl;
@@ -195,10 +231,28 @@ void JarReader::cacheAllResources(
     }
 
 
-    zip_int64_t numEntries = zip_get_num_entries(zipFile, 0);
-    for (zip_int64_t i = 0; i < numEntries; ++i) {
+    if (rangeCount == 0 || rangeIndex >= rangeCount) {
+        throw std::invalid_argument("Invalid jar entry range");
+    }
+    const zip_int64_t numEntries = zip_get_num_entries(zipFile, 0);
+    if (numEntries < 0) return;
+    const zip_uint64_t first = static_cast<zip_uint64_t>(numEntries) * rangeIndex / rangeCount;
+    const zip_uint64_t last = static_cast<zip_uint64_t>(numEntries) * (rangeIndex + 1) / rangeCount;
+    for (zip_uint64_t i = first; i < last; ++i) {
         const char* name = zip_get_name(zipFile, i, 0);
         if (!name) continue;
+
+        auto readText = [&]() {
+            std::string content;
+            // Preserve getFileContent's handling of incomplete text reads.
+            readEntryAtIndex(zipFile, i, content, false);
+            return content;
+        };
+        auto readBinary = [&]() {
+            std::vector<unsigned char> content;
+            readEntryAtIndex(zipFile, i, content);
+            return content;
+        };
 
         std::string archiveFilePath(name);
         std::string filePath = archiveFilePath;
@@ -219,6 +273,54 @@ void JarReader::cacheAllResources(
             if (nsEnd == std::string::npos) continue;
             std::string namespaceName = filePath.substr(nsStart, nsEnd - nsStart);
 
+            // 图集定义 assets/<namespace>/atlases/*.json。
+            // 其中 type=directory 的 source/prefix 声明了该命名空间"虚拟贴图路径 ->
+            // 真实贴图目录"的映射(例如 Yuushya 的 block_/、0extra_building_block/),
+            // CTM 的 matchTiles 会用到这些名字, 所以必须缓存下来。
+            if (filePath.find("/atlases/") != std::string::npos &&
+                filePath.size() > 5 &&
+                filePath.substr(filePath.size() - 5) == ".json")
+            {
+                size_t resStart = filePath.find("/atlases/", nsEnd) + 9;
+                std::string resourcePath = filePath.substr(resStart, filePath.size() - resStart - 5);
+                std::string cacheKey = namespaceName + ":" + resourcePath;
+                if (atlasCache.find(cacheKey) == atlasCache.end()) {
+                    std::string content = readText();
+                    if (!content.empty()) {
+                        try {
+                            atlasCache.emplace(cacheKey, nlohmann::json::parse(content));
+                        } catch (const std::exception& e) {
+                            std::cerr << "Atlas JSON Error: " << filePath << " - " << e.what() << std::endl;
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // 物品模型定义 assets/<ns>/items/*.json (1.21.4+) 与装备资源 assets/<ns>/equipment/*.json
+            // (1.21.4+): 实体导出渲染手持物品/盔甲时按需解析, 以文本存进 modelAssets("#items/..")。
+            if ((filePath.compare(nsEnd, 7, "/items/") == 0 || filePath.compare(nsEnd, 11, "/equipment/") == 0) &&
+                filePath.ends_with(".json")) {
+                std::string cacheKey = namespaceName + ":#" + filePath.substr(nsEnd + 1);
+                if (!modelAssetCache.contains(cacheKey)) {
+                    modelAssetCache.emplace(cacheKey, readText());
+                }
+                continue;
+            }
+
+            // Cache OBJ/MTL model assets used by custom NeoForge model loaders.
+            size_t modelsPos = filePath.find("/models/", nsEnd);
+            if (modelsPos != std::string::npos &&
+                (filePath.ends_with(".obj") || filePath.ends_with(".obj.mek") || filePath.ends_with(".mtl"))) {
+                size_t resStart = modelsPos + 8;
+                std::string resourcePath = filePath.substr(resStart);
+                std::string cacheKey = namespaceName + ":" + resourcePath;
+                if (!modelAssetCache.contains(cacheKey)) {
+                    modelAssetCache.emplace(cacheKey, readText());
+                }
+                continue;
+            }
+
             // 处理纹理
             if (filePath.find("/textures/") != std::string::npos &&
                 filePath.size() > 4 &&
@@ -235,7 +337,7 @@ void JarReader::cacheAllResources(
                          // 防止重复处理
                          if (colormapCache.find(cacheKey) == colormapCache.end()) {
                              // 读取二进制数据
-                             auto data = getBinaryFileContent(archiveFilePath);
+                             auto data = readBinary();
                              if (!data.empty()) {
                                  colormapCache.emplace(cacheKey, std::move(data));
                              }
@@ -247,16 +349,9 @@ void JarReader::cacheAllResources(
                     std::string cacheKey = namespaceName + ":" + resourcePath;
 
                     if (textureCache.find(cacheKey) == textureCache.end()) {
-                        zip_file_t* file = zip_fopen_index(zipFile, i, 0);
-                        if (file) {
-                            zip_stat_t fileStat;
-                            if (zip_stat_index(zipFile, i, 0, &fileStat) == 0) {
-                                std::vector<unsigned char> data(fileStat.size);
-                                if (zip_fread(file, data.data(), fileStat.size) == fileStat.size) {
-                                    textureCache.emplace(cacheKey, std::move(data));
-                                }
-                            }
-                            zip_fclose(file);
+                        std::vector<unsigned char> data;
+                        if (readEntryAtIndex(zipFile, i, data)) {
+                            textureCache.emplace(cacheKey, std::move(data));
                         }
                     }
                 }
@@ -271,10 +366,10 @@ void JarReader::cacheAllResources(
                 std::string cacheKey = namespaceName + ":" + resourcePath;
 
                 if (blockstateCache.find(cacheKey) == blockstateCache.end()) {
-                    std::string content = this->getFileContent(archiveFilePath);
+                    std::string content = readText();
                     if (!content.empty()) {
                         try {
-                            blockstateCache.emplace(cacheKey, nlohmann::json::parse(content));
+                            blockstateCache.emplace(cacheKey, ParseResourceJson(content));
                         } catch (const std::exception& e) {
                             std::cerr << "Blockstate JSON Error: " << filePath << " - " << e.what() << std::endl;
                         }
@@ -292,10 +387,10 @@ void JarReader::cacheAllResources(
                 std::string cacheKey = namespaceName + ":" + modelPath;
 
                 if (modelCache.find(cacheKey) == modelCache.end()) {
-                    std::string content = this->getFileContent(archiveFilePath);
+                    std::string content = readText();
                     if (!content.empty()) {
                         try {
-                            modelCache.emplace(cacheKey, nlohmann::json::parse(content));
+                            modelCache.emplace(cacheKey, ParseResourceJson(content));
                         } catch (const std::exception& e) {
                             std::cerr << "Model JSON Error: " << filePath << " - " << e.what() << std::endl;
                         }
@@ -317,10 +412,10 @@ void JarReader::cacheAllResources(
                     std::string cacheKey = namespaceName + ":" + metaPath;
 
                     if (mcmetaCache.find(cacheKey) == mcmetaCache.end()) {
-                        std::string content = this->getFileContent(archiveFilePath);
+                        std::string content = readText();
                         if (!content.empty()) {
                             try {
-                                mcmetaCache.emplace(cacheKey, nlohmann::json::parse(content));
+                                mcmetaCache.emplace(cacheKey, ParseResourceJson(content));
                             } catch (const std::exception& e) {
                                 std::cerr << ".mcmeta JSON Error: " << filePath << " - " << e.what() << std::endl;
                             }
@@ -332,10 +427,10 @@ void JarReader::cacheAllResources(
                     std::string cacheKey = namespaceName + ":" + metaPath;
 
                     if (mcmetaCache.find(cacheKey) == mcmetaCache.end()) {
-                        std::string content = this->getFileContent(archiveFilePath);
+                        std::string content = readText();
                         if (!content.empty()) {
                             try {
-                                mcmetaCache.emplace(cacheKey, nlohmann::json::parse(content));
+                                mcmetaCache.emplace(cacheKey, ParseResourceJson(content));
                             } catch (const std::exception& e) {
                                 std::cerr << ".mcmeta JSON Error: " << filePath << " - " << e.what() << std::endl;
                             }
@@ -356,7 +451,7 @@ void JarReader::cacheAllResources(
                     // resourcePath 形如 optifine/ctm/glass/glass/glass
                     std::string cacheKey = namespaceName + ":" + resourcePath + ".properties";
                     if (ctmPropertiesCache.find(cacheKey) == ctmPropertiesCache.end()) {
-                        std::string content = this->getFileContent(archiveFilePath);
+                        std::string content = readText();
                         if (!content.empty()) {
                             ctmPropertiesCache.emplace(cacheKey, std::move(content));
                         }
@@ -371,16 +466,9 @@ void JarReader::cacheAllResources(
                     // resourcePath 形如 optifine/ctm/glass/glass/0
                     std::string cacheKey = namespaceName + ":" + resourcePath;
                     if (ctmTexturesCache.find(cacheKey) == ctmTexturesCache.end()) {
-                        zip_file_t* file = zip_fopen_index(zipFile, i, 0);
-                        if (file) {
-                            zip_stat_t fileStat;
-                            if (zip_stat_index(zipFile, i, 0, &fileStat) == 0) {
-                                std::vector<unsigned char> data(fileStat.size);
-                                if (zip_fread(file, data.data(), fileStat.size) == fileStat.size) {
-                                    ctmTexturesCache.emplace(cacheKey, std::move(data));
-                                }
-                            }
-                            zip_fclose(file);
+                        std::vector<unsigned char> data;
+                        if (readEntryAtIndex(zipFile, i, data)) {
+                            ctmTexturesCache.emplace(cacheKey, std::move(data));
                         }
                     }
                 }
@@ -396,10 +484,10 @@ void JarReader::cacheAllResources(
                         ? metaPathWithPng.substr(0, pngPos) : metaPathWithPng;
                     std::string cacheKey = namespaceName + ":" + metaPath;
                     if (mcmetaCache.find(cacheKey) == mcmetaCache.end()) {
-                        std::string content = this->getFileContent(archiveFilePath);
+                        std::string content = readText();
                         if (!content.empty()) {
                             try {
-                                mcmetaCache.emplace(cacheKey, nlohmann::json::parse(content));
+                                mcmetaCache.emplace(cacheKey, ParseResourceJson(content));
                             } catch (const std::exception& e) {
                                 std::cerr << "CTM .mcmeta JSON Error: " << filePath << " - " << e.what() << std::endl;
                             }
@@ -440,12 +528,45 @@ void JarReader::cacheAllResources(
 
                 if (biomeCache.find(cacheKey) == biomeCache.end()) {
                     // 读取并解析 JSON
-                    std::string content = getFileContent(archiveFilePath);
+                    std::string content = readText();
                     if (!content.empty()) {
                         try {
                             biomeCache.emplace(cacheKey, nlohmann::json::parse(content));
                         } catch (...) {
                             std::cerr << "Invalid biome JSON: " << filePath << std::endl;
+                        }
+                    }
+                }
+            }
+            // data/<namespace>/painting_variant/[...]/<name>.json (1.21+)
+            else if (parts.size() >= 4 && parts[0] == "data" && parts[2] == "painting_variant") {
+                std::string namespaceName = parts[1];
+                std::vector<std::string> idParts;
+                bool jsonFile = false;
+                for (auto it = parts.begin() + 3; it != parts.end(); ++it) {
+                    if (it + 1 == parts.end()) {
+                        if (it->size() >= 5 && it->substr(it->size() - 5) == ".json") {
+                            idParts.push_back(it->substr(0, it->size() - 5));
+                            jsonFile = true;
+                        }
+                    } else {
+                        idParts.push_back(*it);
+                    }
+                }
+                if (!jsonFile || idParts.empty()) continue;
+                std::string variantId;
+                for (size_t idx = 0; idx < idParts.size(); ++idx) {
+                    if (idx != 0) variantId += "/";
+                    variantId += idParts[idx];
+                }
+                std::string cacheKey = namespaceName + ":" + variantId;
+                if (paintingVariantCache.find(cacheKey) == paintingVariantCache.end()) {
+                    std::string content = readText();
+                    if (!content.empty()) {
+                        try {
+                            paintingVariantCache.emplace(cacheKey, nlohmann::json::parse(content));
+                        } catch (...) {
+                            std::cerr << "Invalid painting variant JSON: " << filePath << std::endl;
                         }
                     }
                 }

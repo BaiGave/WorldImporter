@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="源文件">
@@ -92,16 +92,25 @@
     <ClCompile Include="main.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="CreateFilterItems.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="locutil.cpp">
       <Filter>源文件\Utils</Filter>
     </ClCompile>
     <ClCompile Include="fileutils.cpp">
       <Filter>源文件\Utils</Filter>
     </ClCompile>
+    <ClCompile Include="EndPortalModel.cpp">
+      <Filter>源文件\Blocks</Filter>
+    </ClCompile>
     <ClCompile Include="nbtutils.cpp">
       <Filter>源文件\Utils</Filter>
     </ClCompile>
     <ClCompile Include="model.cpp">
+      <Filter>源文件\Core\Model</Filter>
+    </ClCompile>
+    <ClCompile Include="plantoffset.cpp">
       <Filter>源文件\Core\Model</Filter>
     </ClCompile>
     <ClCompile Include="texture.cpp">
@@ -110,14 +119,32 @@
     <ClCompile Include="blockstate.cpp">
       <Filter>源文件\Core\Model</Filter>
     </ClCompile>
+    <ClCompile Include="BookModel.cpp">
+      <Filter>源文件\Blocks</Filter>
+    </ClCompile>
     <ClCompile Include="CTM.cpp">
       <Filter>源文件\Core\Model</Filter>
     </ClCompile>
     <ClCompile Include="biome.cpp">
       <Filter>源文件\World</Filter>
     </ClCompile>
+    <ClCompile Include="BeaconBeam.cpp">
+      <Filter>源文件\Blocks</Filter>
+    <ClCompile Include="legacybiomes.cpp">
+    <ClCompile Include="biome_zoom.cpp">
+      <Filter>源文件\World</Filter>
+    </ClCompile>
+    <ClCompile Include="blocktint.cpp">
+      <Filter>源文件\World</Filter>
+    </ClCompile>
+    <ClCompile Include="CreateTrackMarkers.cpp">
+      <Filter>源文件\Blocks</Filter>
+    </ClCompile>
     <ClCompile Include="block.cpp">
       <Filter>源文件\World</Filter>
+    </ClCompile>
+    <ClCompile Include="CreateCurvedTrack.cpp">
+      <Filter>源文件\Blocks</Filter>
     </ClCompile>
     <ClCompile Include="ModelDeduplicator.cpp">
       <Filter>源文件\Exporter</Filter>
@@ -125,22 +152,54 @@
     <ClCompile Include="RegionModelExporter.cpp">
       <Filter>源文件\Exporter</Filter>
     </ClCompile>
+    <ClCompile Include="SignText.cpp">
+      <Filter>源文件\Blocks</Filter>
+    </ClCompile>
     <ClCompile Include="ObjExporter.cpp">
       <Filter>源文件\Exporter</Filter>
     </ClCompile>
     <ClCompile Include="JarReader.cpp">
       <Filter>源文件\Core\Reader</Filter>
     </ClCompile>
+    <ClCompile Include="CreatePostboxControls.cpp">
+      <Filter>源文件\Blocks</Filter>
+    </ClCompile>
     <ClCompile Include="EntityBlock.cpp">
       <Filter>源文件\Blocks</Filter>
     </ClCompile>
+    <ClCompile Include="CreateBellCrafter.cpp">
+      <Filter>源文件\Blocks</Filter>
+    </ClCompile>
+    <ClCompile Include="BbsModelSupport.cpp">
+      <Filter>源文件\Blocks</Filter>
+    </ClCompile>
+    <ClCompile Include="SkullModel.cpp">
+      <Filter>源文件\Blocks</Filter>
+    </ClCompile>
+    <ClCompile Include="PlayerSkin.cpp">
+      <Filter>源文件\Blocks</Filter>
+    <ClCompile Include="CampfireItems.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ItemRender.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="SpecialBlock.cpp">
+      <Filter>源文件\Blocks</Filter>
+    </ClCompile>
+    <ClCompile Include="CopperGolemStatue.cpp">
       <Filter>源文件\Blocks</Filter>
     </ClCompile>
     <ClCompile Include="Fluid.cpp">
       <Filter>源文件\Blocks</Filter>
     </ClCompile>
+    <ClCompile Include="CreateFlaps.cpp">
+      <Filter>源文件\Blocks</Filter>
+    </ClCompile>
     <ClCompile Include="LODManager.cpp">
+      <Filter>源文件\Blocks</Filter>
+    </ClCompile>
+    <ClCompile Include="CreateBlazePackager.cpp">
       <Filter>源文件\Blocks</Filter>
     </ClCompile>
     <ClCompile Include="config.cpp">
@@ -152,6 +211,9 @@
     <ClCompile Include="decompressor.cpp">
       <Filter>源文件\Utils</Filter>
     </ClCompile>
+    <ClCompile Include="CreateSpoutCannonPulley.cpp">
+      <Filter>源文件\Blocks</Filter>
+    </ClCompile>
     <ClCompile Include="GlobalCache.cpp">
       <Filter>源文件\Core\Cache</Filter>
     </ClCompile>
@@ -161,10 +223,21 @@
     <ClCompile Include="chunk.cpp">
       <Filter>源文件\World</Filter>
     </ClCompile>
+    <ClCompile Include="CreateBogey.cpp">
+      <Filter>源文件\Blocks</Filter>
+    </ClCompile>
     <ClCompile Include="ChunkLoader.cpp">
       <Filter>源文件\Core\Loader</Filter>
     </ClCompile>
+    <ClCompile Include="HangingSignModel.cpp">
+      <Filter>源文件\Blocks</Filter>
+    </ClCompile>
     <ClCompile Include="ChunkGenerator.cpp">
+      <Filter>源文件\Exporter</Filter>
+    </ClCompile>
+    <ClCompile Include="BannerModel.cpp">
+      <Filter>源文件\Blocks</Filter>
+    <ClCompile Include="PaintingExporter.cpp">
       <Filter>源文件\Exporter</Filter>
     </ClCompile>
     <ClCompile Include="init.cpp">
@@ -176,6 +249,9 @@
     <ClCompile Include="TaskMonitor.cpp">
       <Filter>源文件\Tools</Filter>
     </ClCompile>
+    <ClCompile Include="CreateChainConveyor.cpp">
+      <Filter>源文件\Blocks</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <!-- 核心文件 -->
@@ -185,10 +261,34 @@
     <!-- 工具相关文件 -->
     <!-- 数据格式相关文件 -->
     <!-- 渲染相关文件 -->
+    <ClInclude Include="BbsModelSupport.h">
+      <Filter>头文件\Blocks</Filter>
+    </ClInclude>
+    <ClInclude Include="PlayerSkin.h">
+    <ClInclude Include="CreateBellCrafter.h">
+      <Filter>头文件\Blocks</Filter>
+    <ClInclude Include="CampfireItems.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ItemRender.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EntityNbt.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EntityModel.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="SpecialBlock.h">
       <Filter>头文件\Blocks</Filter>
     </ClInclude>
+    <ClInclude Include="CopperGolemStatue.h">
+      <Filter>头文件\Blocks</Filter>
+    </ClInclude>
     <ClInclude Include="EntityBlock.h">
+      <Filter>头文件\Blocks</Filter>
+    </ClInclude>
+    <ClInclude Include="CreateFlaps.h">
       <Filter>头文件\Blocks</Filter>
     </ClInclude>
     <ClInclude Include="texture.h">
@@ -197,14 +297,29 @@
     <ClInclude Include="model.h">
       <Filter>头文件\Core\Model</Filter>
     </ClInclude>
+    <ClInclude Include="plantoffset.h">
+      <Filter>头文件\Core\Model</Filter>
+    </ClInclude>
     <ClInclude Include="blockstate.h">
       <Filter>头文件\Core\Model</Filter>
     </ClInclude>
     <ClInclude Include="CTM.h">
       <Filter>头文件\Core\Model</Filter>
     </ClInclude>
+    <ClInclude Include="CreateCurvedTrack.h">
+      <Filter>头文件\Blocks</Filter>
+    </ClInclude>
     <ClInclude Include="biome.h">
       <Filter>头文件\World</Filter>
+    </ClInclude>
+    <ClInclude Include="legacybiomes.h">
+      <Filter>头文件\World</Filter>
+    </ClInclude>
+    <ClInclude Include="blocktint.h">
+      <Filter>头文件\World</Filter>
+    </ClInclude>
+    <ClInclude Include="CreateTrackMarkers.h">
+      <Filter>头文件\Blocks</Filter>
     </ClInclude>
     <ClInclude Include="block.h">
       <Filter>头文件\World</Filter>
@@ -212,10 +327,18 @@
     <ClInclude Include="ModelDeduplicator.h">
       <Filter>头文件\Exporter</Filter>
     </ClInclude>
+    <ClInclude Include="CreateFilterItems.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="ObjExporter.h">
       <Filter>头文件\Exporter</Filter>
     </ClInclude>
     <ClInclude Include="RegionModelExporter.h">
+      <Filter>头文件\Exporter</Filter>
+    </ClInclude>
+    <ClInclude Include="SignText.h">
+      <Filter>头文件\Blocks</Filter>
+    <ClInclude Include="PaintingExporter.h">
       <Filter>头文件\Exporter</Filter>
     </ClInclude>
     <ClInclude Include="hashutils.h">
@@ -233,7 +356,13 @@
     <ClInclude Include="JarReader.h">
       <Filter>头文件\Core\Reader</Filter>
     </ClInclude>
+    <ClInclude Include="CreatePostboxControls.h">
+      <Filter>头文件\Blocks</Filter>
+    </ClInclude>
     <ClInclude Include="LODManager.h">
+      <Filter>头文件\Blocks</Filter>
+    </ClInclude>
+    <ClInclude Include="CreateBlazePackager.h">
       <Filter>头文件\Blocks</Filter>
     </ClInclude>
     <ClInclude Include="ChunkGroupAllocator.h">
@@ -245,6 +374,9 @@
     <ClInclude Include="decompressor.h">
       <Filter>头文件\Utils</Filter>
     </ClInclude>
+    <ClInclude Include="CreateSpoutCannonPulley.h">
+      <Filter>头文件\Blocks</Filter>
+    </ClInclude>
     <ClInclude Include="GlobalCache.h">
       <Filter>头文件\Core\Cache</Filter>
     </ClInclude>
@@ -253,6 +385,9 @@
     </ClInclude>
     <ClInclude Include="chunk.h">
       <Filter>头文件\World</Filter>
+    </ClInclude>
+    <ClInclude Include="CreateBogey.h">
+      <Filter>头文件\Blocks</Filter>
     </ClInclude>
     <ClInclude Include="ChunkLoader.h">
       <Filter>头文件\Core\Loader</Filter>
@@ -271,6 +406,9 @@
     </ClInclude>
     <ClInclude Include="TaskMonitor.h">
       <Filter>头文件\Tools</Filter>
+    </ClInclude>
+    <ClInclude Include="CreateChainConveyor.h">
+      <Filter>头文件\Blocks</Filter>
     </ClInclude>
     <ClInclude Include="Fluid.h">
       <Filter>头文件\Blocks</Filter>
