@@ -89,6 +89,12 @@ struct Config {
     bool importEntities; // 导出区域内生物/实体元数据
     bool exportEntityModels; // 导出区域内生物的几何模型(entities.obj/.mtl, 村民层走 overlay.json)
 
+    // OBJ 导出拆分开关(可同时打开): 打开后同一个 .obj 里写多个 o 段，Blender 的
+    // OBJ 导入器(use_split_objects 默认 true)会按 o 行拆成多个物体，材质仍由 usemtl 赋予。
+    // 两个都关时输出与旧版完全一致(单个 o + 按材质 usemtl 分组)。
+    bool splitByMaterial; // 按材质拆: 每个材质一个 o 段
+    bool splitByBlock;    // 按方块拆: 每个方块一个 o 段，段内再按材质 usemtl 分组
+
     bool exportFullModel;  // 是否完整导入
     bool downloadPlayerSkins; // 下载玩家头颅皮肤(默认开; 关掉且无本地缓存时保持 Steve)
     int partitionSize; //分割大小
@@ -126,7 +132,7 @@ struct Config {
         mergeModTextures(true),
         doubleSidedGeometry(true),
         mergeSameDoubleSided(false),
-        mergeMirrorDoubleSided(false),
+        mergeMirrorDoubleSided(true),
         doubleSidedFaceOffset(0.0005f),
         isLODAutoCenter(true),
         LODCenterX(0),
@@ -148,6 +154,9 @@ struct Config {
         plantOffset(true),
         importEntities(false),
         exportEntityModels(true),
+
+        splitByMaterial(false),
+        splitByBlock(false),
 
         exportFullModel(false),
         downloadPlayerSkins(true),

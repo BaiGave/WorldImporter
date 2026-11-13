@@ -10,6 +10,10 @@ public:
     // 顶点去重方法
     static void DeduplicateVertices(ModelData& data);
 
+    // 按贴图拆分顶点：相同坐标但贴图不同的面不再共用顶点，避免树叶飘动
+    // 顶点组把静态几何一起带走。
+    static void SplitVerticesByTexture(ModelData& data);
+
     // UV坐标去重方法
     static void DeduplicateUV(ModelData& model);
 
