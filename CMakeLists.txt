@@ -33,6 +33,15 @@ wi_apply_defaults(WorldImporter)
 wi_apply_defaults(WorldImporterCore)
 
 include(CTest)
+if (BUILD_TESTING)
+    find_package(Threads REQUIRED)
+    add_executable(logutil_tests WorldImporter/tests/logutil_tests.cpp)
+    target_include_directories(logutil_tests PRIVATE WorldImporter)
+    target_link_libraries(logutil_tests PRIVATE Threads::Threads)
+    wi_apply_defaults(logutil_tests)
+    add_test(NAME logutil COMMAND logutil_tests)
+    set_tests_properties(logutil PROPERTIES TIMEOUT 60)
+endif()
 
 option(WI_BUILD_CTM_TESTS "Build CTM texture baking regression tests" ON)
 

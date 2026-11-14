@@ -23,14 +23,14 @@ void SetHighPriority() {
 #ifdef _WIN32
     // Windows实现
     if (!SetPriorityClass(GetCurrentProcess(), REALTIME_PRIORITY_CLASS)) {
-        std::cerr << "警告：无法设置进程优先级。" << std::endl;
+        CrafterLog::warn("无法设置进程优先级；继续使用默认优先级");
     } else {
         std::cout << "已设置进程高优先级" << std::endl;
     }
 #elif defined(__linux__) || defined(__APPLE__)
     // Linux/MacOS实现
     if (setpriority(PRIO_PROCESS, 0, -20) != 0) {
-        std::cerr << "警告：无法设置进程优先级。" << std::endl;
+        CrafterLog::warn("无法设置进程优先级；继续使用默认优先级");
     } else {
         std::cout << "已设置进程高优先级" << std::endl;
     }
@@ -38,6 +38,8 @@ void SetHighPriority() {
 }
 
 void init() {
+    CrafterLog::StageTimer init_stage("初始化");
+    CrafterLog::info("配置路径=" + std::filesystem::absolute(JoinPath("config", "config.json")).string());
     std::cout << "========== WorldImporter 初始化开始 ==========" << std::endl;
     std::cout.flush();
     auto init_t0 = std::chrono::high_resolution_clock::now();

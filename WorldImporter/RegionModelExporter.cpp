@@ -29,6 +29,7 @@ using namespace std::chrono;  // 新增:方便使用 chrono
 
 
 void RegionModelExporter::ExportModels(const string& outputName) {
+    CrafterLog::StageTimer export_stage("区域模型导出");
     auto export_t0 = std::chrono::high_resolution_clock::now();
     std::cout << "========== 区域模型导出开始 ==========" << std::endl;
     std::cout << "  输出名: " << outputName << std::endl;
@@ -128,6 +129,7 @@ void RegionModelExporter::ExportModels(const string& outputName) {
 
     // 全局进度计数器
     std::atomic<size_t> globalCompletedTasks{0};
+    std::atomic<size_t> failedWorkers{0};
 
     // 初始化全局进度
     monitor.UpdateProgress("总体进度", 0, totalTasksAllBatches);
@@ -202,6 +204,9 @@ void RegionModelExporter::ExportModels(const string& outputName) {
     for (size_t current_batch_idx = 0; current_batch_idx < ChunkGroupAllocator::g_chunkBatches.size(); ++current_batch_idx) {
         const auto& batch = ChunkGroupAllocator::g_chunkBatches[current_batch_idx];
         batchId = current_batch_idx + 1;
+        const auto batch_start = CrafterLog::now_ms();
+        const auto failures_before = failedWorkers.load();
+        CrafterLog::Context batch_context("batch=" + to_string(batchId) + "/" + to_string(totalBatches));
 
         // 更新批次进度
         monitor.SetStatus(TaskStatus::PROCESSING_BATCH, "处理批次 " + to_string(batchId) + "/" + to_string(totalBatches));
@@ -291,19 +296,34 @@ void RegionModelExporter::ExportModels(const string& outputName) {
             for (const auto& group : groupsInBatch)
                 for (const auto& task : group.tasks) flatTasks.push_back(&task);
         }
+        CrafterLog::debug("batch=" + to_string(batchId) + " groups=" + to_string(groupsInBatch.size()) +
+                          " tasks=" + to_string(tasksInCurrentBatch) + " model_threads=" + to_string(numThreads) +
+                          " loaded_chunks=" + to_string(afterLoad));
         std::vector<ModelData> completedModels(flatTasks.size());
         std::vector<std::thread> threads;
         threads.reserve(numThreads);
 
         auto workerStart = std::chrono::steady_clock::now();
         for (unsigned i = 0; i < numThreads; ++i) {
-            threads.emplace_back([&]() {
+            threads.emplace_back([&, worker_id = i]() {
+                CrafterLog::Context worker_context("batch=" + to_string(batchId) + " worker=" + to_string(worker_id));
+                string active_work = "operation=claim_task";
+                const ChunkTask* active_task = nullptr;
+                auto diagnostic_work = [&]() {
+                    return active_work + (active_task ? " chunkX=" + to_string(active_task->chunkX) +
+                        " sectionY=" + to_string(active_task->sectionY) + " chunkZ=" + to_string(active_task->chunkZ) +
+                        " lod=" + to_string(active_task->lodLevel) : "");
+                };
+                const auto worker_start = CrafterLog::now_ms();
                 try {
                     if (config.exportFullModel) {
+                        active_work = "operation=generate_model";
                         for (;;) {
                             const size_t idx = groupIndex.fetch_add(1, std::memory_order_relaxed);
                             if (idx >= flatTasks.size()) break;
-                            completedModels[idx] = processModel(*flatTasks[idx]);
+                            const auto& task = *flatTasks[idx];
+                            active_task = &task;
+                            completedModels[idx] = processModel(task);
                             const size_t batchDone = batchCompletedTasks.fetch_add(1) + 1;
                             const size_t done = globalCompletedTasks.fetch_add(1) + 1;
                             if (done % 100 == 0 || done == totalTasksAllBatches) {
@@ -312,12 +332,14 @@ void RegionModelExporter::ExportModels(const string& outputName) {
                                 monitor.UpdateProgress("批次进度", batchDone, tasksInCurrentBatch);
                             }
                         }
+                        CrafterLog::contextual_debug("operation=worker_exit status=success duration_ms=" + to_string(CrafterLog::now_ms() - worker_start));
                         return;
                     }
                     while (true) {
                         size_t idx = groupIndex.fetch_add(1);
                         if (idx >= groupsInBatch.size()) break;
                         const auto& group = groupsInBatch[idx];
+                        active_work = "operation=group group=" + to_string(idx) + " startX=" + to_string(group.startX) + " startZ=" + to_string(group.startZ);
                         ModelData groupModel;
                         // The first nonempty section moves its arrays here;
                         // reserving before that move only allocates discarded memory.
@@ -333,6 +355,7 @@ void RegionModelExporter::ExportModels(const string& outputName) {
                         for (const auto& task : group.tasks) {
                             // processModel 返回可移动对象；提前 reserve 随即会被移动赋值
                             // 丢弃，旧代码每个 section 都做了三次无效分配。
+                            active_task = &task;
                             ModelData chunkModel = processModel(task);
                             if (groupModel.vertices.empty()) {
                                 groupModel = std::move(chunkModel);
@@ -398,15 +421,21 @@ void RegionModelExporter::ExportModels(const string& outputName) {
                                 SeparateCoincidentFaces(groupModel);
                                 PruneUnusedMaterials(groupModel, &overlayKeep);
                             }
+                            active_task = nullptr;
+                            active_work = "operation=write_group output=" + groupFileName;
+                            CrafterLog::contextual_debug(active_work + " faces=" + to_string(groupModel.faces.size()) + " materials=" + to_string(localMaterials.size()));
                             CreateMultiModelFiles(groupModel, groupFileName, localMaterials, outputName);
                             recordMaterials(localMaterials, localTints);
                         }
                     }
                 } catch (const std::exception& e) {
                     // 单个分组处理异常不应导致整个进程终止，跳过该组并记录错误
-                    std::cerr << "[ERROR] 组处理异常,已跳过当前组: " << e.what() << std::endl;
+                    failedWorkers.fetch_add(1);
+                    CrafterLog::contextual_error(diagnostic_work() + " status=error error=" + e.what() +
+                        " duration_ms=" + to_string(CrafterLog::now_ms() - worker_start) + " action=worker_stopped_remaining_tasks_may_be_unprocessed");
                 } catch (...) {
-                    std::cerr << "[ERROR] 组处理未知异常,已跳过当前组" << std::endl;
+                    failedWorkers.fetch_add(1);
+                    CrafterLog::contextual_error(diagnostic_work() + " status=error error=unknown action=worker_stopped_remaining_tasks_may_be_unprocessed");
                 }
             });
         }
@@ -452,6 +481,14 @@ void RegionModelExporter::ExportModels(const string& outputName) {
         size_t afterUnload = CountLoadedChunks();
         size_t unloadedCnt = (beforeUnload > afterUnload) ? (beforeUnload - afterUnload) : 0;
 
+        const auto batch_failures = failedWorkers.load() - failures_before;
+        const string batch_summary = "operation=batch_summary batch=" + to_string(batchId) +
+            " expected_tasks=" + to_string(tasksInCurrentBatch) + " completed_tasks=" + to_string(batchCompletedTasks.load()) +
+            " failed_workers=" + to_string(batch_failures) + " duration_ms=" + to_string(CrafterLog::now_ms() - batch_start) +
+            " loaded_chunks=" + to_string(newlyLoaded) + " unloaded_chunks=" + to_string(unloadedCnt) + " retained_chunks=" + to_string(afterUnload);
+        if (batch_failures || batchCompletedTasks.load() != tasksInCurrentBatch)
+            CrafterLog::warn(batch_summary + " status=incomplete");
+        else CrafterLog::info(batch_summary + " status=success");
         std::cout << "■ 批次 " << batchId << "/" << totalBatches
                   << " 完成:新加载区块 " << newlyLoaded
                   << ", 卸载 " << unloadedCnt
@@ -459,6 +496,8 @@ void RegionModelExporter::ExportModels(const string& outputName) {
         std::cout.flush();
     }
 
+    if (failedWorkers.load()) CrafterLog::error("operation=export_summary status=incomplete failed_workers=" + to_string(failedWorkers.load()) +
+        " completed_tasks=" + to_string(globalCompletedTasks.load()) + " expected_tasks=" + to_string(totalTasksAllBatches));
     std::cout << "========== 全部批次处理完成 ==========" << std::endl;
     std::cout << "  统计:唯一材质 " << uniqueMaterials.size()
               << ",唯一 tint " << uniqueTints.size()

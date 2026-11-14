@@ -1,3 +1,4 @@
+#include "logutil.h"
 #include "config.h" 
 #include "locutil.h"
 #include <locale>
@@ -8,16 +9,24 @@
 #include <cctype>
 #include "include/json.hpp"
 Config LoadConfig(const std::string& configFile) {
+    CrafterLog::StageTimer stage("读取配置");
+    CrafterLog::debug("operation=read_config path=" + configFile);
     Config config;
     std::ifstream file(configFile);
 
     if (!file.is_open()) {
-        std::cerr << "Could not open config file: " << configFile << std::endl;
+        CrafterLog::error("operation=read_config status=fallback_defaults path=" + configFile + " error=cannot_open_file");
         return config;  // 返回默认配置
     }
 
     nlohmann::json j;
-    file >> j;
+    try {
+        file >> j;
+    } catch (const std::exception& error) {
+        CrafterLog::error("operation=read_config status=error path=" + configFile + " error=" + error.what());
+        throw;
+    }
+    CrafterLog::debug("operation=read_config status=parsed keys=" + std::to_string(j.size()) + " path=" + configFile);
 
     // 安全读取配置，如果字段不存在则保留默认值
     config.worldPath = j.value("worldPath", config.worldPath);

@@ -1,3 +1,4 @@
+#include "logutil.h"
 #include "objExporter.h"
 #include <algorithm>
 #include <cassert>
@@ -203,6 +204,7 @@ inline char* fast_ftoa(float value, char* ptr) {
 //——————————————导出.obj/.mtl方法—————————————
 
 void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objName, const std::string& mtlFileName = "") {
+    const auto diagnostic_started = CrafterLog::now_ms();
     std::string exeDir = getExecutableDir();
     std::string objFilePath = exeDir + objName + ".obj";
     std::string mtlFilePath = mtlFileName.empty() ? (objName + ".mtl") : (mtlFileName + ".mtl");
@@ -322,6 +324,7 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         // 一次性写入全部数据
         file.write(buffer.data(), writtenSize);
         file.close();
+        if (!file) throw std::runtime_error("写入或关闭失败: " + objFilePath);
 #elif defined(__unix__) || defined(__APPLE__)
         // Unix/Linux/macOS平台
         int fd = open(objFilePath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
@@ -357,15 +360,19 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         // 一次性写入全部数据
         file.write(buffer.data(), writtenSize);
         file.close();
+        if (!file) throw std::runtime_error("写入或关闭失败: " + objFilePath);
 #endif
+        CrafterLog::output_result(objFilePath, diagnostic_started, true);
     }
     catch (const std::exception& e) {
-        std::cerr << "写入OBJ文件时出错: " << e.what() << std::endl;
+        CrafterLog::error("operation=write_obj path=" + objFilePath + " error=" + e.what());
+        CrafterLog::output_result(objFilePath, diagnostic_started, false);
     }
 }
 
 // 创建 .obj 文件并写入内容
 void createObjFile(const ModelData& data, const std::string& objName, const std::string& mtlFileName = "") {
+    const auto diagnostic_started = CrafterLog::now_ms();
     std::string exeDir = getExecutableDir();
 
     std::string objFilePath = exeDir + objName + ".obj";
@@ -438,6 +445,7 @@ void createObjFile(const ModelData& data, const std::string& objName, const std:
     if (objFile.is_open()) {
         objFile << oss.str();
         objFile.close();
+        CrafterLog::output_result(objFilePath, diagnostic_started, !objFile.fail());
     }
     else {
         std::cerr << "Error: Failed to create " << objFilePath << "\n";
@@ -445,6 +453,7 @@ void createObjFile(const ModelData& data, const std::string& objName, const std:
 }
 
 void CreateSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMaterials, const std::string& mtlFileName, const std::unordered_map<std::string, TintResult>& uniqueTints) {
+    const auto diagnostic_started = CrafterLog::now_ms();
     std::string exeDir = getExecutableDir();
     std::string fullMtlPath = exeDir + mtlFileName + ".mtl";
 
@@ -533,6 +542,7 @@ void CreateSharedMtlFile(std::unordered_map<std::string, std::string> uniqueMate
             mtlFile << "\n";
         }
         mtlFile.close();
+        CrafterLog::output_result(fullMtlPath, diagnostic_started, !mtlFile.fail());
     }
     else {
         std::cerr << "Failed to create .mtl file: " << mtlFileName << std::endl;
@@ -550,6 +560,7 @@ namespace {
 
 // 输出 tint.json（材质名 -> {kind, color?}；无 kind 表示不上色），供 Blender 插件按接口接线
 void CreateTintJsonFile(const std::unordered_map<std::string, TintResult>& uniqueTints) {
+    const auto diagnostic_started = CrafterLog::now_ms();
     if (uniqueTints.empty()) return;
 
     nlohmann::json root = nlohmann::json::object();
@@ -574,6 +585,7 @@ void CreateTintJsonFile(const std::unordered_map<std::string, TintResult>& uniqu
     if (file.is_open()) {
         file << root.dump(2);
         file.close();
+        CrafterLog::output_result(path, diagnostic_started, !file.fail());
     }
     else {
         std::cerr << "Failed to create tint.json: " << path << std::endl;
@@ -598,6 +610,7 @@ void RegisterMaterialFullName(const std::string& fullName) {
 // 输出 materials.json（{可见名: 完整名}）。实体导出在区域导出之后跑，这里读旧文件合并，
 // 避免两次写出互相覆盖。
 void WriteMaterialsJson() {
+    const auto diagnostic_started = CrafterLog::now_ms();
     std::unordered_map<std::string, std::string> names;
     {
         std::lock_guard<std::mutex> lock(g_materialFullNameMutex);
@@ -610,7 +623,10 @@ void WriteMaterialsJson() {
     {
         std::ifstream in(path, std::ios::binary);
         if (in) {
-            try { in >> root; } catch (...) { root = nlohmann::json::object(); }
+            try { in >> root; } catch (const std::exception& error) {
+                CrafterLog::warn("operation=merge_material_names path=" + path + " action=replace_invalid_json error=" + error.what());
+                root = nlohmann::json::object();
+            }
         }
     }
     if (!root.is_object()) root = nlohmann::json::object();
@@ -619,6 +635,8 @@ void WriteMaterialsJson() {
     std::ofstream out(path, std::ios::binary);
     if (out.is_open()) {
         out << root.dump(2);
+        out.close();
+        CrafterLog::output_result(path, diagnostic_started, !out.fail());
         std::cout << "■ materials.json: " << root.size() << " 个超长材质名映射" << std::endl;
     }
     else {
