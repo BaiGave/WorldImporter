@@ -101,6 +101,13 @@ Config LoadConfig(const std::string& configFile) {
     config.plantOffset = j.value("plantOffset", config.plantOffset);
     config.importEntities = j.value("importEntities", config.importEntities);
     config.exportEntityModels = j.value("exportEntityModels", config.exportEntityModels);
+
+    // OBJ 导出拆分开关(缺省 false = 输出与旧版一致)
+    config.splitByMaterial = j.value("splitByMaterial", config.splitByMaterial);
+    config.splitByBlock = j.value("splitByBlock", config.splitByBlock);
+    // 按方块拆分依赖“一个方块一套材质名”：模组贴图复用会把多个方块并进同一材质，
+    // 这里强制关掉，避免按 material 名反推 block key 时张冠李戴。
+    if (config.splitByBlock) config.mergeModTextures = false;
     
     // 读取LOD1级别使用原始模型的方块列表
     /*格式：

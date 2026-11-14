@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <set>
@@ -11,6 +12,7 @@
 #include <limits>
 #include <filesystem>
 #include <system_error>
+#include <utility>
 
 #ifdef _WIN32
 // 仅在Windows平台需要这些函数声明
@@ -201,6 +203,262 @@ inline char* fast_ftoa(float value, char* ptr) {
     }
 }
 
+// ---------- 按材质 / 按方块拆分 o 段 ----------
+// 两个开关打开后，在同一个 .obj 里写多个 `o` 段：Blender 的 OBJ 导入器
+// (use_split_objects 默认 true)会按 o 行拆成多个物体，材质仍由每段内的 usemtl 赋予。
+// 世界顶点/UV 仍然全局共享：这里只决定"哪些面写进哪个 o 段"，面索引继续指向文件
+// 开头那一整段 v/vt，既不复制也不重映射。
+namespace {
+
+constexpr size_t kObjNameMaxBytes = 63;  // Blender 物体名上限(字节)，超长会被静默截断
+
+enum class ObjSplitMode { Off, ByMaterial, ByBlock, ByBlockAndMaterial };
+
+ObjSplitMode CurrentObjSplitMode() {
+    const bool byMaterial = config.splitByMaterial;
+    const bool byBlock = config.splitByBlock;
+    if (byMaterial && byBlock) return ObjSplitMode::ByBlockAndMaterial;
+    if (byMaterial) return ObjSplitMode::ByMaterial;
+    if (byBlock) return ObjSplitMode::ByBlock;
+    return ObjSplitMode::Off;
+}
+
+// o 行的对象名不能含空白：空格会让部分 OBJ 解析器截断对象名，换行/制表符直接破坏
+// 行结构。把空格与 C0 控制字符统一换成 '_'(UTF-8 多字节字符最高位是 1，不受影响)。
+std::string SanitizeObjectName(const std::string& name) {
+    std::string safe;
+    safe.reserve(name.size());
+    for (const char rawChar : name) {
+        const unsigned char byte = static_cast<unsigned char>(rawChar);
+        safe.push_back((byte <= 0x20 || byte == 0x7F) ? '_' : rawChar);
+    }
+    return safe;
+}
+
+// 同一个文件内对象名必须唯一：重名时追加 "__2"、"__3"…。
+// 需要追加后缀时先按 UTF-8 字符边界截断给后缀留空间，保证总长始终 <= 63 字节。
+std::string MakeUniqueObjectName(const std::string& rawName,
+                                 std::unordered_set<std::string>& usedNames) {
+    std::string base = SanitizeObjectName(rawName);
+    if (base.empty()) base = "object";
+    base = Utf8Prefix(base, kObjNameMaxBytes);
+
+    std::string candidate = base;
+    for (size_t serial = 2; usedNames.find(candidate) != usedNames.end(); ++serial) {
+        const std::string suffix = "__" + std::to_string(serial);
+        candidate = (base.size() + suffix.size() <= kObjNameMaxBytes)
+            ? base + suffix
+            : Utf8Prefix(base, kObjNameMaxBytes - suffix.size()) + suffix;
+    }
+    usedNames.insert(candidate);
+    return candidate;
+}
+
+// 材质名 -> 方块 key。材质名格式: <命名空间>:<方块>[#贴图键][~贴图名][@tint]，
+// 取第一个 '#'、'~'、'@' 之前的部分(不能把 # 后面的贴图键当成方块)。
+// 以 color# 开头的是 LOD 平均色材质(名字里直接带 "r g b")，以及解析不出
+// "命名空间:方块" 的占位材质，统一归到稳定的 "misc"。
+std::string BlockKeyFromMaterialName(const std::string& materialName) {
+    if (materialName.rfind("color#", 0) == 0) return "misc";
+    const size_t end = materialName.find_first_of("#~@");
+    const std::string block = (end == std::string::npos) ? materialName : materialName.substr(0, end);
+    if (block.empty() || block.find(':') == std::string::npos) return "misc";
+    return block;
+}
+
+// 方块+材质组合模式的段名里用的材质短名：去掉命名空间前缀，保留 #贴图键/~贴图名/@tint，
+// 让同一方块下不同贴图键或 tint 变体仍然能区分开。
+std::string MaterialShortName(const std::string& materialName) {
+    const size_t colon = materialName.find(':');
+    const std::string tail = (colon == std::string::npos) ? materialName : materialName.substr(colon + 1);
+    return tail.empty() ? materialName : tail;
+}
+
+struct ObjFaceGroup {
+    std::string materialName;        // usemtl 用的原始材质名(写出时再统一 BlenderSafeName)
+    std::vector<size_t> faceIndices; // 指向 data.faces；顶点/UV 索引保持全局
+};
+
+struct ObjSection {
+    std::string name;                // 已安全化、已去重、<= 63 字节的 o 名称
+    std::vector<ObjFaceGroup> groups; // 段内按材质分组(该段内首次出现顺序)
+};
+
+struct ObjExportPlan {
+    bool legacyLayout = false;        // true: 与改动前逐字节一致(单个 o 在顶点前)
+    std::string legacyObjectName;     // 旧布局的 o 名称 = 模型文件名，原样写出
+    std::vector<ObjSection> sections; // 旧布局下只有一段
+};
+
+// 把面按开关分组，供两个 writer 共用(各自保留自己的缓冲/流式写法，不互相替换)。
+// splitByMaterial/splitByBlock 都为 false 时返回"一段 + 按材质顺序分组"的旧布局。
+ObjExportPlan BuildObjExportPlan(const ModelData& data, const std::string& legacyObjectName) {
+    ObjExportPlan plan;
+    const ObjSplitMode mode = CurrentObjSplitMode();
+    const size_t materialCount = data.materials.size();
+    const size_t orphanBucket = materialCount; // 材质下标为 -1 / 越界的面的桶
+
+    if (mode == ObjSplitMode::Off) {
+        // 回归路径：一个 o 段，面按 data.materials 顺序分组；与旧实现一致，
+        // -1 与越界材质的面不写出。
+        plan.legacyLayout = true;
+        plan.legacyObjectName = legacyObjectName;
+
+        std::vector<std::vector<size_t>> materialGroups(materialCount);
+        for (size_t faceIdx = 0; faceIdx < data.faces.size(); ++faceIdx) {
+            const int matIndex = data.faces[faceIdx].materialIndex;
+            if (matIndex != -1 && matIndex < static_cast<int>(materialGroups.size())) {
+                materialGroups[static_cast<size_t>(matIndex)].push_back(faceIdx);
+            }
+        }
+
+        ObjSection section;
+        section.name = legacyObjectName;
+        for (size_t matIndex = 0; matIndex < materialGroups.size(); ++matIndex) {
+            if (materialGroups[matIndex].empty()) continue;
+            ObjFaceGroup group;
+            group.materialName = data.materials[matIndex].name;
+            group.faceIndices = std::move(materialGroups[matIndex]);
+            section.groups.push_back(std::move(group));
+        }
+        plan.sections.push_back(std::move(section));
+        return plan;
+    }
+
+    // 每个材质桶(含"未知"桶)的方块 key：先物化成整数 id，面循环里只比较整数。
+    std::vector<std::string> blockKeys;
+    std::unordered_map<std::string, int> blockIdByKey;
+    std::vector<int> blockIdOfBucket(materialCount + 1, -1);
+
+    const auto blockIdOf = [&](size_t bucket) {
+        if (blockIdOfBucket[bucket] >= 0) return blockIdOfBucket[bucket];
+        const std::string key = (bucket < materialCount)
+            ? BlockKeyFromMaterialName(data.materials[bucket].name)
+            : std::string("misc");
+        const auto existing = blockIdByKey.find(key);
+        if (existing != blockIdByKey.end()) {
+            blockIdOfBucket[bucket] = existing->second;
+            return existing->second;
+        }
+        const int id = static_cast<int>(blockKeys.size());
+        blockKeys.push_back(key);
+        blockIdByKey.emplace(key, id);
+        blockIdOfBucket[bucket] = id;
+        return id;
+    };
+
+    // 段名里用的材质名：空名字兜底成 unknown(段名与 usemtl 用同一个名字)
+    const auto nameOfBucket = [&](size_t bucket) -> std::string {
+        if (bucket >= materialCount) return "unknown";
+        const std::string& materialName = data.materials[bucket].name;
+        return materialName.empty() ? std::string("unknown") : BlenderSafeName(materialName);
+    };
+
+    struct SectionBuilder {
+        std::string name;
+        int sortKey = 0; // 仅按材质拆分时用于排序(材质桶下标)
+        std::vector<std::pair<int, std::vector<size_t>>> groups; // (材质桶, 面)
+        std::unordered_map<int, size_t> groupOfBucket;           // 材质桶 -> groups 下标
+    };
+
+    std::vector<SectionBuilder> builders;
+    constexpr size_t kNoSection = (std::numeric_limits<size_t>::max)();
+    std::vector<size_t> sectionOfMaterial(materialCount + 1, kNoSection);
+    std::vector<size_t> sectionOfBlock;
+    std::unordered_map<uint64_t, size_t> sectionOfBlockMaterial; // (方块 id, 材质桶) -> 段
+    std::unordered_set<std::string> usedObjectNames;
+
+    const auto resolveSection = [&](size_t bucket) -> size_t {
+        if (mode == ObjSplitMode::ByMaterial) {
+            if (sectionOfMaterial[bucket] != kNoSection) return sectionOfMaterial[bucket];
+            SectionBuilder builder;
+            builder.name = MakeUniqueObjectName(nameOfBucket(bucket), usedObjectNames);
+            builder.sortKey = static_cast<int>(bucket);
+            sectionOfMaterial[bucket] = builders.size();
+            builders.push_back(std::move(builder));
+            return builders.size() - 1;
+        }
+
+        const int blockId = blockIdOf(bucket);
+        if (mode == ObjSplitMode::ByBlock) {
+            if (static_cast<size_t>(blockId) >= sectionOfBlock.size()) {
+                sectionOfBlock.resize(static_cast<size_t>(blockId) + 1, kNoSection);
+            }
+            if (sectionOfBlock[blockId] == kNoSection) {
+                SectionBuilder builder;
+                builder.name = MakeUniqueObjectName(blockKeys[blockId], usedObjectNames);
+                sectionOfBlock[blockId] = builders.size();
+                builders.push_back(std::move(builder));
+            }
+            return sectionOfBlock[blockId];
+        }
+
+        // 方块 + 材质：每个组合一段，段名 <方块>__<材质短名>
+        const uint64_t comboKey =
+            (static_cast<uint64_t>(static_cast<uint32_t>(blockId)) << 32) |
+            static_cast<uint32_t>(bucket);
+        const auto existing = sectionOfBlockMaterial.find(comboKey);
+        if (existing != sectionOfBlockMaterial.end()) return existing->second;
+
+        SectionBuilder builder;
+        builder.name = MakeUniqueObjectName(
+            blockKeys[blockId] + "__" + MaterialShortName(nameOfBucket(bucket)), usedObjectNames);
+        const size_t sectionIndex = builders.size();
+        builders.push_back(std::move(builder));
+        sectionOfBlockMaterial.emplace(comboKey, sectionIndex);
+        return sectionIndex;
+    };
+
+    for (size_t faceIdx = 0; faceIdx < data.faces.size(); ++faceIdx) {
+        const int matIndex = data.faces[faceIdx].materialIndex;
+        // 未知材质(-1 / 越界)不丢：统一放进 orphan 桶，后面算作 unknown
+        const size_t bucket = (matIndex < 0 || matIndex >= static_cast<int>(materialCount))
+            ? orphanBucket
+            : static_cast<size_t>(matIndex);
+        const size_t sectionIndex = resolveSection(bucket); // 可能新建段(builders 会扩容)
+        SectionBuilder& builder = builders[sectionIndex];
+        const int groupKey = static_cast<int>(bucket);
+        const auto existing = builder.groupOfBucket.find(groupKey);
+        if (existing != builder.groupOfBucket.end()) {
+            builder.groups[existing->second].second.push_back(faceIdx);
+        } else {
+            builder.groupOfBucket.emplace(groupKey, builder.groups.size());
+            builder.groups.emplace_back(groupKey, std::vector<size_t>{ faceIdx });
+        }
+    }
+
+    // 按材质拆分时按 data.materials 顺序输出 o 段(未知桶排最后)，与旧版 usemtl 顺序一致。
+    // 按方块 / 组合模式按方块(或组合)首次出现的顺序输出，同样稳定。
+    if (mode == ObjSplitMode::ByMaterial) {
+        std::stable_sort(builders.begin(), builders.end(),
+            [](const SectionBuilder& lhs, const SectionBuilder& rhs) { return lhs.sortKey < rhs.sortKey; });
+    }
+
+    plan.sections.reserve(builders.size());
+    for (SectionBuilder& builder : builders) {
+        ObjSection section;
+        section.name = std::move(builder.name);
+        section.groups.reserve(builder.groups.size());
+        for (auto& groupEntry : builder.groups) {
+            const int groupBucket = groupEntry.first;
+            ObjFaceGroup group;
+            // 未知材质桶 / 空材质名：这些面不丢，统一算作 unknown
+            if (groupBucket >= 0 && static_cast<size_t>(groupBucket) < materialCount &&
+                !data.materials[groupBucket].name.empty()) {
+                group.materialName = data.materials[groupBucket].name;
+            } else {
+                group.materialName = "unknown";
+            }
+            group.faceIndices = std::move(groupEntry.second);
+            section.groups.push_back(std::move(group));
+        }
+        plan.sections.push_back(std::move(section));
+    }
+    return plan;
+}
+
+} // namespace
+
 //——————————————导出.obj/.mtl方法—————————————
 
 void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objName, const std::string& mtlFileName = "") {
@@ -216,15 +474,9 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
         modelName = objName.substr(sepPos + 1);
     }
 
-    // 面数据分组计算
-    std::vector<std::vector<size_t>> materialGroups(data.materials.size());
+    // 面数据分组：拆分开关打开时每段一个 o，两个都关时等价原来的按材质分组
+    const ObjExportPlan plan = BuildObjExportPlan(data, modelName);
     const size_t totalFaces = data.faces.size();
-    for (size_t faceIdx = 0; faceIdx < totalFaces; ++faceIdx) {
-        const int matIndex = data.faces[faceIdx].materialIndex;
-        if (matIndex != -1 && matIndex < materialGroups.size()) {
-            materialGroups[matIndex].push_back(faceIdx);
-        }
-    }
 
     // Grow on demand instead of reserving worst-case space for every model line.
     // This keeps large models proportional to their actual formatted size and
@@ -260,7 +512,10 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
 
     // 开始填充缓冲区
     appendFormatted("mtllib %s\n", mtlFilePath.c_str());
-    appendFormatted("o %s\n\n", modelName.c_str());
+    if (plan.legacyLayout) {
+        // 旧布局：单个 o 写在顶点之前；拆分模式下面每段各写一条 o(见文件末尾)
+        appendFormatted("o %s\n\n", plan.legacyObjectName.c_str());
+    }
     appendFormatted("# Vertices (%zu)\n", data.vertices.size() / 3);
     for (size_t i = 0; i < data.vertices.size(); i += 3) {
         ensureSpace(3 * floatSpace + 5); // "v " + x + ' ' + y + ' ' + z + '\n'
@@ -286,25 +541,39 @@ void createObjFileViaMemoryMapped(const ModelData& data, const std::string& objN
     }
 
     appendFormatted("\n# Faces (%zu)\n", totalFaces);
-    for (size_t matIndex = 0; matIndex < materialGroups.size(); ++matIndex) {
-        const auto& faces = materialGroups[matIndex];
-        if (faces.empty()) continue;
-        appendFormatted("usemtl %s\n", BlenderSafeName(data.materials[matIndex].name).c_str());
-        for (const size_t faceIdx : faces) {
-            ensureSpace(faceSpace); // "f " + four positive int/int pairs with spaces + '\n'
-            memcpy(ptr, "f ", 2);
-            ptr += 2;
-            for (int i = 0; i < 4; ++i) {
-                const int vIdx = data.faces[faceIdx].vertexIndices[i] + 1;
-                const int uvIdx = data.faces[faceIdx].uvIndices[i] + 1;
-                if (vIdx <= 0 || uvIdx <= 0) {
-                    throw std::invalid_argument("Invalid vertex or UV index");
+    // 一个 o 段的内容：按材质写 usemtl，再写该材质的全部面(索引保持全局)
+    const auto appendSection = [&](const ObjSection& section) {
+        for (const ObjFaceGroup& group : section.groups) {
+            appendFormatted("usemtl %s\n", BlenderSafeName(group.materialName).c_str());
+            for (const size_t faceIdx : group.faceIndices) {
+                ensureSpace(faceSpace); // "f " + four positive int/int pairs with spaces + '\n'
+                memcpy(ptr, "f ", 2);
+                ptr += 2;
+                for (int i = 0; i < 4; ++i) {
+                    const int vIdx = data.faces[faceIdx].vertexIndices[i] + 1;
+                    const int uvIdx = data.faces[faceIdx].uvIndices[i] + 1;
+                    if (vIdx <= 0 || uvIdx <= 0) {
+                        throw std::invalid_argument("Invalid vertex or UV index");
+                    }
+                    ptr = fast_itoa(vIdx, ptr);
+                    *ptr++ = '/';
+                    ptr = fast_itoa(uvIdx, ptr);
+                    *ptr++ = ' ';
                 }
-                ptr = fast_itoa(vIdx, ptr);
-                *ptr++ = '/';
-                ptr = fast_itoa(uvIdx, ptr);
-                *ptr++ = ' ';
+                *ptr++ = '\n';
             }
+        }
+    };
+
+    if (plan.legacyLayout) {
+        appendSection(plan.sections.front());
+    }
+    else {
+        // 每段先写 o，Blender 的 use_split_objects 会按它拆成多个物体；空段不会出现
+        for (const ObjSection& section : plan.sections) {
+            appendFormatted("o %s\n", section.name.c_str());
+            appendSection(section);
+            ensureSpace(1); // 段之间空一行，便于阅读
             *ptr++ = '\n';
         }
     }
@@ -389,9 +658,16 @@ void createObjFile(const ModelData& data, const std::string& objName, const std:
     std::ostringstream oss;
     oss.imbue(std::locale::classic());
 
+    // 面数据分组：拆分开关打开时每段一个 o，两个都关时等价原来的按材质分组
+    const ObjExportPlan plan = BuildObjExportPlan(data, name);
+    const size_t totalFaces = data.faces.size();
+
     // 写入文件头
     oss << "mtllib " << mtlFilePath << "\n";
-    oss << "o " << name << "\n\n";
+    if (plan.legacyLayout) {
+        // 旧布局：单个 o 写在顶点之前；拆分模式下面每段各写一条 o(见文件末尾)
+        oss << "o " << plan.legacyObjectName << "\n\n";
+    }
     // 写入顶点数据(每3个元素一个顶点)
     oss << "# Vertices (" << data.vertices.size() / 3 << ")\n";
     // 固定 6 位小数: 默认精度只有 6 位有效数字, 坐标上千时会把几何双面的微小偏移抹掉
@@ -412,30 +688,32 @@ void createObjFile(const ModelData& data, const std::string& objName, const std:
     }
     oss << "\n";
 
-    // 按材质分组面(优化分组算法)
-    std::vector<std::vector<size_t>> materialGroups(data.materials.size());
-    const size_t totalFaces = data.faces.size();
-    for (size_t faceIdx = 0; faceIdx < totalFaces; ++faceIdx) {
-        const int matIndex = data.faces[faceIdx].materialIndex;
-        if (matIndex != -1 && matIndex < materialGroups.size()) {
-            materialGroups[matIndex].push_back(faceIdx);
-        }
-    }
-
     // 写入面数据(优化内存访问模式)
     oss << "# Faces (" << totalFaces << ")\n";
-    for (size_t matIndex = 0; matIndex < materialGroups.size(); ++matIndex) {
-        const auto& faces = materialGroups[matIndex];
-        if (faces.empty()) continue;
-
-        oss << "usemtl " << BlenderSafeName(data.materials[matIndex].name) << "\n";
-        for (const size_t faceIdx : faces) {
-            oss << "f ";
-            for (int i = 0; i < 4; ++i) {
-                const int vIdx = data.faces[faceIdx].vertexIndices[i] + 1;
-                const int uvIdx = data.faces[faceIdx].uvIndices[i] + 1;
-                oss << vIdx << "/" << uvIdx << " ";
+    // 一个 o 段的内容：按材质写 usemtl，再写该材质的全部面(索引保持全局)
+    const auto writeSection = [&](const ObjSection& section) {
+        for (const ObjFaceGroup& group : section.groups) {
+            oss << "usemtl " << BlenderSafeName(group.materialName) << "\n";
+            for (const size_t faceIdx : group.faceIndices) {
+                oss << "f ";
+                for (int i = 0; i < 4; ++i) {
+                    const int vIdx = data.faces[faceIdx].vertexIndices[i] + 1;
+                    const int uvIdx = data.faces[faceIdx].uvIndices[i] + 1;
+                    oss << vIdx << "/" << uvIdx << " ";
+                }
+                oss << "\n";
             }
+        }
+    };
+
+    if (plan.legacyLayout) {
+        writeSection(plan.sections.front());
+    }
+    else {
+        // 每段先写 o，Blender 的 use_split_objects 会按它拆成多个物体；空段不会出现
+        for (const ObjSection& section : plan.sections) {
+            oss << "o " << section.name << "\n";
+            writeSection(section);
             oss << "\n";
         }
     }

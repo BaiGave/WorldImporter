@@ -301,6 +301,73 @@ void ModelDeduplicator::DeduplicateVertices(ModelData& data) {
               << (1.0 - static_cast<double>(newIndex) / vertCount) * 100.0 << "%\n";
 }
 
+void ModelDeduplicator::SplitVerticesByTexture(ModelData& data) {
+    if (data.vertices.empty() || data.faces.empty()) return;
+
+    // 同一坐标允许按贴图各保留一份顶点；材质的 tint / 类型不参与隔离，
+    // 这样同一张贴图仍可共用顶点，树叶与普通方块之间则不会互相带动。
+    std::vector<int> materialTexture(data.materials.size(), -1);
+    std::unordered_map<std::string, int> textureIds;
+    textureIds.reserve(data.materials.size());
+    for (size_t i = 0; i < data.materials.size(); ++i) {
+        const Material& mat = data.materials[i];
+        const std::string& key = mat.texturePath.empty() ? mat.name : mat.texturePath;
+        if (key.empty()) continue;
+        auto [it, inserted] = textureIds.try_emplace(key, static_cast<int>(textureIds.size()));
+        materialTexture[i] = it->second;
+    }
+
+    struct TextureVertexKey {
+        VertexKey vertex;
+        int texture;
+        bool operator==(const TextureVertexKey&) const = default;
+    };
+    struct TextureVertexKeyHash {
+        size_t operator()(const TextureVertexKey& key) const noexcept {
+            size_t h = static_cast<size_t>(key.vertex.x);
+            h = h * 1000003u ^ static_cast<size_t>(key.vertex.y);
+            h = h * 1000003u ^ static_cast<size_t>(key.vertex.z);
+            h = h * 1000003u ^ static_cast<size_t>(static_cast<unsigned>(key.texture));
+            return h;
+        }
+    };
+
+    std::unordered_map<TextureVertexKey, int, TextureVertexKeyHash> vertexMap;
+    vertexMap.reserve(data.vertices.size() / 3);
+    std::vector<float> newVertices;
+    newVertices.reserve(data.vertices.size());
+
+    const size_t oldVertexCount = data.vertices.size() / 3;
+    for (Face& face : data.faces) {
+        int texture = -1;
+        if (face.materialIndex >= 0 &&
+            static_cast<size_t>(face.materialIndex) < materialTexture.size()) {
+            texture = materialTexture[static_cast<size_t>(face.materialIndex)];
+        }
+        for (int& vertexIndex : face.vertexIndices) {
+            if (vertexIndex < 0 || static_cast<size_t>(vertexIndex) >= oldVertexCount) {
+                continue;
+            }
+            const size_t base = static_cast<size_t>(vertexIndex) * 3;
+            const TextureVertexKey key{
+                MakeVertexKey(data.vertices[base], data.vertices[base + 1], data.vertices[base + 2]),
+                texture
+            };
+            auto [it, inserted] = vertexMap.try_emplace(key, static_cast<int>(newVertices.size() / 3));
+            if (inserted) {
+                newVertices.push_back(data.vertices[base]);
+                newVertices.push_back(data.vertices[base + 1]);
+                newVertices.push_back(data.vertices[base + 2]);
+            }
+            vertexIndex = it->second;
+        }
+    }
+
+    data.vertices = std::move(newVertices);
+    std::cerr << "SplitVerticesByTexture: " << oldVertexCount << " -> "
+              << data.vertices.size() / 3 << " vertices\n";
+}
+
 void ModelDeduplicator::DeduplicateUV(ModelData& model) {
     // 如果没有 UV 坐标,则直接返回
     if (model.uvCoordinates.empty()) {
@@ -1428,6 +1495,16 @@ void ModelDeduplicator::DeduplicateModel(ModelData& data) {
             auto t9 = Clock::now();
             std::cerr << "DeduplicateUV after GreedyMesh: " << Ms(t9 - t8).count() << " ms\n";
         }
+    }
+
+    // 最后再按贴图拆一次顶点：GreedyMesh 需要全局唯一的坐标顶点，
+    // 不能提前拆；输出前拆开即可避免树叶和普通方块共用顶点。
+    monitor.SetStatus(TaskStatus::DEDUPLICATING_VERTICES, "SplitVerticesByTexture");
+    {
+        auto ts = Clock::now();
+        SplitVerticesByTexture(data);
+        auto te = Clock::now();
+        std::cerr << "SplitVerticesByTexture: " << Ms(te - ts).count() << " ms\n";
     }
     auto dm_end = Clock::now();
     std::cerr << "DeduplicateModel total: " << Ms(dm_end - dm_start).count() << " ms\n";
